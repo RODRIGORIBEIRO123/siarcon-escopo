@@ -14,7 +14,7 @@ col_logo, col_titulo = st.columns([1, 5])
 with col_logo:
     try:
         # Tenta carregar o logo. Ajuste o width se ficar muito grande ou pequeno.
-        st.image("logo.png", width=150) 
+        st.image("Siarcon.png", width=150) 
     except:
         st.warning("Logo não encontrado.")
 
@@ -51,3 +51,4 @@ with col2:
     * **Novos Modelos:** O modelo de contrato de Dutos foi atualizado para a Rev.02.
     * **Dúvidas?** Entre em contato com a Gestão de Suprimentos.
     """)
+
