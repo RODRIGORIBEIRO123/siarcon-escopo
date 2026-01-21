@@ -10,9 +10,9 @@ st.set_page_config(
 # Tenta carregar o logo (se ele existir)
 try:
     # Ajuste o width (largura) conforme necessário para ficar bonito
-    st.image("logo.png", width=300) 
+    st.image("Siarcon.png", width=300) 
 except:
-    st.warning("Arquivo logo.png não encontrado. Verifique se o nome está correto no GitHub.")
+    st.warning("Arquivo Siarcon.png não encontrado. Verifique se o nome está correto no GitHub.")
 
 st.title("🏗️ Portal de Engenharia & Obras")
 st.markdown("---")
@@ -43,3 +43,4 @@ with col2:
 
 st.markdown("---")
 st.caption("Sistema desenvolvido para uso interno da SIARCON Engenharia © 2026")
+
