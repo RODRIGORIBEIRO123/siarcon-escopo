@@ -3,7 +3,7 @@ from PIL import Image
 
 st.set_page_config(
     page_title="Portal SIARCON",
-    page_icon="🏗️",
+    page_icon="Siarcon.png",
     layout="wide"
 )
 
@@ -51,4 +51,5 @@ with col2:
     * **Novos Modelos:** O modelo de contrato de Dutos foi atualizado para a Rev.02.
     * **Dúvidas?** Entre em contato com a Gestão de Suprimentos.
     """)
+
 
