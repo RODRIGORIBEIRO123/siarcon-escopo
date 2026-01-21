@@ -1,4 +1,5 @@
 import streamlit as st
+from PIL import Image
 
 st.set_page_config(
     page_title="Portal SIARCON",
@@ -6,24 +7,39 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("🏗️ Portal de Engenharia & Obras - SIARCON")
+# Tenta carregar o logo (se ele existir)
+try:
+    # Ajuste o width (largura) conforme necessário para ficar bonito
+    st.image("logo.png", width=300) 
+except:
+    st.warning("Arquivo logo.png não encontrado. Verifique se o nome está correto no GitHub.")
 
-st.markdown("""
-Bem-vindo ao sistema integrado de gestão de escopos e contratos.
+st.title("🏗️ Portal de Engenharia & Obras")
+st.markdown("---")
 
-### 👈 Selecione a disciplina no Menu Lateral
+col1, col2 = st.columns([2, 1])
 
-Este portal permite a geração automatizada de minutas contratuais e especificações técnicas padronizadas.
+with col1:
+    st.markdown("""
+    ### Bem-vindo ao Sistema Integrado SIARCON.
 
----
-### 🚀 Painel de Status
-*(Futuramente aqui aparecerão os gráficos de escopos gerados no mês)*
+    Utilize o **Menu Lateral (à esquerda)** para acessar os módulos de geração de escopo.
 
-* **Dutos:** Sistema Operacional ✅
-* **Hidráulica:** Em desenvolvimento 🚧
-* **Elétrica:** Em desenvolvimento 🚧
-* **Civil:** Aguardando especificações ⏳
+    **Disponível agora:**
+    * ❄️ **Rede de Dutos:** Geração completa de contratos e anexos.
+    * 💧 **Hidráulica:** (Em breve)
+    * ⚡ **Elétrica:** (Em breve)
+    
+    Este sistema visa padronizar a contratação de terceiros, garantindo que todas as exigências técnicas e de SMS sejam cumpridas.
+    """)
 
----
-**Suporte:** Engenharia SIARCON | Versão 1.0 (Portal)
-""")
+with col2:
+    st.info("""
+    **📢 Avisos da Engenharia**
+    
+    * **Novos Modelos:** O modelo de contrato de Dutos foi atualizado para a Rev.02.
+    * **Dúvidas?** Entre em contato com a Gestão de Suprimentos.
+    """)
+
+st.markdown("---")
+st.caption("Sistema desenvolvido para uso interno da SIARCON Engenharia © 2026")
