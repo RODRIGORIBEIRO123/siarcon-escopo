@@ -5,17 +5,18 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 import io
 import zipfile
 from datetime import date, timedelta
-import utils_db  # <--- Importamos nosso novo ajudante
+import utils_db
 
 # --- CONFIGURAÇÃO ---
 st.set_page_config(page_title="Escopo Dutos | SIARCON", page_icon="❄️", layout="wide")
 
 # --- CARREGAR DADOS DO GOOGLE SHEETS ---
+# Garante que a chave 'opcoes_db' existe antes de qualquer coisa
 if 'opcoes_db' not in st.session_state:
-    with st.spinner("Conectando ao banco de dados..."):
+    with st.spinner("Carregando banco de dados..."):
         st.session_state['opcoes_db'] = utils_db.carregar_opcoes()
 
-# --- FUNÇÃO DOCX (Mesma lógica de antes) ---
+# --- FUNÇÃO DOCX ---
 def gerar_docx(dados):
     document = Document()
     try:
@@ -110,27 +111,28 @@ with tab1:
     arquivos_anexos = st.file_uploader("Anexos", accept_multiple_files=True)
 
 with tab2:
-    # TÉCNICO - COM APRENDIZADO REAL NO GOOGLE SHEETS
     st.subheader("Técnico")
-    opcoes_tec = st.session_state['opcoes_db']['tecnico']
+    # Usa .get() para evitar erro se a chave não existir
+    opcoes_tec = st.session_state['opcoes_db'].get('tecnico', [])
     itens_tecnicos = st.multiselect("Selecione:", options=opcoes_tec)
     
     col_add, col_free = st.columns(2)
     with col_add:
-        novo_tec = st.text_input("➕ Cadastrar novo item no Google Sheets (Técnico)")
-        if st.button("Salvar Item"):
+        novo_tec = st.text_input("➕ Cadastrar novo item (Técnico)")
+        if st.button("Salvar Item Técnico"):
             if novo_tec and novo_tec not in opcoes_tec:
                 utils_db.aprender_novo_item("tecnico", novo_tec)
-                st.success("Item salvo na nuvem! Recarregue a página (F5) para ver.")
-                # Limpa cache para puxar o novo item
+                st.success("Salvo!")
                 del st.session_state['opcoes_db'] 
+                st.rerun() # <--- O SEGREDO ESTÁ AQUI (Reinicia a página)
+                
     with col_free: tecnico_livre = st.text_area("Texto Livre (Técnico)")
     
     st.divider()
     
-    # QUALIDADE
     st.subheader("Qualidade")
-    opcoes_qual = st.session_state['opcoes_db']['qualidade']
+    # Usa .get() para segurança
+    opcoes_qual = st.session_state['opcoes_db'].get('qualidade', [])
     itens_qualidade = st.multiselect("Selecione Qualidade:", options=opcoes_qual)
     
     c_q1, c_q2 = st.columns(2)
@@ -139,8 +141,9 @@ with tab2:
         if st.button("Salvar Qualidade"):
             if novo_qual:
                 utils_db.aprender_novo_item("qualidade", novo_qual)
-                st.success("Salvo! Recarregue a página.")
+                st.success("Salvo!")
                 del st.session_state['opcoes_db']
+                st.rerun() # <--- REINICIA A PÁGINA AQUI TAMBÉM
     with c_q2: qualidade_livre = st.text_input("Texto Livre (Qualidade)")
 
 with tab3:
@@ -154,16 +157,16 @@ with tab3:
         st.divider()
 
 with tab4:
-    opcoes_sms = st.session_state['opcoes_db']['sms']
+    opcoes_sms = st.session_state['opcoes_db'].get('sms', [])
     nrs = st.multiselect("SMS Adicional:", options=opcoes_sms)
     
-    # Adicionar novo SMS
     novo_sms = st.text_input("➕ Novo Doc SMS")
     if st.button("Salvar SMS"):
         if novo_sms:
             utils_db.aprender_novo_item("sms", novo_sms)
             st.success("Salvo!")
             del st.session_state['opcoes_db']
+            st.rerun() # <--- REINICIA A PÁGINA AQUI TAMBÉM
 
     st.divider()
     d_ini = st.date_input("Início")
@@ -192,16 +195,13 @@ if st.button("🚀 GERAR CONTRATO & REGISTRAR NO BANCO", type="primary", use_con
             'nomes_anexos': [f.name for f in arquivos_anexos] if arquivos_anexos else []
         }
         
-        # 1. Gera Arquivo
         docx = gerar_docx(dados)
         nome_arq = f"Escopo_{fornecedor}.docx"
         
-        # 2. Registra no Google Sheets
         with st.spinner("Salvando histórico..."):
             utils_db.registrar_projeto(dados)
             st.success("✅ Projeto registrado no Banco de Dados!")
 
-        # 3. Download
         if arquivos_anexos:
             zip_buffer = io.BytesIO()
             with zipfile.ZipFile(zip_buffer, "w") as zf:
