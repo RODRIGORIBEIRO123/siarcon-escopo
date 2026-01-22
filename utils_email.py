@@ -3,40 +3,48 @@ import smtplib
 import ssl
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from email.mime.application import MIMEApplication
+from email.mime.base import MIMEBase
+from email import encoders
 
 def enviar_email_com_anexo(destinatario, assunto, corpo, arquivo_bytes, nome_arquivo):
     """
-    Envia um e-mail com anexo usando servidor SMTP do Gmail.
+    Envia e-mail usando MIMEBase e Encoders para garantir que o anexo
+    passe pelos filtros do Gmail sem ser corrompido ou bloqueado.
     """
-    # 1. Pegar credenciais do cofre
-    remetente = st.secrets["email"]["usuario"]
-    senha = st.secrets["email"]["senha"]
-    
-    # 2. Montar o E-mail
-    msg = MIMEMultipart()
-    msg['From'] = remetente
-    msg['To'] = destinatario
-    msg['Subject'] = assunto
-    
-    # Adiciona o texto do corpo
-    msg.attach(MIMEText(corpo, 'plain'))
-    
-    # 3. Adicionar o Anexo
     try:
-        # O arquivo vem como BytesIO, pegamos o valor
-        part = MIMEApplication(arquivo_bytes, Name=nome_arquivo)
-        part['Content-Disposition'] = f'attachment; filename="{nome_arquivo}"'
+        # 1. Credenciais
+        remetente = st.secrets["email"]["usuario"]
+        senha = st.secrets["email"]["senha"]
+        
+        # 2. Montagem do E-mail
+        msg = MIMEMultipart()
+        msg['From'] = remetente
+        msg['To'] = destinatario
+        msg['Subject'] = assunto
+        
+        # Corpo do texto
+        msg.attach(MIMEText(corpo, 'plain'))
+        
+        # 3. Anexo Blindado (MIMEBase)
+        # O modo 'octet-stream' é genérico e aceito por todos os servidores
+        part = MIMEBase('application', "octet-stream")
+        part.set_payload(arquivo_bytes)
+        
+        # Codifica em Base64 (essencial para enviar arquivos pela internet)
+        encoders.encode_base64(part)
+        
+        # Cabeçalho do arquivo
+        part.add_header('Content-Disposition', f'attachment; filename="{nome_arquivo}"')
+        
         msg.attach(part)
-    except Exception as e:
-        return f"Erro ao anexar arquivo: {e}"
 
-    # 4. Conectar ao Gmail e Enviar
-    context = ssl.create_default_context()
-    try:
+        # 4. Envio Seguro
+        context = ssl.create_default_context()
         with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as server:
             server.login(remetente, senha)
             server.sendmail(remetente, destinatario, msg.as_string())
-        return True # Sucesso
+            
+        return True # Sucesso absoluto
+
     except Exception as e:
-        return f"Erro no envio: {e}"
+        return f"Erro técnico no envio: {e}"
