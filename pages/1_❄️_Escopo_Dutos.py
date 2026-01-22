@@ -11,6 +11,34 @@ import utils_db
 # --- CONFIGURAÇÃO ---
 st.set_page_config(page_title="Escopo Dutos | SIARCON", page_icon="❄️", layout="wide")
 
+# --- FUNÇÃO DE CALLBACK (SALVAR E LIMPAR) ---
+def adicionar_item_callback(categoria, key_input):
+    """
+    Esta função roda ANTES da tela recarregar.
+    Ela salva no banco e limpa o campo de texto com segurança.
+    """
+    # Pega o valor digitado direto do session_state
+    novo_item = st.session_state.get(key_input, "")
+    
+    if novo_item:
+        # Tenta salvar
+        retorno = utils_db.aprender_novo_item(categoria, novo_item)
+        
+        if retorno is True:
+            # Limpa o campo (Agora é permitido, pois estamos numa callback)
+            st.session_state[key_input] = ""
+            # Força recarregar as opções do banco na próxima tela
+            if 'opcoes_db' in st.session_state: del st.session_state['opcoes_db']
+            # Mostra aviso flutuante
+            st.toast(f"✅ Item '{novo_item}' salvo em {categoria}!", icon="✅")
+            
+        elif retorno == "Duplicado":
+            st.toast(f"⚠️ O item '{novo_item}' já existe na lista!", icon="⚠️")
+        else:
+            st.toast("❌ Erro ao conectar com a planilha.", icon="❌")
+    else:
+        st.toast("⚠️ Digite algo antes de salvar.", icon="✍️")
+
 # --- LÓGICA DE EDIÇÃO ---
 dados_edicao = {}
 id_linha_edicao = None
@@ -146,23 +174,16 @@ with tab2:
     
     col_add, col_free = st.columns(2)
     with col_add:
-        # AQUI MUDOU: Adicionei key="input_novo_tec" para poder limpar depois
-        novo_tec = st.text_input("➕ Cadastrar novo item (Técnico)", key="input_novo_tec")
+        # 1. Campo de texto com chave fixa
+        st.text_input("➕ Cadastrar novo item (Técnico)", key="input_novo_tec")
         
-        if st.button("Salvar Item Técnico"):
-            if novo_tec:
-                retorno = utils_db.aprender_novo_item("tecnico", novo_tec)
-                
-                if retorno == "Duplicado":
-                    st.warning(f"O item '{novo_tec}' já existe na lista!")
-                elif retorno is True:
-                    st.success("Salvo!")
-                    # LIMPEZA DO CAMPO:
-                    st.session_state["input_novo_tec"] = "" 
-                    del st.session_state['opcoes_db'] 
-                    st.rerun()
-                else:
-                    st.error("Erro ao conectar com a planilha.")
+        # 2. Botão com CALLBACK (on_click)
+        # Isso evita o erro de "APIException" ao limpar o campo
+        st.button(
+            "Salvar Item Técnico", 
+            on_click=adicionar_item_callback, 
+            args=("tecnico", "input_novo_tec")
+        )
                 
     with col_free: tecnico_livre = st.text_area("Texto Livre (Técnico)")
     
@@ -174,20 +195,14 @@ with tab2:
     
     c_q1, c_q2 = st.columns(2)
     with c_q1:
-        # AQUI MUDOU: key="input_novo_qual"
-        novo_qual = st.text_input("➕ Cadastrar novo item (Qualidade)", key="input_novo_qual")
+        st.text_input("➕ Cadastrar novo item (Qualidade)", key="input_novo_qual")
         
-        if st.button("Salvar Qualidade"):
-            if novo_qual:
-                retorno = utils_db.aprender_novo_item("qualidade", novo_qual)
-                if retorno == "Duplicado":
-                    st.warning("Item já cadastrado!")
-                elif retorno is True:
-                    st.success("Salvo!")
-                    st.session_state["input_novo_qual"] = "" # Limpa
-                    del st.session_state['opcoes_db']
-                    st.rerun()
-                    
+        st.button(
+            "Salvar Qualidade", 
+            on_click=adicionar_item_callback, 
+            args=("qualidade", "input_novo_qual")
+        )
+
     with c_q2: qualidade_livre = st.text_input("Texto Livre (Qualidade)")
 
 with tab3:
@@ -204,18 +219,12 @@ with tab4:
     opcoes_sms = st.session_state['opcoes_db'].get('sms', [])
     nrs = st.multiselect("SMS Adicional:", options=opcoes_sms)
     
-    # AQUI MUDOU: key="input_novo_sms"
-    novo_sms = st.text_input("➕ Novo Doc SMS", key="input_novo_sms")
-    if st.button("Salvar SMS"):
-        if novo_sms:
-            retorno = utils_db.aprender_novo_item("sms", novo_sms)
-            if retorno == "Duplicado":
-                st.warning("Item já cadastrado!")
-            elif retorno is True:
-                st.success("Salvo!")
-                st.session_state["input_novo_sms"] = "" # Limpa
-                del st.session_state['opcoes_db']
-                st.rerun()
+    st.text_input("➕ Novo Doc SMS", key="input_novo_sms")
+    st.button(
+        "Salvar SMS", 
+        on_click=adicionar_item_callback, 
+        args=("sms", "input_novo_sms")
+    )
 
     st.divider()
     d_ini = st.date_input("Início")
