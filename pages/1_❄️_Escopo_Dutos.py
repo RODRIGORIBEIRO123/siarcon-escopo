@@ -7,7 +7,6 @@ import zipfile
 from datetime import date, timedelta
 import urllib.parse
 import utils_db
-import utils_email # <--- Importamos o carteiro de volta
 
 # --- CONFIGURAÇÃO ---
 st.set_page_config(page_title="Escopo Dutos | SIARCON", page_icon="❄️", layout="wide")
@@ -290,44 +289,14 @@ else:
 
             st.divider()
             
-            c1, c2, c3 = st.columns([1, 1.5, 1.5])
+            c1, c2 = st.columns(2)
             
             with c1:
                 st.info("Arquivo:")
                 st.download_button("📥 Baixar DOCX", docx_buffer.getvalue(), nome_arq, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True)
             
-            # --- TENTATIVA AUTOMÁTICA ---
             with c2:
-                st.info("Opção A (Automático):")
-                if st.button("🤖 Enviar via Sistema", use_container_width=True):
-                    with st.spinner("O robô está tentando enviar..."):
-                        
-                        corpo_auto = f"""Olá,
-                        
-Segue documento atualizado do projeto {obra}.
-Status: {novo_status}
-Fornecedor: {fornecedor_final}
-
-Att, Portal SIARCON"""
-
-                        res = utils_email.enviar_email_com_anexo(
-                            destinatario=email_suprimentos,
-                            assunto=f"Status {novo_status}: {obra}",
-                            corpo=corpo_auto,
-                            arquivo_bytes=docx_buffer.getvalue(),
-                            nome_arquivo=nome_arq
-                        )
-                        
-                        if res is True:
-                            st.balloons()
-                            st.success("✅ E-mail enviado com sucesso pelo sistema!")
-                        else:
-                            st.error(f"⚠️ O envio automático falhou (O Google bloqueou). Use a Opção B ao lado.")
-                            st.code(res)
-
-            # --- OPÇÃO MANUAL (BACKUP) ---
-            with c3:
-                st.info("Opção B (Manual):")
+                st.info("Notificação Manual:")
                 assunto_cot = f"Atualização: {obra} - {novo_status}"
                 corpo_cot = f"Olá,\n\nSegue documento atualizado.\nObra: {obra}\nStatus: {novo_status}"
                 link_cot = f"mailto:{email_suprimentos}?subject={urllib.parse.quote(assunto_cot)}&body={urllib.parse.quote(corpo_cot)}"
