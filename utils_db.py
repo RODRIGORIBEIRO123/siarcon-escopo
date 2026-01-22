@@ -27,29 +27,45 @@ def carregar_opcoes():
         return {"tecnico": [], "qualidade": [], "sms": []}
 
 def aprender_novo_item(categoria, novo_item):
+    """Salva novo item apenas se ele não existir (Evita Duplicatas)."""
     try:
         sh = conectar_google_sheets()
         ws = sh.worksheet("Config")
+        
+        # 1. Verifica duplicidade antes de gastar cota de escrita
+        # Traz todos os dados para verificar
+        data = ws.get_all_records()
+        df = pd.DataFrame(data)
+        
+        # Normaliza para maiúsculas/minúsculas não atrapalharem
+        # Verifica se já existe aquela Categoria E aquele Item
+        if not df.empty:
+            ja_existe = df[
+                (df['Categoria'] == categoria) & 
+                (df['Item'].astype(str).str.lower() == novo_item.lower())
+            ]
+            if not ja_existe.empty:
+                return "Duplicado" # Avisa que já existe
+
+        # 2. Se não existe, salva
         ws.append_row([categoria, novo_item])
         return True
-    except: return False
+    except Exception as e:
+        return False
 
-# --- 3. GESTÃO DE PROJETOS (LEITURA INTELIGENTE) ---
+# --- 3. GESTÃO DE PROJETOS ---
 def listar_todos_projetos():
     try:
         sh = conectar_google_sheets()
         ws = sh.worksheet("Projetos")
-        # Pega todos os valores (lista de listas)
         rows = ws.get_all_values()
         
         if len(rows) < 2: return pd.DataFrame()
         
-        # Cria DataFrame manual
         header = rows[0]
         data = rows[1:]
         
         df = pd.DataFrame(data, columns=header)
-        # Adiciona ID da linha (Excel começa em 1, Header é 1, dados começam em 2)
         df['_id_linha'] = range(2, len(data) + 2) 
         return df
     except Exception as e:
@@ -58,15 +74,10 @@ def listar_todos_projetos():
 
 # --- 4. SALVAR E ATUALIZAR ---
 def registrar_projeto(dados, id_linha=None):
-    """
-    Se id_linha for None -> Cria nova linha.
-    Se id_linha existir -> Atualiza a linha existente.
-    """
     try:
         sh = conectar_google_sheets()
         ws = sh.worksheet("Projetos")
         
-        # [Data, Cliente, Obra, Fornecedor, Responsável, Valor, Status]
         linha = [
             datetime.now().strftime("%d/%m/%Y %H:%M"),
             dados['cliente'],
@@ -78,12 +89,9 @@ def registrar_projeto(dados, id_linha=None):
         ]
         
         if id_linha:
-            # --- CORREÇÃO AQUI ---
-            # O parâmetro correto é range_name, não range_cells
             range_celulas = f"A{id_linha}:G{id_linha}"
             ws.update(range_name=range_celulas, values=[linha])
         else:
-            # Cria nova
             ws.append_row(linha)
             
     except Exception as e:
