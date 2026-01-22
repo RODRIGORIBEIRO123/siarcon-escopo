@@ -2,84 +2,59 @@ import streamlit as st
 import pandas as pd
 import utils_db
 
-# --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Dashboard | SIARCON", page_icon="📊", layout="wide")
-
-st.title("📊 Painel de Controle de Projetos")
-st.markdown("Visão geral de escopos gerados e status de contratos.")
+st.title("📊 Painel de Controle")
 
 # --- 1. CARREGAR DADOS ---
-with st.spinner("Buscando dados no Google Sheets..."):
-    # Chama a função nova que criamos no utils_db
-    df = utils_db.listar_todos_projetos()
+if st.button("🔄 Atualizar Dados"): st.rerun()
 
-# --- 2. SE TIVER DADOS, MOSTRA O PAINEL ---
+df = utils_db.listar_todos_projetos()
+
 if not df.empty:
-    # --- MÉTRICAS (KPIs) ---
-    st.markdown("### 📈 Indicadores")
-    col1, col2, col3, col4 = st.columns(4)
+    # --- 2. MÉTRICAS RÁPIDAS ---
+    col1, col2 = st.columns(2)
+    col1.metric("Total de Projetos", len(df))
+    col2.metric("Último Cliente", df.iloc[-1]['Cliente'])
     
-    total = len(df)
-    # Conta quantos tem status "Gerado" (assumindo que esse é o status inicial)
-    # Se a coluna 'Status' não existir por algum erro, considera 0
-    pendentes = len(df[df["Status"] == "Gerado"]) if "Status" in df.columns else 0
-    
-    # Calcula valor total (precisa limpar o R$ e converter para somar)
-    # Por enquanto vamos mostrar apenas contagem para não dar erro de conversão
-    
-    col1.metric("Total de Escopos", total)
-    col2.metric("Pendentes Aprovação", pendentes)
-    col3.metric("Concluídos", total - pendentes)
-    col4.metric("Última Atualização", "Agora")
-
     st.divider()
 
-    # --- FILTROS ---
-    st.markdown("### 🔍 Pesquisa Detalhada")
+    # --- 3. SELEÇÃO SIMPLIFICADA (DROPDOWN) ---
+    st.markdown("### ✏️ Editar Projeto")
     
-    c_f1, c_f2, c_f3 = st.columns(3)
-    with c_f1:
-        # Pega lista única de clientes
-        filtro_cliente = st.multiselect("Cliente:", options=df["Cliente"].unique())
-    with c_f2:
-        filtro_fornecedor = st.multiselect("Fornecedor:", options=df["Fornecedor"].unique())
-    with c_f3:
-        filtro_resp = st.multiselect("Responsável:", options=df["Responsável"].unique())
-
-    # Aplica os filtros na tabela
-    df_show = df.copy()
-    if filtro_cliente:
-        df_show = df_show[df_show["Cliente"].isin(filtro_cliente)]
-    if filtro_fornecedor:
-        df_show = df_show[df_show["Fornecedor"].isin(filtro_fornecedor)]
-    if filtro_resp:
-        df_show = df_show[df_show["Responsável"].isin(filtro_resp)]
-
-    # --- TABELA DE DADOS ---
-    st.markdown("### 📋 Lista de Projetos")
+    # Cria uma coluna "Nome Bonito" para aparecer na lista
+    # Ex: "Linha 2 - Hitachi (Guarulhos)"
+    df['Display'] = df['_id_linha'].astype(str) + " | " + df['Cliente'] + " - " + df['Obra']
     
-    # Exibe a tabela bonitinha
+    # Caixa de Seleção
+    projeto_escolhido = st.selectbox(
+        "Selecione o projeto na lista abaixo:",
+        options=df['Display'],
+        index=None, # Começa vazio
+        placeholder="Clique aqui para buscar..."
+    )
+
+    # --- 4. AÇÃO ---
+    if projeto_escolhido:
+        # Encontra a linha original baseada na escolha
+        row = df[df['Display'] == projeto_escolhido].iloc[0]
+        
+        st.info(f"Você selecionou: **{row['Cliente']}** (Valor: {row['Valor']})")
+        
+        if st.button("🚀 ABRIR EDITOR DE ESCOPO", type="primary"):
+            # Guarda os dados na memória
+            st.session_state['dados_projeto'] = row.to_dict()
+            st.session_state['modo_edicao'] = True
+            st.switch_page("pages/1_❄️_Escopo_Dutos.py")
+
+    st.markdown("---")
+    st.markdown("### 📋 Visão Geral (Tabela)")
+    # Mostra a tabela apenas para consulta visual
     st.dataframe(
-        df_show,
-        use_container_width=True,
+        df, 
+        use_container_width=True, 
         hide_index=True,
-        column_config={
-            "Data": st.column_config.TextColumn("Data Criação"),
-            "Valor": st.column_config.TextColumn("Valor Estimado"),
-            "Status": st.column_config.Column(
-                "Status Atual",
-                help="Status do fluxo de aprovação",
-                width="medium"
-            ),
-        }
+        column_config={"Display": None, "_id_linha": None} # Esconde colunas técnicas
     )
 
 else:
-    # Caso a planilha esteja vazia ou dê erro
-    st.info("📭 Nenhum projeto encontrado no banco de dados.")
-    st.markdown("Vá até o menu **Escopo Dutos** para criar o primeiro projeto.")
-
-st.markdown("---")
-# Botão para forçar atualização
-if st.button("🔄 Atualizar Tabela"):
-    st.rerun()
+    st.info("📭 Nenhum projeto encontrado. Vá em 'Escopo Dutos' e crie o primeiro!")
