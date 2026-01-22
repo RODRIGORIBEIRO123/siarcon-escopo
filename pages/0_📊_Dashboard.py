@@ -3,72 +3,130 @@ import pandas as pd
 import utils_db
 
 st.set_page_config(page_title="Dashboard | SIARCON", page_icon="📊", layout="wide")
-st.title("📊 Painel de Controle")
+st.title("📊 Painel de Projetos (Kanban)")
 
-# --- 1. CARREGAR DADOS ---
-if st.button("🔄 Atualizar Dados"): st.rerun()
+# --- ATUALIZAÇÃO ---
+if st.button("🔄 Atualizar Quadro"): st.rerun()
 
+# --- CARREGA DADOS ---
 df = utils_db.listar_todos_projetos()
 
 if not df.empty:
-    # --- 2. MÉTRICAS RÁPIDAS ---
-    col1, col2 = st.columns(2)
-    col1.metric("Total de Projetos", len(df))
-    # Tenta pegar o cliente com segurança (.get não funciona bem em Series solta, usamos iloc ou verificação)
-    ultimo_cliente = df.iloc[-1]['Cliente'] if 'Cliente' in df.columns else "---"
-    col2.metric("Último Cliente", ultimo_cliente)
+    if "Status" not in df.columns: df["Status"] = "Em Elaboração (Engenharia)"
     
+    # --- MÉTRICAS DE TOPO ---
+    total = len(df)
+    # Contagem rápida para Obras
+    pendencia_obras = len(df[df["Status"].str.contains("Aguardando Obras", na=False)])
+    
+    m1, m2 = st.columns([1, 3])
+    m1.metric("Total de Projetos", total)
+    if pendencia_obras > 0:
+        m2.warning(f"⚠️ Atenção Obras: Existem {pendencia_obras} projetos na sua fila!")
+    else:
+        m2.success("✅ Fila de Obras Zerada! O fluxo está fluindo.")
+
     st.divider()
 
-    # --- 3. SELEÇÃO SIMPLIFICADA (DROPDOWN) ---
-    st.markdown("### ✏️ Editar Projeto")
+    # --- KANBAN (4 COLUNAS) ---
+    col_eng, col_obras, col_supr, col_fim = st.columns(4)
     
-    # Verifica se as colunas essenciais existem antes de criar o Display
-    if 'Cliente' in df.columns and 'Obra' in df.columns:
-        df['Display'] = df['_id_linha'].astype(str) + " | " + df['Cliente'] + " - " + df['Obra']
-    else:
-        # Se os nomes estiverem errados na planilha, usa o índice
-        df['Display'] = "Linha " + df['_id_linha'].astype(str)
-
-    # Caixa de Seleção
-    projeto_escolhido = st.selectbox(
-        "Selecione o projeto na lista abaixo:",
-        options=df['Display'],
-        index=None,
-        placeholder="Clique aqui para buscar..."
-    )
-
-    # --- 4. AÇÃO ---
-    if projeto_escolhido:
-        row = df[df['Display'] == projeto_escolhido].iloc[0]
+    # ------------------------------------------------------------
+    # 1. RAIA: ENGENHARIA (NASCIMENTO)
+    # ------------------------------------------------------------
+    with col_eng:
+        st.subheader("👷 Engenharia")
+        st.markdown("---")
         
-        # --- CORREÇÃO DO ERRO AQUI ---
-        # Tenta achar o valor em várias colunas possíveis ou deixa vazio
-        valor_mostrado = "---"
-        possiveis_nomes = ["Valor", "Valor Total", "Total", "valor", "valor_total"]
+        filtro_eng = df[df["Status"] == "Em Elaboração (Engenharia)"]
         
-        for nome in possiveis_nomes:
-            if nome in row:
-                valor_mostrado = row[nome]
-                break
-        # -----------------------------
+        for index, row in filtro_eng.iterrows():
+            with st.container(border=True):
+                st.markdown(f"**{row['Cliente']}**")
+                st.caption(f"📍 {row['Obra']}")
+                st.info("Em Elaboração")
+                
+                if st.button(f"✏️ Editar", key=f"btn_eng_{row['_id_linha']}"):
+                    st.session_state['dados_projeto'] = row.to_dict()
+                    st.session_state['modo_edicao'] = True
+                    st.switch_page("pages/1_❄️_Escopo_Dutos.py")
 
-        st.info(f"Você selecionou: **{row.get('Cliente', 'Sem Cliente')}** (Valor: {valor_mostrado})")
+    # ------------------------------------------------------------
+    # 2. RAIA: OBRAS (VALIDAÇÃO)
+    # ------------------------------------------------------------
+    with col_obras:
+        st.subheader("🚧 Obras")
+        st.markdown("---")
         
-        if st.button("🚀 ABRIR EDITOR DE ESCOPO", type="primary"):
-            st.session_state['dados_projeto'] = row.to_dict()
-            st.session_state['modo_edicao'] = True
-            st.switch_page("pages/1_❄️_Escopo_Dutos.py")
+        filtro_obras = df[df["Status"] == "Aguardando Obras"]
+        
+        for index, row in filtro_obras.iterrows():
+            with st.container(border=True):
+                st.markdown(f"**{row['Cliente']}**")
+                st.caption(f"📍 {row['Obra']}")
+                st.warning("⚠️ Validar Escopo")
+                
+                if st.button(f"✏️ Validar", key=f"btn_obr_{row['_id_linha']}"):
+                    st.session_state['dados_projeto'] = row.to_dict()
+                    st.session_state['modo_edicao'] = True
+                    st.switch_page("pages/1_❄️_Escopo_Dutos.py")
 
-    st.markdown("---")
-    st.markdown("### 📋 Visão Geral (Tabela)")
-    st.caption("Abaixo estão os dados exatos lidos da planilha. Verifique os nomes das colunas na Linha 1.")
-    st.dataframe(
-        df, 
-        use_container_width=True, 
-        hide_index=True,
-        column_config={"Display": None, "_id_linha": None}
-    )
+    # ------------------------------------------------------------
+    # 3. RAIA: SUPRIMENTOS (COTAÇÃO)
+    # ------------------------------------------------------------
+    with col_supr:
+        st.subheader("💰 Suprimentos")
+        st.markdown("---")
+        
+        lista_suprimentos = ["Recebido (Suprimentos)", "Enviado para Cotação", "Em Negociação"]
+        filtro_supr = df[df["Status"].isin(lista_suprimentos)]
+        
+        for index, row in filtro_supr.iterrows():
+            with st.container(border=True):
+                st.markdown(f"**{row['Cliente']}**")
+                st.caption(f"📍 {row['Obra']}")
+                
+                # Mostra o Fornecedor (ou Genérico)
+                fornecedor = row.get('Fornecedor', '')
+                if not fornecedor or fornecedor == "PROPONENTE DE DUTOS":
+                    st.text("🏢 Múltiplos Proponentes")
+                else:
+                    st.text(f"🏢 {fornecedor}")
+                
+                # Tag de Status Específica
+                status_atual = row['Status']
+                if "Recebido" in status_atual: st.info("📥 Recebido")
+                elif "Cotação" in status_atual: st.markdown(":orange[📤 Em Cotação]")
+                elif "Negociação" in status_atual: st.markdown(":violet[🤝 Negociação]")
+                
+                if st.button(f"✏️ Atualizar", key=f"btn_sup_{row['_id_linha']}"):
+                    st.session_state['dados_projeto'] = row.to_dict()
+                    st.session_state['modo_edicao'] = True
+                    st.switch_page("pages/1_❄️_Escopo_Dutos.py")
+
+    # ------------------------------------------------------------
+    # 4. RAIA: CONCLUÍDOS
+    # ------------------------------------------------------------
+    with col_fim:
+        st.subheader("✅ Concluídos")
+        st.markdown("---")
+        
+        filtro_fim = df[df["Status"] == "Contratação Finalizada"]
+        
+        for index, row in filtro_fim.iterrows():
+            with st.container(border=True):
+                st.markdown(f"**{row['Cliente']}**")
+                st.caption(f"📍 {row['Obra']}")
+                st.success(f"🤝 {row.get('Fornecedor', 'Fechado')}")
+                
+                val = row.get('Valor', '')
+                if val: st.caption(f"Valor: {val}")
+                
+                # Botão apenas visualização
+                if st.button(f"👁️ Ver Detalhes", key=f"btn_fim_{row['_id_linha']}"):
+                    st.session_state['dados_projeto'] = row.to_dict()
+                    st.session_state['modo_edicao'] = True
+                    st.switch_page("pages/1_❄️_Escopo_Dutos.py")
 
 else:
-    st.info("📭 Nenhum projeto encontrado. Vá em 'Escopo Dutos' e crie o primeiro!")
+    st.info("📭 Nenhum projeto encontrado no banco de dados.")
