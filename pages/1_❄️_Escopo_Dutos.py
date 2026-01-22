@@ -134,8 +134,7 @@ with tab1:
         revisao = st.text_input("Revisão", "R-00")
         projetos_ref = st.text_input("Projetos Ref.")
         
-        # --- ALTERADO: E-MAIL INTERNO ---
-        # Aqui você define o e-mail padrão do seu time
+        # E-MAIL
         email_suprimentos = st.text_input("📧 Enviar para Suprimentos:", value="suprimentos@siarcon.com.br")
 
     resumo_escopo = st.text_area("Resumo")
@@ -251,54 +250,65 @@ else:
             docx_buffer = gerar_docx(dados)
             nome_arq = f"Escopo_{fornecedor}.docx"
             
+            # Garante que o buffer está no início (Bug fix)
+            docx_buffer.seek(0)
+            
             with st.spinner("Salvando no Google Sheets..."):
                 utils_db.registrar_projeto(dados, id_linha=id_linha_edicao)
-                
                 if id_linha_edicao:
                     st.success(f"✅ Projeto Atualizado!")
                 else:
                     st.success("✅ Novo Projeto Registrado!")
 
-            # Botões de Ação
+            # BOTOES FINAIS
             c_down, c_email = st.columns(2)
             
             with c_down:
                 st.download_button("📥 Baixar DOCX", docx_buffer.getvalue(), nome_arq, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True)
             
-            # --- E-MAIL PARA SUPRIMENTOS ---
             with c_email:
                 if email_suprimentos:
-                    # Texto do botão mudou
-                    if st.button(f"📧 Enviar para Suprimentos", use_container_width=True):
-                        with st.spinner("Enviando solicitação de cotação..."):
+                    if st.button(f"📧 Enviar ZIP para Suprimentos", use_container_width=True):
+                        with st.spinner("Compactando e Enviando..."):
                             
-                            # Corpo do e-mail alterado para comunicação interna
+                            # --- CRIA O ZIP PARA O E-MAIL (BURLAR FILTRO) ---
+                            email_zip_buffer = io.BytesIO()
+                            with zipfile.ZipFile(email_zip_buffer, "w") as zf:
+                                # Adiciona o DOCX
+                                zf.writestr(nome_arq, docx_buffer.getvalue())
+                                # Adiciona anexos se houver
+                                if arquivos_anexos:
+                                    for f in arquivos_anexos:
+                                        zf.writestr(f.name, f.getvalue())
+                            
+                            # Reseta ponteiro do ZIP
+                            email_zip_buffer.seek(0)
+                            # -----------------------------------------------
+
                             corpo_email = f"""
                             Olá Time de Suprimentos,
                             
-                            O escopo técnico para a obra **{obra}** (Cliente: {cliente}) foi finalizado e aprovado pela Engenharia/Obras.
+                            O escopo técnico para a obra **{obra}** (Cliente: {cliente}) foi finalizado e aprovado.
                             
                             Fornecedor Indicado: {fornecedor}
-                            Responsável Técnico: {responsavel}
+                            Responsável: {responsavel}
                             
-                            O documento segue em anexo para início do processo de cotação.
+                            Segue em anexo o pacote de documentos (ZIP) para cotação.
                             
                             Att,
-                            Sistema Portal SIARCON
+                            Portal SIARCON
                             """
                             
                             resultado = utils_email.enviar_email_com_anexo(
                                 destinatario=email_suprimentos,
                                 assunto=f"Cotação Liberada: {obra} - {fornecedor}",
                                 corpo=corpo_email,
-                                arquivo_bytes=docx_buffer.getvalue(),
-                                nome_arquivo=nome_arq
+                                arquivo_bytes=email_zip_buffer.getvalue(),
+                                nome_arquivo=f"Pacote_{fornecedor}.zip" # Agora vai como ZIP
                             )
                             
                             if resultado is True:
                                 st.balloons()
-                                st.success(f"📧 Escopo enviado para o time de Suprimentos ({email_suprimentos})!")
+                                st.success(f"📧 Pacote ZIP enviado com sucesso para {email_suprimentos}!")
                             else:
                                 st.error(f"Falha no envio: {resultado}")
-                else:
-                    st.info("💡 Preencha o e-mail de suprimentos na aba 1.")
