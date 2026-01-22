@@ -11,8 +11,10 @@ import utils_db
 # --- CONFIGURAÇÃO ---
 st.set_page_config(page_title="Escopo Dutos | SIARCON", page_icon="❄️", layout="wide")
 
-# --- FUNÇÃO DE CALLBACK (SALVAR E LIMPAR) ---
+# --- FUNÇÕES AUXILIARES E CALLBACKS ---
+
 def adicionar_item_callback(categoria, key_input):
+    """Salva item novo no banco e limpa o campo."""
     novo_item = st.session_state.get(key_input, "")
     if novo_item:
         retorno = utils_db.aprender_novo_item(categoria, novo_item)
@@ -26,6 +28,20 @@ def adicionar_item_callback(categoria, key_input):
             st.toast("❌ Erro ao conectar com a planilha.", icon="❌")
     else:
         st.toast("⚠️ Digite algo antes de salvar.", icon="✍️")
+
+def callback_atualizar_nomes_anexos():
+    """
+    Gatilha quando arquivos são adicionados.
+    Pega os nomes e preenche o campo 'Projetos Ref'.
+    """
+    arquivos = st.session_state.get("uploader_anexos", [])
+    if arquivos:
+        # Pega lista de nomes
+        nomes = [f.name for f in arquivos]
+        # Junta com ponto e vírgula
+        texto_final = "; ".join(nomes)
+        # Atualiza o campo de texto automaticamente
+        st.session_state["input_proj_ref"] = texto_final
 
 # --- LÓGICA DE EDIÇÃO ---
 dados_edicao = {}
@@ -140,27 +156,39 @@ with tab1:
         val_obra = dados_edicao.get('Obra', '')
         obra = st.text_input("Obra", value=val_obra)
         
+        # Lógica Fornecedor
         val_forn = dados_edicao.get('Fornecedor', '')
         if val_forn == "PROPONENTE DE DUTOS": val_forn = "" 
-        
         fornecedor_input = st.text_input("Fornecedor", value=val_forn, placeholder="Deixe em branco p/ genérico")
         
-        if not fornecedor_input:
-            fornecedor_final = "PROPONENTE DE DUTOS"
-        else:
-            fornecedor_final = fornecedor_input
+        if not fornecedor_input: fornecedor_final = "PROPONENTE DE DUTOS"
+        else: fornecedor_final = fornecedor_input
             
     with c2:
         val_resp = dados_edicao.get('Responsável', 'Engenharia')
         responsavel = st.text_input("Responsável", value=val_resp)
         
         revisao = st.text_input("Revisão", "R-00")
-        projetos_ref = st.text_input("Projetos Ref.")
+        
+        # --- AUTOMAÇÃO DE PROJETOS REF ---
+        # Inicializa o session_state com o valor do banco se ainda não existir
+        if "input_proj_ref" not in st.session_state:
+            st.session_state["input_proj_ref"] = dados_edicao.get('projetos_ref', '')
+
+        # Campo vinculado à memória (key)
+        projetos_ref = st.text_input("Projetos Ref.", key="input_proj_ref", help="Este campo é preenchido automaticamente ao anexar arquivos.")
         
         email_suprimentos = st.text_input("📧 E-mail de Suprimentos/Obras:", value="suprimentos@siarcon.com.br")
 
     resumo_escopo = st.text_area("Resumo")
-    arquivos_anexos = st.file_uploader("Anexos", accept_multiple_files=True)
+    
+    # --- UPLOADER COM GATILHO ---
+    arquivos_anexos = st.file_uploader(
+        "Anexos (O nome dos arquivos irá para 'Projetos Ref.' automaticamente)", 
+        accept_multiple_files=True,
+        key="uploader_anexos",
+        on_change=callback_atualizar_nomes_anexos # <--- A Mágica acontece aqui
+    )
 
 with tab2:
     st.subheader("Técnico")
@@ -264,11 +292,16 @@ else:
                 erro_validacao = True
         
         if not erro_validacao:
+            # Pega o valor do session_state (pois o widget tem key)
+            val_proj_ref = st.session_state.get("input_proj_ref", "")
+            
             dados = {
                 'cliente': cliente, 'obra': obra, 
                 'fornecedor': fornecedor_final,
                 'responsavel': responsavel, 
-                'revisao': revisao, 'projetos_ref': projetos_ref, 'resumo_escopo': resumo_escopo,
+                'revisao': revisao, 
+                'projetos_ref': val_proj_ref, # <--- Usa o valor do campo atualizado
+                'resumo_escopo': resumo_escopo,
                 'itens_tecnicos': itens_tecnicos, 'tecnico_livre': tecnico_livre,
                 'itens_qualidade': itens_qualidade, 'qualidade_livre': qualidade_livre,
                 'matriz': escolhas_matriz, 'nrs_selecionadas': nrs,
@@ -295,8 +328,9 @@ else:
                 st.info("Arquivo:")
                 st.download_button("📥 Baixar DOCX", docx_buffer.getvalue(), nome_arq, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True)
             
+            # OPÇÃO MANUAL APENAS
             with c2:
-                st.info("Notificação Manual:")
+                st.info("Notificação:")
                 assunto_cot = f"Atualização: {obra} - {novo_status}"
                 corpo_cot = f"Olá,\n\nSegue documento atualizado.\nObra: {obra}\nStatus: {novo_status}"
                 link_cot = f"mailto:{email_suprimentos}?subject={urllib.parse.quote(assunto_cot)}&body={urllib.parse.quote(corpo_cot)}"
