@@ -6,6 +6,7 @@ import io
 import zipfile
 from datetime import date, timedelta
 import utils_db
+import utils_email
 
 # --- CONFIGURAÇÃO ---
 st.set_page_config(page_title="Escopo Dutos | SIARCON", page_icon="❄️", layout="wide")
@@ -83,11 +84,9 @@ def gerar_docx(dados):
         row = table_m.add_row().cells
         row[0].text = item
         if resp == "SIARCON": 
-            row[1].text = "X"
-            row[1].paragraphs[0].alignment = 1
+            row[1].text = "X"; row[1].paragraphs[0].alignment = 1
         else: 
-            row[2].text = "X"
-            row[2].paragraphs[0].alignment = 1
+            row[2].text = "X"; row[2].paragraphs[0].alignment = 1
 
     document.add_heading('5. SMS', level=1)
     document.add_paragraph("Documentos Padrão (ASO, Fichas, NR-06...)", style='List Bullet')
@@ -114,12 +113,11 @@ def gerar_docx(dados):
 # --- FRONT END ---
 st.title("❄️ Escopo de Dutos")
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["1. Cadastro", "2. Técnico", "3. Matriz", "4. SMS", "5. Comercial"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["1. Cadastro", "2. Técnico", "3. Matriz", "4. SMS", "5. Comercial e Status"])
 
 with tab1:
     c1, c2 = st.columns(2)
     with c1:
-        # Preenchimento automático (Value)
         val_cli = dados_edicao.get('Cliente', '')
         cliente = st.text_input("Cliente", value=val_cli)
         
@@ -128,19 +126,23 @@ with tab1:
         
         val_forn = dados_edicao.get('Fornecedor', '')
         fornecedor = st.text_input("Fornecedor", value=val_forn)
+        
     with c2:
         val_resp = dados_edicao.get('Responsável', 'Engenharia')
         responsavel = st.text_input("Responsável", value=val_resp)
         
         revisao = st.text_input("Revisão", "R-00")
         projetos_ref = st.text_input("Projetos Ref.")
-    
+        
+        # --- ALTERADO: E-MAIL INTERNO ---
+        # Aqui você define o e-mail padrão do seu time
+        email_suprimentos = st.text_input("📧 Enviar para Suprimentos:", value="suprimentos@siarcon.com.br")
+
     resumo_escopo = st.text_area("Resumo")
     arquivos_anexos = st.file_uploader("Anexos", accept_multiple_files=True)
 
 with tab2:
     st.subheader("Técnico")
-    # Usa .get() para segurança
     opcoes_tec = st.session_state['opcoes_db'].get('tecnico', [])
     itens_tecnicos = st.multiselect("Selecione:", options=opcoes_tec)
     
@@ -201,6 +203,7 @@ with tab4:
     d_fim = st.date_input("Fim", date.today()+timedelta(days=30))
 
 with tab5:
+    st.subheader("Informações Comerciais")
     val_total = dados_edicao.get('Valor', 'R$ 0,00')
     valor = st.text_input("Total", value=val_total)
     
@@ -208,44 +211,94 @@ with tab5:
     info = st.text_input("Info Extra")
     obs = st.text_area("Obs")
 
+    st.divider()
+    
+    st.subheader("🚦 Status do Workflow")
+    status_atual = dados_edicao.get('Status', 'Em Elaboração (Engenharia)')
+    lista_status = ["Em Elaboração (Engenharia)", "Aguardando Obras", "Finalizado / Contratado"]
+    try: idx_status = lista_status.index(status_atual)
+    except: idx_status = 0
+    novo_status = st.selectbox("Situação Atual:", lista_status, index=idx_status)
+    if novo_status == "Finalizado / Contratado":
+        st.warning("🔒 ATENÇÃO: Ao salvar como 'Finalizado', este projeto não poderá ser editado futuramente.")
+
 st.markdown("---")
 
-label_botao = "💾 ATUALIZAR PROJETO" if id_linha_edicao else "🚀 GERAR CONTRATO & REGISTRAR"
+# --- LÓGICA DE BOTÕES ---
+if status_atual == "Finalizado / Contratado" and 'modo_edicao' in st.session_state:
+    st.error("🔒 ESTE PROJETO JÁ FOI FINALIZADO. Edição bloqueada.")
+    st.download_button("📥 Apenas Baixar DOCX", gerar_docx(dados_edicao).getvalue(), f"Escopo_{val_forn}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
-if st.button(label_botao, type="primary", use_container_width=True):
-    if not fornecedor:
-        st.error("Faltou o fornecedor!")
-    else:
-        # Prepara dicionário de dados
-        dados = {
-            'cliente': cliente, 'obra': obra, 'fornecedor': fornecedor, 'responsavel': responsavel, 
-            'revisao': revisao, 'projetos_ref': projetos_ref, 'resumo_escopo': resumo_escopo,
-            'itens_tecnicos': itens_tecnicos, 'tecnico_livre': tecnico_livre,
-            'itens_qualidade': itens_qualidade, 'qualidade_livre': qualidade_livre,
-            'matriz': escolhas_matriz, 'nrs_selecionadas': nrs,
-            'data_inicio': d_ini, 'dias_integracao': d_int, 'data_fim': d_fim,
-            'obs_gerais': obs, 'valor_total': valor, 'condicao_pgto': pgto, 'info_comercial': info,
-            'nomes_anexos': [f.name for f in arquivos_anexos] if arquivos_anexos else []
-        }
-        
-        docx = gerar_docx(dados)
-        nome_arq = f"Escopo_{fornecedor}.docx"
-        
-        with st.spinner("Salvando no Google Sheets..."):
-            utils_db.registrar_projeto(dados, id_linha=id_linha_edicao)
-            
-            if id_linha_edicao:
-                st.success("✅ Projeto Atualizado com Sucesso!")
-                st.session_state['modo_edicao'] = False
-                st.session_state['dados_projeto'] = {}
-            else:
-                st.success("✅ Novo Projeto Registrado!")
+else:
+    label_botao = "💾 ATUALIZAR PROJETO" if id_linha_edicao else "🚀 GERAR CONTRATO & REGISTRAR"
 
-        if arquivos_anexos:
-            zip_buffer = io.BytesIO()
-            with zipfile.ZipFile(zip_buffer, "w") as zf:
-                zf.writestr(nome_arq, docx.getvalue())
-                for f in arquivos_anexos: zf.writestr(f.name, f.getvalue())
-            st.download_button("📥 Baixar ZIP", zip_buffer.getvalue(), f"Pacote_{fornecedor}.zip", "application/zip")
+    if st.button(label_botao, type="primary", use_container_width=True):
+        if not fornecedor:
+            st.error("Faltou o fornecedor!")
         else:
-            st.download_button("📥 Baixar DOCX", docx.getvalue(), nome_arq, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+            dados = {
+                'cliente': cliente, 'obra': obra, 'fornecedor': fornecedor, 'responsavel': responsavel, 
+                'revisao': revisao, 'projetos_ref': projetos_ref, 'resumo_escopo': resumo_escopo,
+                'itens_tecnicos': itens_tecnicos, 'tecnico_livre': tecnico_livre,
+                'itens_qualidade': itens_qualidade, 'qualidade_livre': qualidade_livre,
+                'matriz': escolhas_matriz, 'nrs_selecionadas': nrs,
+                'data_inicio': d_ini, 'dias_integracao': d_int, 'data_fim': d_fim,
+                'obs_gerais': obs, 'valor_total': valor, 'condicao_pgto': pgto, 'info_comercial': info,
+                'status': novo_status,
+                'nomes_anexos': [f.name for f in arquivos_anexos] if arquivos_anexos else []
+            }
+            
+            docx_buffer = gerar_docx(dados)
+            nome_arq = f"Escopo_{fornecedor}.docx"
+            
+            with st.spinner("Salvando no Google Sheets..."):
+                utils_db.registrar_projeto(dados, id_linha=id_linha_edicao)
+                
+                if id_linha_edicao:
+                    st.success(f"✅ Projeto Atualizado!")
+                else:
+                    st.success("✅ Novo Projeto Registrado!")
+
+            # Botões de Ação
+            c_down, c_email = st.columns(2)
+            
+            with c_down:
+                st.download_button("📥 Baixar DOCX", docx_buffer.getvalue(), nome_arq, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True)
+            
+            # --- E-MAIL PARA SUPRIMENTOS ---
+            with c_email:
+                if email_suprimentos:
+                    # Texto do botão mudou
+                    if st.button(f"📧 Enviar para Suprimentos", use_container_width=True):
+                        with st.spinner("Enviando solicitação de cotação..."):
+                            
+                            # Corpo do e-mail alterado para comunicação interna
+                            corpo_email = f"""
+                            Olá Time de Suprimentos,
+                            
+                            O escopo técnico para a obra **{obra}** (Cliente: {cliente}) foi finalizado e aprovado pela Engenharia/Obras.
+                            
+                            Fornecedor Indicado: {fornecedor}
+                            Responsável Técnico: {responsavel}
+                            
+                            O documento segue em anexo para início do processo de cotação.
+                            
+                            Att,
+                            Sistema Portal SIARCON
+                            """
+                            
+                            resultado = utils_email.enviar_email_com_anexo(
+                                destinatario=email_suprimentos,
+                                assunto=f"Cotação Liberada: {obra} - {fornecedor}",
+                                corpo=corpo_email,
+                                arquivo_bytes=docx_buffer.getvalue(),
+                                nome_arquivo=nome_arq
+                            )
+                            
+                            if resultado is True:
+                                st.balloons()
+                                st.success(f"📧 Escopo enviado para o time de Suprimentos ({email_suprimentos})!")
+                            else:
+                                st.error(f"Falha no envio: {resultado}")
+                else:
+                    st.info("💡 Preencha o e-mail de suprimentos na aba 1.")
