@@ -1,3 +1,18 @@
+Para facilitar e não ter risco de erro ao juntar os pedaços, vou te passar o CÓDIGO COMPLETO do arquivo pages/1_❄️_Escopo_Dutos.py.
+
+Este código já inclui:
+
+    A Mudança 1: O sistema verifica se veio do Dashboard (Modo Edição).
+
+    A Mudança 2: Os campos (Cliente, Obra, Fornecedor, Valor) já vêm preenchidos com o que estava na planilha.
+
+    A Mudança 3: O botão Salvar agora atualiza a linha em vez de criar uma nova duplicada.
+
+📄 Arquivo: pages/1_❄️_Escopo_Dutos.py
+
+Substitua todo o conteúdo deste arquivo por este bloco abaixo:
+Python
+
 import streamlit as st
 from docx import Document
 from docx.shared import Pt
@@ -10,8 +25,23 @@ import utils_db
 # --- CONFIGURAÇÃO ---
 st.set_page_config(page_title="Escopo Dutos | SIARCON", page_icon="❄️", layout="wide")
 
+# --- LÓGICA DE EDIÇÃO (MUDANÇA 1) ---
+# Verifica se o usuário chegou aqui clicando no botão "Editar" do Dashboard
+dados_edicao = {}
+id_linha_edicao = None
+
+if 'modo_edicao' in st.session_state and st.session_state['modo_edicao']:
+    st.info("✏️ MODO EDIÇÃO ATIVO: Você está alterando um registro existente.")
+    dados_edicao = st.session_state.get('dados_projeto', {})
+    id_linha_edicao = dados_edicao.get('_id_linha') # Pega o ID da linha oculta
+    
+    # Botão de cancelar
+    if st.button("❌ Cancelar Edição (Limpar)"):
+        st.session_state['modo_edicao'] = False
+        st.session_state['dados_projeto'] = {}
+        st.rerun()
+
 # --- CARREGAR DADOS DO GOOGLE SHEETS ---
-# Garante que a chave 'opcoes_db' existe antes de qualquer coisa
 if 'opcoes_db' not in st.session_state:
     with st.spinner("Carregando banco de dados..."):
         st.session_state['opcoes_db'] = utils_db.carregar_opcoes()
@@ -99,12 +129,21 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs(["1. Cadastro", "2. Técnico", "3. Matriz
 
 with tab1:
     c1, c2 = st.columns(2)
+    # MUDANÇA 2: PREENCHIMENTO AUTOMÁTICO (value=...)
     with c1:
-        cliente = st.text_input("Cliente", "Hitachi")
-        obra = st.text_input("Obra", "Guarulhos")
-        fornecedor = st.text_input("Fornecedor")
+        # Se tiver dados_edicao['Cliente'], usa ele. Senão usa vazio.
+        val_cli = dados_edicao.get('Cliente', '')
+        cliente = st.text_input("Cliente", value=val_cli)
+        
+        val_obra = dados_edicao.get('Obra', '')
+        obra = st.text_input("Obra", value=val_obra)
+        
+        val_forn = dados_edicao.get('Fornecedor', '')
+        fornecedor = st.text_input("Fornecedor", value=val_forn)
     with c2:
-        responsavel = st.text_input("Responsável", "Engenharia")
+        val_resp = dados_edicao.get('Responsável', 'Engenharia')
+        responsavel = st.text_input("Responsável", value=val_resp)
+        
         revisao = st.text_input("Revisão", "R-00")
         projetos_ref = st.text_input("Projetos Ref.")
     resumo_escopo = st.text_area("Resumo")
@@ -112,7 +151,6 @@ with tab1:
 
 with tab2:
     st.subheader("Técnico")
-    # Usa .get() para evitar erro se a chave não existir
     opcoes_tec = st.session_state['opcoes_db'].get('tecnico', [])
     itens_tecnicos = st.multiselect("Selecione:", options=opcoes_tec)
     
@@ -124,14 +162,13 @@ with tab2:
                 utils_db.aprender_novo_item("tecnico", novo_tec)
                 st.success("Salvo!")
                 del st.session_state['opcoes_db'] 
-                st.rerun() # <--- O SEGREDO ESTÁ AQUI (Reinicia a página)
+                st.rerun()
                 
     with col_free: tecnico_livre = st.text_area("Texto Livre (Técnico)")
     
     st.divider()
     
     st.subheader("Qualidade")
-    # Usa .get() para segurança
     opcoes_qual = st.session_state['opcoes_db'].get('qualidade', [])
     itens_qualidade = st.multiselect("Selecione Qualidade:", options=opcoes_qual)
     
@@ -143,7 +180,7 @@ with tab2:
                 utils_db.aprender_novo_item("qualidade", novo_qual)
                 st.success("Salvo!")
                 del st.session_state['opcoes_db']
-                st.rerun() # <--- REINICIA A PÁGINA AQUI TAMBÉM
+                st.rerun()
     with c_q2: qualidade_livre = st.text_input("Texto Livre (Qualidade)")
 
 with tab3:
@@ -166,7 +203,7 @@ with tab4:
             utils_db.aprender_novo_item("sms", novo_sms)
             st.success("Salvo!")
             del st.session_state['opcoes_db']
-            st.rerun() # <--- REINICIA A PÁGINA AQUI TAMBÉM
+            st.rerun()
 
     st.divider()
     d_ini = st.date_input("Início")
@@ -174,13 +211,20 @@ with tab4:
     d_fim = st.date_input("Fim", date.today()+timedelta(days=30))
 
 with tab5:
-    valor = st.text_input("Total", "R$ 0,00")
+    # Preenchimento automático do valor se estiver editando
+    val_total = dados_edicao.get('Valor', 'R$ 0,00')
+    valor = st.text_input("Total", value=val_total)
+    
     pgto = st.text_area("Pagamento")
     info = st.text_input("Info Extra")
     obs = st.text_area("Obs")
 
 st.markdown("---")
-if st.button("🚀 GERAR CONTRATO & REGISTRAR NO BANCO", type="primary", use_container_width=True):
+
+# MUDANÇA 3: ATUALIZAR AO INVÉS DE CRIAR NOVO
+label_botao = "💾 ATUALIZAR PROJETO" if id_linha_edicao else "🚀 GERAR CONTRATO & REGISTRAR"
+
+if st.button(label_botao, type="primary", use_container_width=True):
     if not fornecedor:
         st.error("Faltou o fornecedor!")
     else:
@@ -198,9 +242,17 @@ if st.button("🚀 GERAR CONTRATO & REGISTRAR NO BANCO", type="primary", use_con
         docx = gerar_docx(dados)
         nome_arq = f"Escopo_{fornecedor}.docx"
         
-        with st.spinner("Salvando histórico..."):
-            utils_db.registrar_projeto(dados)
-            st.success("✅ Projeto registrado no Banco de Dados!")
+        with st.spinner("Salvando no Google Sheets..."):
+            # AQUI ESTÁ A MÁGICA: Passamos o ID da linha para atualizar
+            utils_db.registrar_projeto(dados, id_linha=id_linha_edicao)
+            
+            if id_linha_edicao:
+                st.success("✅ Projeto Atualizado com Sucesso!")
+                # Limpa o modo edição para evitar confusão
+                st.session_state['modo_edicao'] = False
+                st.session_state['dados_projeto'] = {}
+            else:
+                st.success("✅ Novo Projeto Registrado!")
 
         if arquivos_anexos:
             zip_buffer = io.BytesIO()
