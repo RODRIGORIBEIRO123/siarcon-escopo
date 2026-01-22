@@ -134,7 +134,6 @@ with tab1:
         revisao = st.text_input("Revisão", "R-00")
         projetos_ref = st.text_input("Projetos Ref.")
         
-        # E-MAIL
         email_suprimentos = st.text_input("📧 Enviar para Suprimentos:", value="suprimentos@siarcon.com.br")
 
     resumo_escopo = st.text_area("Resumo")
@@ -250,7 +249,7 @@ else:
             docx_buffer = gerar_docx(dados)
             nome_arq = f"Escopo_{fornecedor}.docx"
             
-            # Garante que o buffer está no início (Bug fix)
+            # Garante que o buffer está no início
             docx_buffer.seek(0)
             
             with st.spinner("Salvando no Google Sheets..."):
@@ -268,23 +267,10 @@ else:
             
             with c_email:
                 if email_suprimentos:
-                    if st.button(f"📧 Enviar ZIP para Suprimentos", use_container_width=True):
-                        with st.spinner("Compactando e Enviando..."):
+                    # Envia DOCX Direto (Sem ZIP)
+                    if st.button(f"📧 Enviar DOCX para Suprimentos", use_container_width=True):
+                        with st.spinner("Enviando documento..."):
                             
-                            # --- CRIA O ZIP PARA O E-MAIL (BURLAR FILTRO) ---
-                            email_zip_buffer = io.BytesIO()
-                            with zipfile.ZipFile(email_zip_buffer, "w") as zf:
-                                # Adiciona o DOCX
-                                zf.writestr(nome_arq, docx_buffer.getvalue())
-                                # Adiciona anexos se houver
-                                if arquivos_anexos:
-                                    for f in arquivos_anexos:
-                                        zf.writestr(f.name, f.getvalue())
-                            
-                            # Reseta ponteiro do ZIP
-                            email_zip_buffer.seek(0)
-                            # -----------------------------------------------
-
                             corpo_email = f"""
                             Olá Time de Suprimentos,
                             
@@ -293,7 +279,7 @@ else:
                             Fornecedor Indicado: {fornecedor}
                             Responsável: {responsavel}
                             
-                            Segue em anexo o pacote de documentos (ZIP) para cotação.
+                            Segue em anexo o documento para cotação.
                             
                             Att,
                             Portal SIARCON
@@ -303,12 +289,12 @@ else:
                                 destinatario=email_suprimentos,
                                 assunto=f"Cotação Liberada: {obra} - {fornecedor}",
                                 corpo=corpo_email,
-                                arquivo_bytes=email_zip_buffer.getvalue(),
-                                nome_arquivo=f"Pacote_{fornecedor}.zip" # Agora vai como ZIP
+                                arquivo_bytes=docx_buffer.getvalue(), # Buffer do DOCX direto
+                                nome_arquivo=nome_arq
                             )
                             
                             if resultado is True:
                                 st.balloons()
-                                st.success(f"📧 Pacote ZIP enviado com sucesso para {email_suprimentos}!")
+                                st.success(f"📧 Documento enviado para {email_suprimentos}! (Verifique SPAM)")
                             else:
                                 st.error(f"Falha no envio: {resultado}")
