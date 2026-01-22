@@ -54,7 +54,6 @@ def listar_todos_projetos():
         header = rows[0]
         data = rows[1:]
         
-        # Cria DataFrame
         df = pd.DataFrame(data, columns=header)
         df['_id_linha'] = range(2, len(data) + 2) 
         return df
@@ -68,20 +67,18 @@ def registrar_projeto(dados, id_linha=None):
         sh = conectar_google_sheets()
         ws = sh.worksheet("Projetos")
         
-        # Organiza a linha na ordem correta das colunas
         linha = [
             datetime.now().strftime("%d/%m/%Y %H:%M"),
             dados['cliente'],
             dados['obra'],
             dados['fornecedor'],
-            dados['responsavel'],     # Engenharia
+            dados['responsavel'],     
             dados['valor_total'],
             dados.get('status', 'Em Elaboração (Engenharia)'),
-            dados.get('resp_obras', '') # <--- NOVA COLUNA: Responsável Obras
+            dados.get('resp_obras', '')
         ]
         
         if id_linha:
-            # Atualiza colunas A até H (8 colunas)
             range_celulas = f"A{id_linha}:H{id_linha}"
             ws.update(range_name=range_celulas, values=[linha])
         else:
@@ -89,3 +86,15 @@ def registrar_projeto(dados, id_linha=None):
             
     except Exception as e:
         st.error(f"Erro ao salvar: {e}")
+
+# --- 5. EXCLUIR (NOVA FUNÇÃO) ---
+def excluir_projeto(id_linha):
+    """Apaga a linha correspondente na planilha"""
+    try:
+        sh = conectar_google_sheets()
+        ws = sh.worksheet("Projetos")
+        ws.delete_rows(id_linha)
+        return True
+    except Exception as e:
+        st.error(f"Erro ao excluir: {e}")
+        return False
