@@ -5,57 +5,59 @@ import utils_db
 st.set_page_config(page_title="Dashboard | SIARCON", page_icon="📊", layout="wide")
 st.title("📊 Painel de Projetos (Kanban)")
 
-if st.button("🔄 Atualizar Quadro"): st.rerun()
+if st.button("🔄 Atualizar Quadro"):
+    st.rerun()
 
 # --- CARREGAR DADOS ---
 df = utils_db.listar_todos_projetos()
 
-# --- FUNÇÃO DE CARTÃO KANBAN ---
+# --- FUNÇÃO QUE CRIA O CARTÃO VISUAL ---
 def card_projeto(row, cor_status="blue"):
-    """Cria o visual do cartão com botões Editar e Excluir lado a lado"""
+    """Cria um cartão Kanban com botões Editar e Excluir lado a lado"""
     with st.container(border=True):
         st.markdown(f"**{row['Cliente']}**")
         st.caption(f"📍 {row['Obra']}")
         st.markdown(f":{cor_status}[{row['Status']}]")
         
-        # COLUNAS PARA BOTÕES (Editar grande, Excluir pequeno)
-        c_edit, c_del = st.columns([0.8, 0.2])
+        # Cria duas colunas: 80% para Editar, 20% para Excluir
+        col_edit, col_del = st.columns([0.85, 0.15])
         
-        with c_edit:
+        with col_edit:
             if st.button(f"✏️ Editar", key=f"edit_{row['_id_linha']}", use_container_width=True):
                 st.session_state['dados_projeto'] = row.to_dict()
                 st.session_state['modo_edicao'] = True
                 st.switch_page("pages/1_❄️_Escopo_Dutos.py")
         
-        with c_del:
-            # Botão de Lixeira
-            if st.button("🗑️", key=f"del_{row['_id_linha']}", help="Excluir Projeto"):
+        with col_del:
+            # Botão Compacto de Excluir
+            if st.button("🗑️", key=f"del_{row['_id_linha']}", help="Excluir este projeto permanentemente"):
                 sucesso = utils_db.excluir_projeto(row['_id_linha'])
                 if sucesso:
-                    st.toast("Projeto excluído!", icon="🗑️")
+                    st.toast("Projeto excluído com sucesso!", icon="🗑️")
                     st.rerun()
                 else:
                     st.error("Erro ao excluir.")
 
-# --- RENDERIZAÇÃO DO DASHBOARD ---
+# --- RENDERIZAÇÃO DAS RAIAS ---
 if not df.empty:
-    # Garante que a coluna Status existe
-    if "Status" not in df.columns: df["Status"] = "Em Elaboração (Engenharia)"
+    # Garante coluna Status
+    if "Status" not in df.columns:
+        df["Status"] = "Em Elaboração (Engenharia)"
     
-    # Métricas
+    # Métricas de Topo
     total = len(df)
     pendencia_obras = len(df[df["Status"].str.contains("Aguardando Obras", na=False)])
     
     m1, m2 = st.columns([1, 3])
     m1.metric("Total de Projetos", total)
     if pendencia_obras > 0:
-        m2.warning(f"⚠️ Atenção Obras: Existem {pendencia_obras} projetos na sua fila!")
+        m2.warning(f"⚠️ Atenção Obras: Existem {pendencia_obras} projetos na fila!")
     else:
-        m2.success("✅ Fila de Obras Zerada! O fluxo está fluindo.")
+        m2.success("✅ Fila de Obras Zerada!")
 
     st.divider()
 
-    # Colunas do Kanban
+    # Define as 4 Colunas do Kanban
     col_eng, col_obras, col_supr, col_fim = st.columns(4)
     
     # 1. ENGENHARIA
@@ -92,4 +94,4 @@ if not df.empty:
             card_projeto(row, "green")
 
 else:
-    st.info("📭 Nenhum projeto encontrado no banco de dados.")
+    st.info("📭 Nenhum projeto encontrado. Cadastre um novo na aba lateral.")
