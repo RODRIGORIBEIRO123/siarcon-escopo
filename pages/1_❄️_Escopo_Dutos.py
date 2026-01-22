@@ -36,11 +36,8 @@ def callback_atualizar_nomes_anexos():
     """
     arquivos = st.session_state.get("uploader_anexos", [])
     if arquivos:
-        # Pega lista de nomes
         nomes = [f.name for f in arquivos]
-        # Junta com ponto e vírgula
         texto_final = "; ".join(nomes)
-        # Atualiza o campo de texto automaticamente
         st.session_state["input_proj_ref"] = texto_final
 
 # --- LÓGICA DE EDIÇÃO ---
@@ -82,9 +79,10 @@ def gerar_docx(dados):
     try: table.style = 'Table Grid'
     except: pass
     
-    ref_proj = dados['projetos_ref']
-    if dados['nomes_anexos']: ref_proj += " | Anexos: " + ", ".join(dados['nomes_anexos'])
-
+    # --- CORREÇÃO 1: REMOVIDA A DUPLICAÇÃO DE ANEXOS ---
+    # Agora só usa o texto que está no input (que já contem os nomes)
+    ref_proj = dados['projetos_ref'] 
+    
     infos = [("Cliente:", dados['cliente']), ("Local/Obra:", dados['obra']), 
              ("Projetos Ref:", ref_proj), ("Fornecedor:", dados['fornecedor']), 
              ("Responsável:", dados['responsavel'])]
@@ -121,8 +119,24 @@ def gerar_docx(dados):
             row[2].text = "X"; row[2].paragraphs[0].alignment = 1
 
     document.add_heading('5. SMS', level=1)
-    document.add_paragraph("Documentos Padrão (ASO, Fichas, NR-06...)", style='List Bullet')
-    for doc in dados['nrs_selecionadas']: document.add_paragraph(f"- {doc}")
+    
+    # --- CORREÇÃO 3: LISTA COMPLETA DE PADRÕES ---
+    # Lista fixa de documentos padrão
+    docs_padrao = [
+        "Ficha de registro",
+        "ASO (Atestado de Saúde Ocupacional)",
+        "Ficha de EPI",
+        "Ordem de Serviço",
+        "Certificados de Treinamento",
+        "NR-06 (Equipamento de Proteção Individual)"
+    ]
+    
+    for doc in docs_padrao:
+        document.add_paragraph(doc, style='List Bullet')
+        
+    # Documentos extras selecionados
+    for doc in dados['nrs_selecionadas']: 
+        document.add_paragraph(f"{doc} (Adicional)", style='List Bullet')
 
     document.add_heading('6. CRONOGRAMA', level=1)
     document.add_paragraph(f"Início: {dados['data_inicio'].strftime('%d/%m/%Y')} | Integração: {dados['dias_integracao']} dias antes.")
@@ -156,7 +170,6 @@ with tab1:
         val_obra = dados_edicao.get('Obra', '')
         obra = st.text_input("Obra", value=val_obra)
         
-        # Lógica Fornecedor
         val_forn = dados_edicao.get('Fornecedor', '')
         if val_forn == "PROPONENTE DE DUTOS": val_forn = "" 
         fornecedor_input = st.text_input("Fornecedor", value=val_forn, placeholder="Deixe em branco p/ genérico")
@@ -170,24 +183,21 @@ with tab1:
         
         revisao = st.text_input("Revisão", "R-00")
         
-        # --- AUTOMAÇÃO DE PROJETOS REF ---
-        # Inicializa o session_state com o valor do banco se ainda não existir
+        # Session State para Projetos Ref
         if "input_proj_ref" not in st.session_state:
             st.session_state["input_proj_ref"] = dados_edicao.get('projetos_ref', '')
 
-        # Campo vinculado à memória (key)
         projetos_ref = st.text_input("Projetos Ref.", key="input_proj_ref", help="Este campo é preenchido automaticamente ao anexar arquivos.")
         
         email_suprimentos = st.text_input("📧 E-mail de Suprimentos/Obras:", value="suprimentos@siarcon.com.br")
 
     resumo_escopo = st.text_area("Resumo")
     
-    # --- UPLOADER COM GATILHO ---
     arquivos_anexos = st.file_uploader(
         "Anexos (O nome dos arquivos irá para 'Projetos Ref.' automaticamente)", 
         accept_multiple_files=True,
         key="uploader_anexos",
-        on_change=callback_atualizar_nomes_anexos # <--- A Mágica acontece aqui
+        on_change=callback_atualizar_nomes_anexos
     )
 
 with tab2:
@@ -217,7 +227,22 @@ with tab2:
 
 with tab3:
     escolhas_matriz = {}
-    itens_matriz = ["Materiais dutos", "Difusão", "Consumíveis", "Vedação", "Plataformas", "Escadas", "Ferramental", "Alimentação", "Encargos", "Viagem", "EPIs"]
+    
+    # --- CORREÇÃO 2: MATRIZ ORIGINAL ---
+    # Restaurada a lista de inputs iniciais
+    itens_matriz = [
+        "Materiais dutos", 
+        "Difusão", 
+        "Consumíveis", 
+        "Vedação", 
+        "Plataformas", 
+        "Escadas", 
+        "Ferramental", 
+        "Alimentação", 
+        "Encargos", 
+        "Viagem", 
+        "EPIs"
+    ]
     
     nome_na_matriz = fornecedor_final.upper() if fornecedor_final else "PROPONENTE"
     st.info(f"Matriz de responsabilidades para: **{nome_na_matriz}**")
@@ -292,7 +317,7 @@ else:
                 erro_validacao = True
         
         if not erro_validacao:
-            # Pega o valor do session_state (pois o widget tem key)
+            # Pega valor atualizado do input
             val_proj_ref = st.session_state.get("input_proj_ref", "")
             
             dados = {
@@ -300,7 +325,7 @@ else:
                 'fornecedor': fornecedor_final,
                 'responsavel': responsavel, 
                 'revisao': revisao, 
-                'projetos_ref': val_proj_ref, # <--- Usa o valor do campo atualizado
+                'projetos_ref': val_proj_ref,
                 'resumo_escopo': resumo_escopo,
                 'itens_tecnicos': itens_tecnicos, 'tecnico_livre': tecnico_livre,
                 'itens_qualidade': itens_qualidade, 'qualidade_livre': qualidade_livre,
@@ -328,7 +353,6 @@ else:
                 st.info("Arquivo:")
                 st.download_button("📥 Baixar DOCX", docx_buffer.getvalue(), nome_arq, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True)
             
-            # OPÇÃO MANUAL APENAS
             with c2:
                 st.info("Notificação:")
                 assunto_cot = f"Atualização: {obra} - {novo_status}"
