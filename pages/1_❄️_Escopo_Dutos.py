@@ -59,7 +59,7 @@ if 'opcoes_db' not in st.session_state:
     with st.spinner("Carregando banco de dados..."):
         st.session_state['opcoes_db'] = utils_db.carregar_opcoes()
 
-# --- FUNÇÃO DOCX ---
+# --- FUNÇÃO DOCX (CORRIGIDA) ---
 def gerar_docx(dados):
     document = Document()
     try:
@@ -79,8 +79,6 @@ def gerar_docx(dados):
     try: table.style = 'Table Grid'
     except: pass
     
-    # --- CORREÇÃO 1: REMOVIDA A DUPLICAÇÃO DE ANEXOS ---
-    # Agora só usa o texto que está no input (que já contem os nomes)
     ref_proj = dados['projetos_ref'] 
     
     infos = [("Cliente:", dados['cliente']), ("Local/Obra:", dados['obra']), 
@@ -120,8 +118,6 @@ def gerar_docx(dados):
 
     document.add_heading('5. SMS', level=1)
     
-    # --- CORREÇÃO 3: LISTA COMPLETA DE PADRÕES ---
-    # Lista fixa de documentos padrão
     docs_padrao = [
         "Ficha de registro",
         "ASO (Atestado de Saúde Ocupacional)",
@@ -134,19 +130,31 @@ def gerar_docx(dados):
     for doc in docs_padrao:
         document.add_paragraph(doc, style='List Bullet')
         
-    # Documentos extras selecionados
     for doc in dados['nrs_selecionadas']: 
         document.add_paragraph(f"{doc} (Adicional)", style='List Bullet')
 
     document.add_heading('6. CRONOGRAMA', level=1)
-    document.add_paragraph(f"Início: {dados['data_inicio'].strftime('%d/%m/%Y')} | Integração: {dados['dias_integracao']} dias antes.")
-    if dados['data_fim']: document.add_paragraph(f"Término: {dados['data_fim'].strftime('%d/%m/%Y')}")
+    document.add_paragraph(f"Início: {dados['data_inicio'].strftime('%d/%m/%Y')}")
+    document.add_paragraph(f"Prazo limite para envio de documentação: {dados['dias_integracao']} dias antes da integração.")
+    
+    if dados.get('data_fim'):
+        document.add_paragraph(f"Previsão de Término: {dados['data_fim'].strftime('%d/%m/%Y')}")
 
-    if dados['obs_gerais']: document.add_heading('7. OBS', level=1); document.add_paragraph(dados['obs_gerais'])
+    # --- CORREÇÃO DE NUMERAÇÃO E EXIBIÇÃO ---
+    # Variável para controlar o próximo número (evita pular de 6 para 8)
+    num_secao = 7
 
-    document.add_heading('8. COMERCIAL', level=1)
-    document.add_paragraph(f"Total: {dados['valor_total']} | Pagamento: {dados['condicao_pgto']}")
-    if dados['info_comercial']: document.add_paragraph(dados['info_comercial'])
+    if dados['obs_gerais']: 
+        document.add_heading(f'{num_secao}. OBSERVAÇÕES GERAIS', level=1)
+        document.add_paragraph(dados['obs_gerais'])
+        num_secao += 1 # Incrementa se usou
+
+    # Só mostra Comercial se estiver FINALIZADO
+    if dados['status'] == "Contratação Finalizada":
+        document.add_heading(f'{num_secao}. COMERCIAL', level=1)
+        document.add_paragraph(f"Total: {dados['valor_total']} | Pagamento: {dados['condicao_pgto']}")
+        if dados['info_comercial']: document.add_paragraph(dados['info_comercial'])
+        # num_secao += 1 (não precisa pois é o último)
     
     document.add_paragraph("_"*60)
     document.add_paragraph(f"DE ACORDO: {dados['fornecedor']}")
@@ -183,7 +191,6 @@ with tab1:
         
         revisao = st.text_input("Revisão", "R-00")
         
-        # Session State para Projetos Ref
         if "input_proj_ref" not in st.session_state:
             st.session_state["input_proj_ref"] = dados_edicao.get('projetos_ref', '')
 
@@ -228,20 +235,16 @@ with tab2:
 with tab3:
     escolhas_matriz = {}
     
-    # --- CORREÇÃO 2: MATRIZ ORIGINAL ---
-    # Restaurada a lista de inputs iniciais
     itens_matriz = [
-        "Materiais dutos", 
-        "Difusão", 
-        "Consumíveis", 
-        "Vedação", 
-        "Plataformas", 
-        "Escadas", 
-        "Ferramental", 
-        "Alimentação", 
-        "Encargos", 
-        "Viagem", 
-        "EPIs"
+        "Materiais de dutos (Chapa, canto, isolamento)",
+        "Materiais de difusão de ar",
+        "Consumíveis (Discos, brocas, etc)",
+        "Plataformas elevatórias e/ou andaimes",
+        "Ferramentas manuais",
+        "Escadas tipo \"A\"",
+        "Alimentação, viagem, hospedagem",
+        "Epis",
+        "Uniformes"
     ]
     
     nome_na_matriz = fornecedor_final.upper() if fornecedor_final else "PROPONENTE"
@@ -261,12 +264,24 @@ with tab4:
     st.button("Salvar SMS", on_click=adicionar_item_callback, args=("sms", "input_novo_sms"))
 
     st.divider()
-    d_ini = st.date_input("Início")
-    d_int = st.number_input("Dias Integração", 5)
-    d_fim = st.date_input("Fim", date.today()+timedelta(days=30))
+    
+    c_data1, c_data2 = st.columns(2)
+    with c_data1:
+        d_ini = st.date_input("Data de Início")
+    with c_data2:
+        d_int = st.number_input("Dias para envio de documentação (Integração)", 5, help="Prazo limite para o fornecedor enviar docs antes de entrar na obra")
+
+    st.markdown("---")
+    usar_data_fim = st.checkbox("Informar previsão de término no documento?", value=True)
+    
+    if usar_data_fim:
+        d_fim = st.date_input("Previsão de Término", date.today()+timedelta(days=30))
+    else:
+        d_fim = None
 
 with tab5:
     st.subheader("Informações Comerciais")
+    st.caption("ℹ️ Estes dados não sairão no documento de cotação. Apenas no Contrato Final.")
     val_total = dados_edicao.get('Valor', 'R$ 0,00')
     valor = st.text_input("Total", value=val_total)
     
@@ -317,7 +332,6 @@ else:
                 erro_validacao = True
         
         if not erro_validacao:
-            # Pega valor atualizado do input
             val_proj_ref = st.session_state.get("input_proj_ref", "")
             
             dados = {
@@ -330,7 +344,8 @@ else:
                 'itens_tecnicos': itens_tecnicos, 'tecnico_livre': tecnico_livre,
                 'itens_qualidade': itens_qualidade, 'qualidade_livre': qualidade_livre,
                 'matriz': escolhas_matriz, 'nrs_selecionadas': nrs,
-                'data_inicio': d_ini, 'dias_integracao': d_int, 'data_fim': d_fim,
+                'data_inicio': d_ini, 'dias_integracao': d_int, 
+                'data_fim': d_fim, 
                 'obs_gerais': obs, 'valor_total': valor, 'condicao_pgto': pgto, 'info_comercial': info,
                 'status': novo_status,
                 'nomes_anexos': [f.name for f in arquivos_anexos] if arquivos_anexos else []
