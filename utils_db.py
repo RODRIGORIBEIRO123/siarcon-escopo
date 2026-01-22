@@ -27,27 +27,16 @@ def carregar_opcoes():
         return {"tecnico": [], "qualidade": [], "sms": []}
 
 def aprender_novo_item(categoria, novo_item):
-    """Salva novo item apenas se ele não existir (Evita Duplicatas)."""
     try:
         sh = conectar_google_sheets()
         ws = sh.worksheet("Config")
-        
-        # 1. Verifica duplicidade antes de gastar cota de escrita
-        # Traz todos os dados para verificar
         data = ws.get_all_records()
         df = pd.DataFrame(data)
         
-        # Normaliza para maiúsculas/minúsculas não atrapalharem
-        # Verifica se já existe aquela Categoria E aquele Item
         if not df.empty:
-            ja_existe = df[
-                (df['Categoria'] == categoria) & 
-                (df['Item'].astype(str).str.lower() == novo_item.lower())
-            ]
-            if not ja_existe.empty:
-                return "Duplicado" # Avisa que já existe
+            ja_existe = df[(df['Categoria'] == categoria) & (df['Item'].astype(str).str.lower() == novo_item.lower())]
+            if not ja_existe.empty: return "Duplicado"
 
-        # 2. Se não existe, salva
         ws.append_row([categoria, novo_item])
         return True
     except Exception as e:
@@ -65,6 +54,7 @@ def listar_todos_projetos():
         header = rows[0]
         data = rows[1:]
         
+        # Cria DataFrame
         df = pd.DataFrame(data, columns=header)
         df['_id_linha'] = range(2, len(data) + 2) 
         return df
@@ -78,18 +68,21 @@ def registrar_projeto(dados, id_linha=None):
         sh = conectar_google_sheets()
         ws = sh.worksheet("Projetos")
         
+        # Organiza a linha na ordem correta das colunas
         linha = [
             datetime.now().strftime("%d/%m/%Y %H:%M"),
             dados['cliente'],
             dados['obra'],
             dados['fornecedor'],
-            dados['responsavel'],
+            dados['responsavel'],     # Engenharia
             dados['valor_total'],
-            dados.get('status', 'Em Elaboração (Engenharia)')
+            dados.get('status', 'Em Elaboração (Engenharia)'),
+            dados.get('resp_obras', '') # <--- NOVA COLUNA: Responsável Obras
         ]
         
         if id_linha:
-            range_celulas = f"A{id_linha}:G{id_linha}"
+            # Atualiza colunas A até H (8 colunas)
+            range_celulas = f"A{id_linha}:H{id_linha}"
             ws.update(range_name=range_celulas, values=[linha])
         else:
             ws.append_row(linha)
