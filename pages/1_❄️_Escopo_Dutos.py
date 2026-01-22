@@ -5,7 +5,7 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 import io
 import zipfile
 from datetime import date, timedelta
-import urllib.parse # Para criar o link de email
+import urllib.parse
 import utils_db
 
 # --- CONFIGURAÇÃO ---
@@ -146,13 +146,23 @@ with tab2:
     
     col_add, col_free = st.columns(2)
     with col_add:
-        novo_tec = st.text_input("➕ Cadastrar novo item (Técnico)")
+        # AQUI MUDOU: Adicionei key="input_novo_tec" para poder limpar depois
+        novo_tec = st.text_input("➕ Cadastrar novo item (Técnico)", key="input_novo_tec")
+        
         if st.button("Salvar Item Técnico"):
-            if novo_tec and novo_tec not in opcoes_tec:
-                utils_db.aprender_novo_item("tecnico", novo_tec)
-                st.success("Salvo!")
-                del st.session_state['opcoes_db'] 
-                st.rerun()
+            if novo_tec:
+                retorno = utils_db.aprender_novo_item("tecnico", novo_tec)
+                
+                if retorno == "Duplicado":
+                    st.warning(f"O item '{novo_tec}' já existe na lista!")
+                elif retorno is True:
+                    st.success("Salvo!")
+                    # LIMPEZA DO CAMPO:
+                    st.session_state["input_novo_tec"] = "" 
+                    del st.session_state['opcoes_db'] 
+                    st.rerun()
+                else:
+                    st.error("Erro ao conectar com a planilha.")
                 
     with col_free: tecnico_livre = st.text_area("Texto Livre (Técnico)")
     
@@ -164,13 +174,20 @@ with tab2:
     
     c_q1, c_q2 = st.columns(2)
     with c_q1:
-        novo_qual = st.text_input("➕ Cadastrar novo item (Qualidade)")
+        # AQUI MUDOU: key="input_novo_qual"
+        novo_qual = st.text_input("➕ Cadastrar novo item (Qualidade)", key="input_novo_qual")
+        
         if st.button("Salvar Qualidade"):
             if novo_qual:
-                utils_db.aprender_novo_item("qualidade", novo_qual)
-                st.success("Salvo!")
-                del st.session_state['opcoes_db']
-                st.rerun()
+                retorno = utils_db.aprender_novo_item("qualidade", novo_qual)
+                if retorno == "Duplicado":
+                    st.warning("Item já cadastrado!")
+                elif retorno is True:
+                    st.success("Salvo!")
+                    st.session_state["input_novo_qual"] = "" # Limpa
+                    del st.session_state['opcoes_db']
+                    st.rerun()
+                    
     with c_q2: qualidade_livre = st.text_input("Texto Livre (Qualidade)")
 
 with tab3:
@@ -187,13 +204,18 @@ with tab4:
     opcoes_sms = st.session_state['opcoes_db'].get('sms', [])
     nrs = st.multiselect("SMS Adicional:", options=opcoes_sms)
     
-    novo_sms = st.text_input("➕ Novo Doc SMS")
+    # AQUI MUDOU: key="input_novo_sms"
+    novo_sms = st.text_input("➕ Novo Doc SMS", key="input_novo_sms")
     if st.button("Salvar SMS"):
         if novo_sms:
-            utils_db.aprender_novo_item("sms", novo_sms)
-            st.success("Salvo!")
-            del st.session_state['opcoes_db']
-            st.rerun()
+            retorno = utils_db.aprender_novo_item("sms", novo_sms)
+            if retorno == "Duplicado":
+                st.warning("Item já cadastrado!")
+            elif retorno is True:
+                st.success("Salvo!")
+                st.session_state["input_novo_sms"] = "" # Limpa
+                del st.session_state['opcoes_db']
+                st.rerun()
 
     st.divider()
     d_ini = st.date_input("Início")
@@ -250,7 +272,6 @@ else:
             nome_arq = f"Escopo_{fornecedor}.docx"
             docx_buffer.seek(0)
             
-            # 1. Salva no Banco
             with st.spinner("Salvando no Google Sheets..."):
                 utils_db.registrar_projeto(dados, id_linha=id_linha_edicao)
                 if id_linha_edicao:
@@ -263,16 +284,13 @@ else:
             
             c_down, c_email = st.columns(2)
             
-            # BOTÃO 1: BAIXAR ARQUIVO (Fundamental)
             with c_down:
                 st.info("1️⃣ Baixe o arquivo:")
                 st.download_button("📥 Baixar DOCX", docx_buffer.getvalue(), nome_arq, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True)
             
-            # BOTÃO 2: LINK INTELIGENTE (Mailto)
             with c_email:
                 st.info("2️⃣ Envie para cotação:")
                 
-                # Monta o texto do email
                 assunto = f"Cotação Liberada: {obra} - {fornecedor}"
                 corpo = f"""Olá Time de Suprimentos,
                 
@@ -283,11 +301,8 @@ Fornecedor: {fornecedor}
 
 Att, {responsavel}"""
                 
-                # Codifica para URL (para não quebrar espaços e acentos)
                 assunto_enc = urllib.parse.quote(assunto)
                 corpo_enc = urllib.parse.quote(corpo)
-                
-                # Cria o link mailto
                 link_email = f"mailto:{email_suprimentos}?subject={assunto_enc}&body={corpo_enc}"
                 
                 st.markdown(f"""
