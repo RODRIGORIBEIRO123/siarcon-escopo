@@ -1,18 +1,3 @@
-Para facilitar e não ter risco de erro ao juntar os pedaços, vou te passar o CÓDIGO COMPLETO do arquivo pages/1_❄️_Escopo_Dutos.py.
-
-Este código já inclui:
-
-    A Mudança 1: O sistema verifica se veio do Dashboard (Modo Edição).
-
-    A Mudança 2: Os campos (Cliente, Obra, Fornecedor, Valor) já vêm preenchidos com o que estava na planilha.
-
-    A Mudança 3: O botão Salvar agora atualiza a linha em vez de criar uma nova duplicada.
-
-📄 Arquivo: pages/1_❄️_Escopo_Dutos.py
-
-Substitua todo o conteúdo deste arquivo por este bloco abaixo:
-Python
-
 import streamlit as st
 from docx import Document
 from docx.shared import Pt
@@ -25,23 +10,21 @@ import utils_db
 # --- CONFIGURAÇÃO ---
 st.set_page_config(page_title="Escopo Dutos | SIARCON", page_icon="❄️", layout="wide")
 
-# --- LÓGICA DE EDIÇÃO (MUDANÇA 1) ---
-# Verifica se o usuário chegou aqui clicando no botão "Editar" do Dashboard
+# --- LÓGICA DE EDIÇÃO ---
 dados_edicao = {}
 id_linha_edicao = None
 
 if 'modo_edicao' in st.session_state and st.session_state['modo_edicao']:
     st.info("✏️ MODO EDIÇÃO ATIVO: Você está alterando um registro existente.")
     dados_edicao = st.session_state.get('dados_projeto', {})
-    id_linha_edicao = dados_edicao.get('_id_linha') # Pega o ID da linha oculta
+    id_linha_edicao = dados_edicao.get('_id_linha')
     
-    # Botão de cancelar
     if st.button("❌ Cancelar Edição (Limpar)"):
         st.session_state['modo_edicao'] = False
         st.session_state['dados_projeto'] = {}
         st.rerun()
 
-# --- CARREGAR DADOS DO GOOGLE SHEETS ---
+# --- CARREGAR DADOS ---
 if 'opcoes_db' not in st.session_state:
     with st.spinner("Carregando banco de dados..."):
         st.session_state['opcoes_db'] = utils_db.carregar_opcoes()
@@ -72,6 +55,7 @@ def gerar_docx(dados):
     infos = [("Cliente:", dados['cliente']), ("Local/Obra:", dados['obra']), 
              ("Projetos Ref:", ref_proj), ("Fornecedor:", dados['fornecedor']), 
              ("Responsável:", dados['responsavel'])]
+    
     for i, (k, v) in enumerate(infos):
         row = table.rows[i]
         row.cells[0].text = k
@@ -94,11 +78,16 @@ def gerar_docx(dados):
     except: pass
     h = table_m.rows[0].cells
     h[0].text = "ITEM"; h[1].text = "SIARCON"; h[2].text = dados['fornecedor'].upper()
+    
     for item, resp in dados['matriz'].items():
         row = table_m.add_row().cells
         row[0].text = item
-        if resp == "SIARCON": row[1].text = "X"; row[1].paragraphs[0].alignment = 1
-        else: row[2].text = "X"; row[2].paragraphs[0].alignment = 1
+        if resp == "SIARCON": 
+            row[1].text = "X"
+            row[1].paragraphs[0].alignment = 1
+        else: 
+            row[2].text = "X"
+            row[2].paragraphs[0].alignment = 1
 
     document.add_heading('5. SMS', level=1)
     document.add_paragraph("Documentos Padrão (ASO, Fichas, NR-06...)", style='List Bullet')
@@ -129,9 +118,8 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs(["1. Cadastro", "2. Técnico", "3. Matriz
 
 with tab1:
     c1, c2 = st.columns(2)
-    # MUDANÇA 2: PREENCHIMENTO AUTOMÁTICO (value=...)
     with c1:
-        # Se tiver dados_edicao['Cliente'], usa ele. Senão usa vazio.
+        # Preenchimento automático (Value)
         val_cli = dados_edicao.get('Cliente', '')
         cliente = st.text_input("Cliente", value=val_cli)
         
@@ -146,11 +134,13 @@ with tab1:
         
         revisao = st.text_input("Revisão", "R-00")
         projetos_ref = st.text_input("Projetos Ref.")
+    
     resumo_escopo = st.text_area("Resumo")
     arquivos_anexos = st.file_uploader("Anexos", accept_multiple_files=True)
 
 with tab2:
     st.subheader("Técnico")
+    # Usa .get() para segurança
     opcoes_tec = st.session_state['opcoes_db'].get('tecnico', [])
     itens_tecnicos = st.multiselect("Selecione:", options=opcoes_tec)
     
@@ -211,7 +201,6 @@ with tab4:
     d_fim = st.date_input("Fim", date.today()+timedelta(days=30))
 
 with tab5:
-    # Preenchimento automático do valor se estiver editando
     val_total = dados_edicao.get('Valor', 'R$ 0,00')
     valor = st.text_input("Total", value=val_total)
     
@@ -221,13 +210,13 @@ with tab5:
 
 st.markdown("---")
 
-# MUDANÇA 3: ATUALIZAR AO INVÉS DE CRIAR NOVO
 label_botao = "💾 ATUALIZAR PROJETO" if id_linha_edicao else "🚀 GERAR CONTRATO & REGISTRAR"
 
 if st.button(label_botao, type="primary", use_container_width=True):
     if not fornecedor:
         st.error("Faltou o fornecedor!")
     else:
+        # Prepara dicionário de dados
         dados = {
             'cliente': cliente, 'obra': obra, 'fornecedor': fornecedor, 'responsavel': responsavel, 
             'revisao': revisao, 'projetos_ref': projetos_ref, 'resumo_escopo': resumo_escopo,
@@ -243,12 +232,10 @@ if st.button(label_botao, type="primary", use_container_width=True):
         nome_arq = f"Escopo_{fornecedor}.docx"
         
         with st.spinner("Salvando no Google Sheets..."):
-            # AQUI ESTÁ A MÁGICA: Passamos o ID da linha para atualizar
             utils_db.registrar_projeto(dados, id_linha=id_linha_edicao)
             
             if id_linha_edicao:
                 st.success("✅ Projeto Atualizado com Sucesso!")
-                # Limpa o modo edição para evitar confusão
                 st.session_state['modo_edicao'] = False
                 st.session_state['dados_projeto'] = {}
             else:
