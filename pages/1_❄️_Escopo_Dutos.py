@@ -131,7 +131,8 @@ def gerar_docx(dados):
         document.add_paragraph(doc, style='List Bullet')
         
     for doc in dados['nrs_selecionadas']: 
-        document.add_paragraph(f"{doc} (Adicional)", style='List Bullet')
+        # --- ALTERAÇÃO: Removido o sufixo " (Adicional)" ---
+        document.add_paragraph(doc, style='List Bullet')
 
     document.add_heading('6. CRONOGRAMA', level=1)
     document.add_paragraph(f"Início: {dados['data_inicio'].strftime('%d/%m/%Y')}")
@@ -141,20 +142,18 @@ def gerar_docx(dados):
         document.add_paragraph(f"Previsão de Término: {dados['data_fim'].strftime('%d/%m/%Y')}")
 
     # --- CORREÇÃO DE NUMERAÇÃO E EXIBIÇÃO ---
-    # Variável para controlar o próximo número (evita pular de 6 para 8)
     num_secao = 7
 
     if dados['obs_gerais']: 
         document.add_heading(f'{num_secao}. OBSERVAÇÕES GERAIS', level=1)
         document.add_paragraph(dados['obs_gerais'])
-        num_secao += 1 # Incrementa se usou
+        num_secao += 1 
 
     # Só mostra Comercial se estiver FINALIZADO
     if dados['status'] == "Contratação Finalizada":
         document.add_heading(f'{num_secao}. COMERCIAL', level=1)
         document.add_paragraph(f"Total: {dados['valor_total']} | Pagamento: {dados['condicao_pgto']}")
         if dados['info_comercial']: document.add_paragraph(dados['info_comercial'])
-        # num_secao += 1 (não precisa pois é o último)
     
     document.add_paragraph("_"*60)
     document.add_paragraph(f"DE ACORDO: {dados['fornecedor']}")
