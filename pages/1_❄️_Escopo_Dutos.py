@@ -5,8 +5,8 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 import io
 import zipfile
 from datetime import date, timedelta
+import urllib.parse # Para criar o link de email
 import utils_db
-import utils_email
 
 # --- CONFIGURAÇÃO ---
 st.set_page_config(page_title="Escopo Dutos | SIARCON", page_icon="❄️", layout="wide")
@@ -134,7 +134,7 @@ with tab1:
         revisao = st.text_input("Revisão", "R-00")
         projetos_ref = st.text_input("Projetos Ref.")
         
-        email_suprimentos = st.text_input("📧 Enviar para Suprimentos:", value="suprimentos@siarcon.com.br")
+        email_suprimentos = st.text_input("📧 E-mail de Suprimentos (Para Link):", value="suprimentos@siarcon.com.br")
 
     resumo_escopo = st.text_area("Resumo")
     arquivos_anexos = st.file_uploader("Anexos", accept_multiple_files=True)
@@ -248,10 +248,9 @@ else:
             
             docx_buffer = gerar_docx(dados)
             nome_arq = f"Escopo_{fornecedor}.docx"
-            
-            # Garante que o buffer está no início
             docx_buffer.seek(0)
             
+            # 1. Salva no Banco
             with st.spinner("Salvando no Google Sheets..."):
                 utils_db.registrar_projeto(dados, id_linha=id_linha_edicao)
                 if id_linha_edicao:
@@ -259,42 +258,53 @@ else:
                 else:
                     st.success("✅ Novo Projeto Registrado!")
 
-            # BOTOES FINAIS
+            st.divider()
+            st.markdown("### 📤 Próximos Passos:")
+            
             c_down, c_email = st.columns(2)
             
+            # BOTÃO 1: BAIXAR ARQUIVO (Fundamental)
             with c_down:
+                st.info("1️⃣ Baixe o arquivo:")
                 st.download_button("📥 Baixar DOCX", docx_buffer.getvalue(), nome_arq, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True)
             
+            # BOTÃO 2: LINK INTELIGENTE (Mailto)
             with c_email:
-                if email_suprimentos:
-                    # Envia DOCX Direto (Sem ZIP)
-                    if st.button(f"📧 Enviar DOCX para Suprimentos", use_container_width=True):
-                        with st.spinner("Enviando documento..."):
-                            
-                            corpo_email = f"""
-                            Olá Time de Suprimentos,
-                            
-                            O escopo técnico para a obra **{obra}** (Cliente: {cliente}) foi finalizado e aprovado.
-                            
-                            Fornecedor Indicado: {fornecedor}
-                            Responsável: {responsavel}
-                            
-                            Segue em anexo o documento para cotação.
-                            
-                            Att,
-                            Portal SIARCON
-                            """
-                            
-                            resultado = utils_email.enviar_email_com_anexo(
-                                destinatario=email_suprimentos,
-                                assunto=f"Cotação Liberada: {obra} - {fornecedor}",
-                                corpo=corpo_email,
-                                arquivo_bytes=docx_buffer.getvalue(), # Buffer do DOCX direto
-                                nome_arquivo=nome_arq
-                            )
-                            
-                            if resultado is True:
-                                st.balloons()
-                                st.success(f"📧 Documento enviado para {email_suprimentos}! (Verifique SPAM)")
-                            else:
-                                st.error(f"Falha no envio: {resultado}")
+                st.info("2️⃣ Envie para cotação:")
+                
+                # Monta o texto do email
+                assunto = f"Cotação Liberada: {obra} - {fornecedor}"
+                corpo = f"""Olá Time de Suprimentos,
+                
+O escopo técnico para a obra {obra} (Cliente: {cliente}) foi aprovado.
+Fornecedor: {fornecedor}
+
+(Anexe o arquivo baixado aqui e envie).
+
+Att, {responsavel}"""
+                
+                # Codifica para URL (para não quebrar espaços e acentos)
+                assunto_enc = urllib.parse.quote(assunto)
+                corpo_enc = urllib.parse.quote(corpo)
+                
+                # Cria o link mailto
+                link_email = f"mailto:{email_suprimentos}?subject={assunto_enc}&body={corpo_enc}"
+                
+                st.markdown(f"""
+                <a href="{link_email}" target="_blank" style="text-decoration:none;">
+                    <button style="
+                        width: 100%;
+                        background-color: #FF4B4B;
+                        color: white;
+                        padding: 10px;
+                        border: none;
+                        border-radius: 5px;
+                        cursor: pointer;
+                        font-weight: bold;">
+                        📧 Abrir E-mail (Outlook/Gmail)
+                    </button>
+                </a>
+                <div style='font-size:0.8em; color:gray; text-align:center; margin-top:5px;'>
+                    Clique acima para abrir seu e-mail, depois anexe o arquivo baixado.
+                </div>
+                """, unsafe_allow_html=True)
