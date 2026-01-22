@@ -1,9 +1,10 @@
 import streamlit as st
 from docx import Document
-from docx.shared import Pt, Inches, Cm
+from docx.shared import Pt, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 import io
 import os
+import zipfile
 from datetime import date, timedelta
 import urllib.parse
 import utils_db
@@ -53,11 +54,11 @@ if 'opcoes_db' not in st.session_state:
     with st.spinner("Carregando banco de dados..."):
         st.session_state['opcoes_db'] = utils_db.carregar_opcoes()
 
-# --- FUNÇÃO DOCX (COM LOGO E ASSINATURAS) ---
+# --- FUNÇÃO DOCX (FORMATAÇÃO NOVA) ---
 def gerar_docx(dados):
     document = Document()
     
-    # 1. Configurações de Fonte
+    # Configurações de Fonte Padrão
     try:
         style = document.styles['Normal']
         font = style.font
@@ -65,44 +66,33 @@ def gerar_docx(dados):
         font.size = Pt(11)
     except: pass
 
-    # 2. CABEÇALHO COM LOGO
+    # 1. CABEÇALHO (Texto Centralizado)
     section = document.sections[0]
     header = section.header
-    
-    # Cria tabela no cabeçalho para alinhar (Texto Esq | Logo Dir)
-    htable = header.add_table(1, 2, width=section.page_width)
-    htable.autofit = False
-    htable.columns[0].width = Cm(12)
-    htable.columns[1].width = Cm(5)
-    
-    # Célula 1: Texto SIARCON
-    h_cell1 = htable.cell(0, 0)
-    p_header = h_cell1.paragraphs[0]
-    p_header.text = "SIARCON ENGENHARIA\nDepartamento de Engenharia e Suprimentos"
-    p_header.style.font.bold = True
-    
-    # Célula 2: Imagem
-    h_cell2 = htable.cell(0, 1)
-    # Limpa parágrafo padrão
-    h_cell2.paragraphs[0].clear() 
-    p_logo = h_cell2.add_paragraph()
-    p_logo.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    
-    if os.path.exists("logo_siarcon.png"):
-        run_logo = p_logo.add_run()
-        run_logo.add_picture("logo_siarcon.png", width=Cm(4.0))
+    # Limpa qualquer conteúdo anterior
+    for paragraph in header.paragraphs:
+        p = paragraph._element
+        p.getparent().remove(p)
+        p._p = p._element = None
+        
+    p_head = header.add_paragraph()
+    p_head.text = "Departamento de Operações SIARCON"
+    p_head.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_head.style.font.bold = True
+    p_head.style.font.size = Pt(14)
+    p_head.style.font.name = 'Calibri'
 
-    # 3. TÍTULO DO DOCUMENTO
-    document.add_paragraph("\n") # Espaço
+    # 2. TÍTULO E REVISÃO
+    document.add_paragraph("\n")
     title = document.add_heading('Escopo de fornecimento - Rede de dutos', 0)
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
     
     p_rev = document.add_paragraph(f"Data: {date.today().strftime('%d/%m/%Y')} | Rev: {dados['revisao']}")
     p_rev.alignment = WD_ALIGN_PARAGRAPH.RIGHT
 
-    # 4. CORPO DO DOCUMENTO
+    # 3. CORPO DO DOCUMENTO
     document.add_heading('1. OBJETIVO E RESUMO', level=1)
-    table = document.add_table(rows=6, cols=2) # Aumentei para caber os 2 responsáveis
+    table = document.add_table(rows=6, cols=2)
     try: table.style = 'Table Grid'
     except: pass
     
@@ -114,7 +104,7 @@ def gerar_docx(dados):
         ("Projetos Ref:", ref_proj), 
         ("Fornecedor:", dados['fornecedor']), 
         ("Resp. Engenharia:", dados['responsavel']),
-        ("Resp. Obras:", dados['resp_obras']) # Campo Novo
+        ("Resp. Obras:", dados['resp_obras'])
     ]
     
     for i, (k, v) in enumerate(infos):
@@ -169,26 +159,24 @@ def gerar_docx(dados):
         document.add_paragraph(f"Total: {dados['valor_total']} | Pagamento: {dados['condicao_pgto']}")
         if dados['info_comercial']: document.add_paragraph(dados['info_comercial'])
     
-    # 5. RODAPÉ COM LOGO
+    # 4. RODAPÉ (Texto Centralizado)
     footer = section.footer
-    p_foot = footer.paragraphs[0]
+    for paragraph in footer.paragraphs:
+        p = paragraph._element
+        p.getparent().remove(p)
+        p._p = p._element = None
+        
+    p_foot = footer.add_paragraph()
+    p_foot.text = "SIARCON - Controlando condições ambientais com excelência"
     p_foot.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    if os.path.exists("logo_siarcon.png"):
-        run_foot = p_foot.add_run()
-        run_foot.add_picture("logo_siarcon.png", width=Cm(2.0))
-    p_foot.add_run("\nSIARCON - Excelência em Engenharia")
+    p_foot.style.font.size = Pt(9)
+    p_foot.style.font.italic = True
 
-    # 6. ASSINATURAS (Engenharia + Obras + Fornecedor)
+    # 5. ASSINATURAS
     document.add_paragraph("\n\n")
-    
-    # Tabela invisível para assinaturas lado a lado
     sig_table = document.add_table(rows=1, cols=3)
     sig_table.autofit = True
-    
-    c1 = sig_table.cell(0, 0)
-    c2 = sig_table.cell(0, 1)
-    c3 = sig_table.cell(0, 2)
-    
+    c1 = sig_table.cell(0, 0); c2 = sig_table.cell(0, 1); c3 = sig_table.cell(0, 2)
     p1 = c1.paragraphs[0]; p1.add_run("______________________\nEngenharia:\n" + dados['responsavel']); p1.alignment = 1
     p2 = c2.paragraphs[0]; p2.add_run("______________________\nObras:\n" + dados['resp_obras']); p2.alignment = 1
     p3 = c3.paragraphs[0]; p3.add_run("______________________\nFornecedor:\n" + dados['fornecedor']); p3.alignment = 1
@@ -219,19 +207,13 @@ with tab1:
         else: fornecedor_final = fornecedor_input
             
     with c2:
-        # DOIS RESPONSÁVEIS AGORA
         col_resp1, col_resp2 = st.columns(2)
         with col_resp1:
             val_resp = dados_edicao.get('Responsável', 'Engenharia')
             responsavel = st.text_input("Resp. Engenharia", value=val_resp)
         with col_resp2:
-            # Tenta pegar do banco ou usa vazio
-            # obs: no banco pode estar salvo em coluna diferente, aqui buscamos do dict carregado
             val_resp_obras = dados_edicao.get('Responsável Obras', '') 
-            # Se não achou com esse nome, tenta o índice da lista (caso tenha vindo do utils_db antigo)
-            if not val_resp_obras and len(dados_edicao) > 7:
-                 pass # lógica simplificada: assume vazio se não existir
-
+            if not val_resp_obras and len(dados_edicao) > 7: pass
             resp_obras = st.text_input("Resp. Obras", value=val_resp_obras)
         
         revisao = st.text_input("Revisão", "R-00")
@@ -246,7 +228,7 @@ with tab1:
     resumo_escopo = st.text_area("Resumo")
     
     arquivos_anexos = st.file_uploader(
-        "Anexos (O nome irá para 'Projetos Ref.')", 
+        "Anexos (O nome irá para 'Projetos Ref.' | Baixados separadamente)", 
         accept_multiple_files=True,
         key="uploader_anexos",
         on_change=callback_atualizar_nomes_anexos
@@ -343,7 +325,7 @@ else:
                 'cliente': cliente, 'obra': obra, 
                 'fornecedor': fornecedor_final,
                 'responsavel': responsavel, 
-                'resp_obras': resp_obras, # <--- Campo Novo
+                'resp_obras': resp_obras,
                 'revisao': revisao, 
                 'projetos_ref': val_proj_ref,
                 'resumo_escopo': resumo_escopo,
@@ -356,19 +338,55 @@ else:
                 'nomes_anexos': [f.name for f in arquivos_anexos] if arquivos_anexos else []
             }
             
+            # 1. Gera o DOCX
             docx_buffer = gerar_docx(dados)
             nome_arq = f"Escopo_{fornecedor_final.replace(' ', '_')}.docx"
-            docx_buffer.seek(0)
+            
+            # 2. Gera o ZIP de Anexos (Se houver)
+            zip_buffer = None
+            if arquivos_anexos:
+                zip_buffer = io.BytesIO()
+                with zipfile.ZipFile(zip_buffer, "w") as zf:
+                    for arquivo in arquivos_anexos:
+                        zf.writestr(arquivo.name, arquivo.getvalue())
+                zip_buffer.seek(0)
             
             with st.spinner("Salvando..."):
                 utils_db.registrar_projeto(dados, id_linha=id_linha_edicao)
                 st.success(f"✅ Projeto Atualizado! Fase: {novo_status}")
 
             st.divider()
-            c1, c2 = st.columns(2)
-            with c1: st.download_button("📥 Baixar DOCX", docx_buffer.getvalue(), nome_arq, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True)
-            with c2:
+            
+            # --- ÁREA DE DOWNLOADS (SEPARADA) ---
+            st.markdown("### 📥 Downloads")
+            col_d1, col_d2, col_d3 = st.columns([1.5, 1.5, 2])
+            
+            # Botão 1: O DOCX (Sempre existe)
+            with col_d1:
+                st.download_button(
+                    label="📄 1. Baixar Escopo (DOCX)",
+                    data=docx_buffer.getvalue(),
+                    file_name=nome_arq,
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    use_container_width=True
+                )
+            
+            # Botão 2: O ZIP (Só se tiver anexo)
+            with col_d2:
+                if zip_buffer:
+                    st.download_button(
+                        label="📎 2. Baixar Anexos (ZIP)",
+                        data=zip_buffer,
+                        file_name=f"Anexos_{obra}.zip",
+                        mime="application/zip",
+                        use_container_width=True
+                    )
+                else:
+                    st.info("Sem anexos para baixar.")
+
+            # Botão 3: Email
+            with col_d3:
                 assunto_cot = f"Atualização: {obra} - {novo_status}"
                 corpo_cot = f"Olá,\n\nSegue doc atualizado.\nObra: {obra}\nStatus: {novo_status}"
                 link_cot = f"mailto:{email_suprimentos}?subject={urllib.parse.quote(assunto_cot)}&body={urllib.parse.quote(corpo_cot)}"
-                st.markdown(f"""<a href="{link_cot}" target="_blank"><button style="width:100%; background-color:#FF4B4B; color:white; border:none; padding:10px; border-radius:5px; font-weight:bold; cursor:pointer;">📧 Abrir Outlook/Gmail</button></a>""", unsafe_allow_html=True)
+                st.markdown(f"""<a href="{link_cot}" target="_blank"><button style="width:100%; background-color:#FF4B4B; color:white; border:none; padding:10px; border-radius:5px; font-weight:bold; cursor:pointer;">📧 Notificar por E-mail</button></a>""", unsafe_allow_html=True)
