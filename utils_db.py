@@ -39,21 +39,21 @@ def listar_todos_projetos():
     try:
         sh = conectar_google_sheets()
         ws = sh.worksheet("Projetos")
-        # Pega todos os valores, incluindo cabeçalho
+        # Pega todos os valores (lista de listas)
         rows = ws.get_all_values()
         
         if len(rows) < 2: return pd.DataFrame()
         
-        # Cria DataFrame manual para controlar o número da linha
+        # Cria DataFrame manual
         header = rows[0]
         data = rows[1:]
         
         df = pd.DataFrame(data, columns=header)
-        # Adiciona coluna oculta com o número da linha (Excel começa em 1, Header é 1, dados começam em 2)
+        # Adiciona ID da linha (Excel começa em 1, Header é 1, dados começam em 2)
         df['_id_linha'] = range(2, len(data) + 2) 
         return df
     except Exception as e:
-        st.error(f"Erro: {e}")
+        st.error(f"Erro ao ler lista: {e}")
         return pd.DataFrame()
 
 # --- 4. SALVAR E ATUALIZAR ---
@@ -66,10 +66,7 @@ def registrar_projeto(dados, id_linha=None):
         sh = conectar_google_sheets()
         ws = sh.worksheet("Projetos")
         
-        # Prepara a linha de dados (Ordem das colunas tem que ser fixa)
-        # [Data, Cliente, Obra, Fornecedor, Responsável, Valor, Status, JSON_DADOS]
-        # DICA: Vamos salvar os dados técnicos num campo 'extra' escondido para recuperar depois
-        
+        # [Data, Cliente, Obra, Fornecedor, Responsável, Valor, Status]
         linha = [
             datetime.now().strftime("%d/%m/%Y %H:%M"),
             dados['cliente'],
@@ -77,14 +74,14 @@ def registrar_projeto(dados, id_linha=None):
             dados['fornecedor'],
             dados['responsavel'],
             dados['valor_total'],
-            dados.get('status', 'Gerado')
-            # Futuramente podemos adicionar uma coluna H com o JSON completo
+            dados.get('status', 'Em Elaboração (Engenharia)')
         ]
         
         if id_linha:
-            # Atualiza linha existente (A até G)
+            # --- CORREÇÃO AQUI ---
+            # O parâmetro correto é range_name, não range_cells
             range_celulas = f"A{id_linha}:G{id_linha}"
-            ws.update(range_cells=range_celulas, values=[linha])
+            ws.update(range_name=range_celulas, values=[linha])
         else:
             # Cria nova
             ws.append_row(linha)
