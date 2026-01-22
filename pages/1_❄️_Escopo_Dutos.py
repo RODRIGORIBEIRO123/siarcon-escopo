@@ -1,9 +1,9 @@
 import streamlit as st
 from docx import Document
-from docx.shared import Pt
+from docx.shared import Pt, Inches, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 import io
-import zipfile
+import os
 from datetime import date, timedelta
 import urllib.parse
 import utils_db
@@ -12,9 +12,7 @@ import utils_db
 st.set_page_config(page_title="Escopo Dutos | SIARCON", page_icon="❄️", layout="wide")
 
 # --- FUNÇÕES AUXILIARES E CALLBACKS ---
-
 def adicionar_item_callback(categoria, key_input):
-    """Salva item novo no banco e limpa o campo."""
     novo_item = st.session_state.get(key_input, "")
     if novo_item:
         retorno = utils_db.aprender_novo_item(categoria, novo_item)
@@ -30,10 +28,6 @@ def adicionar_item_callback(categoria, key_input):
         st.toast("⚠️ Digite algo antes de salvar.", icon="✍️")
 
 def callback_atualizar_nomes_anexos():
-    """
-    Gatilha quando arquivos são adicionados.
-    Pega os nomes e preenche o campo 'Projetos Ref'.
-    """
     arquivos = st.session_state.get("uploader_anexos", [])
     if arquivos:
         nomes = [f.name for f in arquivos]
@@ -59,9 +53,11 @@ if 'opcoes_db' not in st.session_state:
     with st.spinner("Carregando banco de dados..."):
         st.session_state['opcoes_db'] = utils_db.carregar_opcoes()
 
-# --- FUNÇÃO DOCX (CORRIGIDA) ---
+# --- FUNÇÃO DOCX (COM LOGO E ASSINATURAS) ---
 def gerar_docx(dados):
     document = Document()
+    
+    # 1. Configurações de Fonte
     try:
         style = document.styles['Normal']
         font = style.font
@@ -69,21 +65,57 @@ def gerar_docx(dados):
         font.size = Pt(11)
     except: pass
 
+    # 2. CABEÇALHO COM LOGO
+    section = document.sections[0]
+    header = section.header
+    
+    # Cria tabela no cabeçalho para alinhar (Texto Esq | Logo Dir)
+    htable = header.add_table(1, 2, width=section.page_width)
+    htable.autofit = False
+    htable.columns[0].width = Cm(12)
+    htable.columns[1].width = Cm(5)
+    
+    # Célula 1: Texto SIARCON
+    h_cell1 = htable.cell(0, 0)
+    p_header = h_cell1.paragraphs[0]
+    p_header.text = "SIARCON ENGENHARIA\nDepartamento de Engenharia e Suprimentos"
+    p_header.style.font.bold = True
+    
+    # Célula 2: Imagem
+    h_cell2 = htable.cell(0, 1)
+    # Limpa parágrafo padrão
+    h_cell2.paragraphs[0].clear() 
+    p_logo = h_cell2.add_paragraph()
+    p_logo.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    
+    if os.path.exists("logo_siarcon.png"):
+        run_logo = p_logo.add_run()
+        run_logo.add_picture("logo_siarcon.png", width=Cm(4.0))
+
+    # 3. TÍTULO DO DOCUMENTO
+    document.add_paragraph("\n") # Espaço
     title = document.add_heading('Escopo de fornecimento - Rede de dutos', 0)
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    p = document.add_paragraph(f"Data: {date.today().strftime('%d/%m/%Y')} | Rev: {dados['revisao']}")
-    p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    
+    p_rev = document.add_paragraph(f"Data: {date.today().strftime('%d/%m/%Y')} | Rev: {dados['revisao']}")
+    p_rev.alignment = WD_ALIGN_PARAGRAPH.RIGHT
 
+    # 4. CORPO DO DOCUMENTO
     document.add_heading('1. OBJETIVO E RESUMO', level=1)
-    table = document.add_table(rows=5, cols=2)
+    table = document.add_table(rows=6, cols=2) # Aumentei para caber os 2 responsáveis
     try: table.style = 'Table Grid'
     except: pass
     
     ref_proj = dados['projetos_ref'] 
     
-    infos = [("Cliente:", dados['cliente']), ("Local/Obra:", dados['obra']), 
-             ("Projetos Ref:", ref_proj), ("Fornecedor:", dados['fornecedor']), 
-             ("Responsável:", dados['responsavel'])]
+    infos = [
+        ("Cliente:", dados['cliente']), 
+        ("Local/Obra:", dados['obra']), 
+        ("Projetos Ref:", ref_proj), 
+        ("Fornecedor:", dados['fornecedor']), 
+        ("Resp. Engenharia:", dados['responsavel']),
+        ("Resp. Obras:", dados['resp_obras']) # Campo Novo
+    ]
     
     for i, (k, v) in enumerate(infos):
         row = table.rows[i]
@@ -117,46 +149,49 @@ def gerar_docx(dados):
             row[2].text = "X"; row[2].paragraphs[0].alignment = 1
 
     document.add_heading('5. SMS', level=1)
-    
-    docs_padrao = [
-        "Ficha de registro",
-        "ASO (Atestado de Saúde Ocupacional)",
-        "Ficha de EPI",
-        "Ordem de Serviço",
-        "Certificados de Treinamento",
-        "NR-06 (Equipamento de Proteção Individual)"
-    ]
-    
-    for doc in docs_padrao:
-        document.add_paragraph(doc, style='List Bullet')
-        
-    for doc in dados['nrs_selecionadas']: 
-        # --- ALTERAÇÃO: Removido o sufixo " (Adicional)" ---
-        document.add_paragraph(doc, style='List Bullet')
+    docs_padrao = ["Ficha de registro", "ASO (Atestado de Saúde Ocupacional)", "Ficha de EPI", "Ordem de Serviço", "Certificados de Treinamento", "NR-06 (Equipamento de Proteção Individual)"]
+    for doc in docs_padrao: document.add_paragraph(doc, style='List Bullet')
+    for doc in dados['nrs_selecionadas']: document.add_paragraph(doc, style='List Bullet')
 
     document.add_heading('6. CRONOGRAMA', level=1)
     document.add_paragraph(f"Início: {dados['data_inicio'].strftime('%d/%m/%Y')}")
     document.add_paragraph(f"Prazo limite para envio de documentação: {dados['dias_integracao']} dias antes da integração.")
-    
-    if dados.get('data_fim'):
-        document.add_paragraph(f"Previsão de Término: {dados['data_fim'].strftime('%d/%m/%Y')}")
+    if dados.get('data_fim'): document.add_paragraph(f"Previsão de Término: {dados['data_fim'].strftime('%d/%m/%Y')}")
 
-    # --- CORREÇÃO DE NUMERAÇÃO E EXIBIÇÃO ---
     num_secao = 7
-
     if dados['obs_gerais']: 
         document.add_heading(f'{num_secao}. OBSERVAÇÕES GERAIS', level=1)
         document.add_paragraph(dados['obs_gerais'])
         num_secao += 1 
 
-    # Só mostra Comercial se estiver FINALIZADO
     if dados['status'] == "Contratação Finalizada":
         document.add_heading(f'{num_secao}. COMERCIAL', level=1)
         document.add_paragraph(f"Total: {dados['valor_total']} | Pagamento: {dados['condicao_pgto']}")
         if dados['info_comercial']: document.add_paragraph(dados['info_comercial'])
     
-    document.add_paragraph("_"*60)
-    document.add_paragraph(f"DE ACORDO: {dados['fornecedor']}")
+    # 5. RODAPÉ COM LOGO
+    footer = section.footer
+    p_foot = footer.paragraphs[0]
+    p_foot.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    if os.path.exists("logo_siarcon.png"):
+        run_foot = p_foot.add_run()
+        run_foot.add_picture("logo_siarcon.png", width=Cm(2.0))
+    p_foot.add_run("\nSIARCON - Excelência em Engenharia")
+
+    # 6. ASSINATURAS (Engenharia + Obras + Fornecedor)
+    document.add_paragraph("\n\n")
+    
+    # Tabela invisível para assinaturas lado a lado
+    sig_table = document.add_table(rows=1, cols=3)
+    sig_table.autofit = True
+    
+    c1 = sig_table.cell(0, 0)
+    c2 = sig_table.cell(0, 1)
+    c3 = sig_table.cell(0, 2)
+    
+    p1 = c1.paragraphs[0]; p1.add_run("______________________\nEngenharia:\n" + dados['responsavel']); p1.alignment = 1
+    p2 = c2.paragraphs[0]; p2.add_run("______________________\nObras:\n" + dados['resp_obras']); p2.alignment = 1
+    p3 = c3.paragraphs[0]; p3.add_run("______________________\nFornecedor:\n" + dados['fornecedor']); p3.alignment = 1
 
     buffer = io.BytesIO()
     document.save(buffer)
@@ -180,27 +215,38 @@ with tab1:
         val_forn = dados_edicao.get('Fornecedor', '')
         if val_forn == "PROPONENTE DE DUTOS": val_forn = "" 
         fornecedor_input = st.text_input("Fornecedor", value=val_forn, placeholder="Deixe em branco p/ genérico")
-        
         if not fornecedor_input: fornecedor_final = "PROPONENTE DE DUTOS"
         else: fornecedor_final = fornecedor_input
             
     with c2:
-        val_resp = dados_edicao.get('Responsável', 'Engenharia')
-        responsavel = st.text_input("Responsável", value=val_resp)
+        # DOIS RESPONSÁVEIS AGORA
+        col_resp1, col_resp2 = st.columns(2)
+        with col_resp1:
+            val_resp = dados_edicao.get('Responsável', 'Engenharia')
+            responsavel = st.text_input("Resp. Engenharia", value=val_resp)
+        with col_resp2:
+            # Tenta pegar do banco ou usa vazio
+            # obs: no banco pode estar salvo em coluna diferente, aqui buscamos do dict carregado
+            val_resp_obras = dados_edicao.get('Responsável Obras', '') 
+            # Se não achou com esse nome, tenta o índice da lista (caso tenha vindo do utils_db antigo)
+            if not val_resp_obras and len(dados_edicao) > 7:
+                 pass # lógica simplificada: assume vazio se não existir
+
+            resp_obras = st.text_input("Resp. Obras", value=val_resp_obras)
         
         revisao = st.text_input("Revisão", "R-00")
         
         if "input_proj_ref" not in st.session_state:
             st.session_state["input_proj_ref"] = dados_edicao.get('projetos_ref', '')
 
-        projetos_ref = st.text_input("Projetos Ref.", key="input_proj_ref", help="Este campo é preenchido automaticamente ao anexar arquivos.")
+        projetos_ref = st.text_input("Projetos Ref.", key="input_proj_ref", help="Preenchido automaticamente pelos anexos.")
         
-        email_suprimentos = st.text_input("📧 E-mail de Suprimentos/Obras:", value="suprimentos@siarcon.com.br")
+        email_suprimentos = st.text_input("📧 E-mail:", value="suprimentos@siarcon.com.br")
 
     resumo_escopo = st.text_area("Resumo")
     
     arquivos_anexos = st.file_uploader(
-        "Anexos (O nome dos arquivos irá para 'Projetos Ref.' automaticamente)", 
+        "Anexos (O nome irá para 'Projetos Ref.')", 
         accept_multiple_files=True,
         key="uploader_anexos",
         on_change=callback_atualizar_nomes_anexos
@@ -213,38 +259,25 @@ with tab2:
     
     col_add, col_free = st.columns(2)
     with col_add:
-        st.text_input("➕ Cadastrar novo item (Técnico)", key="input_novo_tec")
+        st.text_input("➕ Novo item (Técnico)", key="input_novo_tec")
         st.button("Salvar Item Técnico", on_click=adicionar_item_callback, args=("tecnico", "input_novo_tec"))
                 
     with col_free: tecnico_livre = st.text_area("Texto Livre (Técnico)")
-    
     st.divider()
-    
     st.subheader("Qualidade")
     opcoes_qual = st.session_state['opcoes_db'].get('qualidade', [])
     itens_qualidade = st.multiselect("Selecione Qualidade:", options=opcoes_qual)
     
     c_q1, c_q2 = st.columns(2)
     with c_q1:
-        st.text_input("➕ Cadastrar novo item (Qualidade)", key="input_novo_qual")
+        st.text_input("➕ Novo item (Qualidade)", key="input_novo_qual")
         st.button("Salvar Qualidade", on_click=adicionar_item_callback, args=("qualidade", "input_novo_qual"))
 
     with c_q2: qualidade_livre = st.text_input("Texto Livre (Qualidade)")
 
 with tab3:
     escolhas_matriz = {}
-    
-    itens_matriz = [
-        "Materiais de dutos (Chapa, canto, isolamento)",
-        "Materiais de difusão de ar",
-        "Consumíveis (Discos, brocas, etc)",
-        "Plataformas elevatórias e/ou andaimes",
-        "Ferramentas manuais",
-        "Escadas tipo \"A\"",
-        "Alimentação, viagem, hospedagem",
-        "Epis",
-        "Uniformes"
-    ]
+    itens_matriz = ["Materiais de dutos (Chapa, canto, isolamento)", "Materiais de difusão de ar", "Consumíveis (Discos, brocas, etc)", "Plataformas elevatórias e/ou andaimes", "Ferramentas manuais", "Escadas tipo \"A\"", "Alimentação, viagem, hospedagem", "Epis", "Uniformes"]
     
     nome_na_matriz = fornecedor_final.upper() if fornecedor_final else "PROPONENTE"
     st.info(f"Matriz de responsabilidades para: **{nome_na_matriz}**")
@@ -258,101 +291,73 @@ with tab3:
 with tab4:
     opcoes_sms = st.session_state['opcoes_db'].get('sms', [])
     nrs = st.multiselect("SMS Adicional:", options=opcoes_sms)
-    
     st.text_input("➕ Novo Doc SMS", key="input_novo_sms")
     st.button("Salvar SMS", on_click=adicionar_item_callback, args=("sms", "input_novo_sms"))
-
     st.divider()
     
     c_data1, c_data2 = st.columns(2)
-    with c_data1:
-        d_ini = st.date_input("Data de Início")
-    with c_data2:
-        d_int = st.number_input("Dias para envio de documentação (Integração)", 5, help="Prazo limite para o fornecedor enviar docs antes de entrar na obra")
+    with c_data1: d_ini = st.date_input("Data de Início")
+    with c_data2: d_int = st.number_input("Dias Integração", 5)
 
     st.markdown("---")
     usar_data_fim = st.checkbox("Informar previsão de término no documento?", value=True)
-    
-    if usar_data_fim:
-        d_fim = st.date_input("Previsão de Término", date.today()+timedelta(days=30))
-    else:
-        d_fim = None
+    if usar_data_fim: d_fim = st.date_input("Previsão de Término", date.today()+timedelta(days=30))
+    else: d_fim = None
 
 with tab5:
     st.subheader("Informações Comerciais")
-    st.caption("ℹ️ Estes dados não sairão no documento de cotação. Apenas no Contrato Final.")
+    st.caption("ℹ️ Apenas no Contrato Final.")
     val_total = dados_edicao.get('Valor', 'R$ 0,00')
     valor = st.text_input("Total", value=val_total)
-    
     pgto = st.text_area("Pagamento")
     info = st.text_input("Info Extra")
     obs = st.text_area("Obs")
-
     st.divider()
     
-    st.subheader("🚦 Workflow (Status do Projeto)")
-    
+    st.subheader("🚦 Workflow")
     status_atual = dados_edicao.get('Status', 'Em Elaboração (Engenharia)')
-    
-    lista_status = [
-        "Em Elaboração (Engenharia)",
-        "Aguardando Obras",
-        "Recebido (Suprimentos)",
-        "Enviado para Cotação",
-        "Em Negociação",
-        "Contratação Finalizada"
-    ]
-    
+    lista_status = ["Em Elaboração (Engenharia)", "Aguardando Obras", "Recebido (Suprimentos)", "Enviado para Cotação", "Em Negociação", "Contratação Finalizada"]
     try: idx_status = lista_status.index(status_atual)
     except: idx_status = 0
-    
     novo_status = st.selectbox("Fase Atual:", lista_status, index=idx_status)
-    
-    if novo_status == "Contratação Finalizada":
-        st.warning("⚠️ Ao finalizar, você deve obrigatoriamente informar o nome da empresa vencedora na aba 1.")
+    if novo_status == "Contratação Finalizada": st.warning("⚠️ Informe o nome da empresa vencedora na aba 1.")
 
 st.markdown("---")
 
-# --- LÓGICA DE SALVAMENTO ---
+# --- BOTÃO FINAL ---
 if status_atual == "Contratação Finalizada" and 'modo_edicao' in st.session_state:
     st.error("🔒 CONTRATAÇÃO FINALIZADA. Edição bloqueada.")
     st.download_button("📥 Baixar Contrato Final", gerar_docx(dados_edicao).getvalue(), f"Escopo_{val_forn}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
-
 else:
     label_botao = "💾 ATUALIZAR PROJETO" if id_linha_edicao else "🚀 REGISTRAR"
 
     if st.button(label_botao, type="primary", use_container_width=True):
-        
-        erro_validacao = False
+        erro = False
         if novo_status == "Contratação Finalizada":
             if fornecedor_final == "PROPONENTE DE DUTOS" or not fornecedor_final.strip():
-                st.error("⛔ ERRO: Para marcar como 'Contratação Finalizada', você DEVE preencher o nome da empresa na Aba 1.")
-                st.toast("Preencha o nome do fornecedor!", icon="⛔")
-                erro_validacao = True
+                st.error("⛔ Preencha o nome do fornecedor na Aba 1!"); erro = True
         
-        if not erro_validacao:
+        if not erro:
             val_proj_ref = st.session_state.get("input_proj_ref", "")
-            
             dados = {
                 'cliente': cliente, 'obra': obra, 
                 'fornecedor': fornecedor_final,
                 'responsavel': responsavel, 
+                'resp_obras': resp_obras, # <--- Campo Novo
                 'revisao': revisao, 
                 'projetos_ref': val_proj_ref,
                 'resumo_escopo': resumo_escopo,
                 'itens_tecnicos': itens_tecnicos, 'tecnico_livre': tecnico_livre,
                 'itens_qualidade': itens_qualidade, 'qualidade_livre': qualidade_livre,
                 'matriz': escolhas_matriz, 'nrs_selecionadas': nrs,
-                'data_inicio': d_ini, 'dias_integracao': d_int, 
-                'data_fim': d_fim, 
+                'data_inicio': d_ini, 'dias_integracao': d_int, 'data_fim': d_fim, 
                 'obs_gerais': obs, 'valor_total': valor, 'condicao_pgto': pgto, 'info_comercial': info,
                 'status': novo_status,
                 'nomes_anexos': [f.name for f in arquivos_anexos] if arquivos_anexos else []
             }
             
             docx_buffer = gerar_docx(dados)
-            nome_arq_limpo = fornecedor_final.replace(" ", "_")
-            nome_arq = f"Escopo_{nome_arq_limpo}.docx"
+            nome_arq = f"Escopo_{fornecedor_final.replace(' ', '_')}.docx"
             docx_buffer.seek(0)
             
             with st.spinner("Salvando..."):
@@ -360,23 +365,10 @@ else:
                 st.success(f"✅ Projeto Atualizado! Fase: {novo_status}")
 
             st.divider()
-            
             c1, c2 = st.columns(2)
-            
-            with c1:
-                st.info("Arquivo:")
-                st.download_button("📥 Baixar DOCX", docx_buffer.getvalue(), nome_arq, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True)
-            
+            with c1: st.download_button("📥 Baixar DOCX", docx_buffer.getvalue(), nome_arq, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True)
             with c2:
-                st.info("Notificação:")
                 assunto_cot = f"Atualização: {obra} - {novo_status}"
-                corpo_cot = f"Olá,\n\nSegue documento atualizado.\nObra: {obra}\nStatus: {novo_status}"
+                corpo_cot = f"Olá,\n\nSegue doc atualizado.\nObra: {obra}\nStatus: {novo_status}"
                 link_cot = f"mailto:{email_suprimentos}?subject={urllib.parse.quote(assunto_cot)}&body={urllib.parse.quote(corpo_cot)}"
-                
-                st.markdown(f"""
-                <a href="{link_cot}" target="_blank">
-                    <button style="width:100%; background-color:#FF4B4B; color:white; border:none; padding:10px; border-radius:5px; font-weight:bold; cursor:pointer;">
-                    📧 Abrir Outlook/Gmail
-                    </button>
-                </a>
-                """, unsafe_allow_html=True)
+                st.markdown(f"""<a href="{link_cot}" target="_blank"><button style="width:100%; background-color:#FF4B4B; color:white; border:none; padding:10px; border-radius:5px; font-weight:bold; cursor:pointer;">📧 Abrir Outlook/Gmail</button></a>""", unsafe_allow_html=True)
