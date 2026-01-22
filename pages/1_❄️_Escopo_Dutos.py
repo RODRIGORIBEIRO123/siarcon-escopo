@@ -13,25 +13,13 @@ st.set_page_config(page_title="Escopo Dutos | SIARCON", page_icon="❄️", layo
 
 # --- FUNÇÃO DE CALLBACK (SALVAR E LIMPAR) ---
 def adicionar_item_callback(categoria, key_input):
-    """
-    Esta função roda ANTES da tela recarregar.
-    Ela salva no banco e limpa o campo de texto com segurança.
-    """
-    # Pega o valor digitado direto do session_state
     novo_item = st.session_state.get(key_input, "")
-    
     if novo_item:
-        # Tenta salvar
         retorno = utils_db.aprender_novo_item(categoria, novo_item)
-        
         if retorno is True:
-            # Limpa o campo (Agora é permitido, pois estamos numa callback)
             st.session_state[key_input] = ""
-            # Força recarregar as opções do banco na próxima tela
             if 'opcoes_db' in st.session_state: del st.session_state['opcoes_db']
-            # Mostra aviso flutuante
             st.toast(f"✅ Item '{novo_item}' salvo em {categoria}!", icon="✅")
-            
         elif retorno == "Duplicado":
             st.toast(f"⚠️ O item '{novo_item}' já existe na lista!", icon="⚠️")
         else:
@@ -152,9 +140,18 @@ with tab1:
         val_obra = dados_edicao.get('Obra', '')
         obra = st.text_input("Obra", value=val_obra)
         
+        # --- LÓGICA DO FORNECEDOR ---
         val_forn = dados_edicao.get('Fornecedor', '')
-        fornecedor = st.text_input("Fornecedor", value=val_forn)
+        if val_forn == "PROPONENTE DE DUTOS": val_forn = "" # Limpa visualmente se for genérico
         
+        fornecedor_input = st.text_input("Fornecedor", value=val_forn, placeholder="Deixe em branco p/ genérico")
+        
+        # Define o nome final
+        if not fornecedor_input:
+            fornecedor_final = "PROPONENTE DE DUTOS"
+        else:
+            fornecedor_final = fornecedor_input
+            
     with c2:
         val_resp = dados_edicao.get('Responsável', 'Engenharia')
         responsavel = st.text_input("Responsável", value=val_resp)
@@ -162,7 +159,7 @@ with tab1:
         revisao = st.text_input("Revisão", "R-00")
         projetos_ref = st.text_input("Projetos Ref.")
         
-        email_suprimentos = st.text_input("📧 E-mail de Suprimentos (Para Link):", value="suprimentos@siarcon.com.br")
+        email_suprimentos = st.text_input("📧 E-mail de Suprimentos/Obras:", value="suprimentos@siarcon.com.br")
 
     resumo_escopo = st.text_area("Resumo")
     arquivos_anexos = st.file_uploader("Anexos", accept_multiple_files=True)
@@ -174,16 +171,8 @@ with tab2:
     
     col_add, col_free = st.columns(2)
     with col_add:
-        # 1. Campo de texto com chave fixa
         st.text_input("➕ Cadastrar novo item (Técnico)", key="input_novo_tec")
-        
-        # 2. Botão com CALLBACK (on_click)
-        # Isso evita o erro de "APIException" ao limpar o campo
-        st.button(
-            "Salvar Item Técnico", 
-            on_click=adicionar_item_callback, 
-            args=("tecnico", "input_novo_tec")
-        )
+        st.button("Salvar Item Técnico", on_click=adicionar_item_callback, args=("tecnico", "input_novo_tec"))
                 
     with col_free: tecnico_livre = st.text_area("Texto Livre (Técnico)")
     
@@ -196,23 +185,21 @@ with tab2:
     c_q1, c_q2 = st.columns(2)
     with c_q1:
         st.text_input("➕ Cadastrar novo item (Qualidade)", key="input_novo_qual")
-        
-        st.button(
-            "Salvar Qualidade", 
-            on_click=adicionar_item_callback, 
-            args=("qualidade", "input_novo_qual")
-        )
+        st.button("Salvar Qualidade", on_click=adicionar_item_callback, args=("qualidade", "input_novo_qual"))
 
     with c_q2: qualidade_livre = st.text_input("Texto Livre (Qualidade)")
 
 with tab3:
-    if not fornecedor: st.warning("Preencha Fornecedor na aba 1")
     escolhas_matriz = {}
     itens_matriz = ["Materiais dutos", "Difusão", "Consumíveis", "Vedação", "Plataformas", "Escadas", "Ferramental", "Alimentação", "Encargos", "Viagem", "EPIs"]
+    
+    nome_na_matriz = fornecedor_final.upper() if fornecedor_final else "PROPONENTE"
+    st.info(f"Matriz de responsabilidades para: **{nome_na_matriz}**")
+    
     for item in itens_matriz:
         c1, c2 = st.columns([3,2])
         c1.write(f"**{item}**")
-        escolhas_matriz[item] = c2.radio(f"r_{item}", ["SIARCON", fornecedor.upper() if fornecedor else "CONTRATADA"], horizontal=True, label_visibility="collapsed")
+        escolhas_matriz[item] = c2.radio(f"r_{item}", ["SIARCON", nome_na_matriz], horizontal=True, label_visibility="collapsed")
         st.divider()
 
 with tab4:
@@ -220,11 +207,7 @@ with tab4:
     nrs = st.multiselect("SMS Adicional:", options=opcoes_sms)
     
     st.text_input("➕ Novo Doc SMS", key="input_novo_sms")
-    st.button(
-        "Salvar SMS", 
-        on_click=adicionar_item_callback, 
-        args=("sms", "input_novo_sms")
-    )
+    st.button("Salvar SMS", on_click=adicionar_item_callback, args=("sms", "input_novo_sms"))
 
     st.divider()
     d_ini = st.date_input("Início")
@@ -242,31 +225,53 @@ with tab5:
 
     st.divider()
     
-    st.subheader("🚦 Status do Workflow")
+    st.subheader("🚦 Workflow (Status do Projeto)")
+    
     status_atual = dados_edicao.get('Status', 'Em Elaboração (Engenharia)')
-    lista_status = ["Em Elaboração (Engenharia)", "Aguardando Obras", "Finalizado / Contratado"]
+    
+    lista_status = [
+        "Em Elaboração (Engenharia)",
+        "Aguardando Obras",
+        "Recebido (Suprimentos)",
+        "Enviado para Cotação",
+        "Em Negociação",
+        "Contratação Finalizada"
+    ]
+    
     try: idx_status = lista_status.index(status_atual)
     except: idx_status = 0
-    novo_status = st.selectbox("Situação Atual:", lista_status, index=idx_status)
-    if novo_status == "Finalizado / Contratado":
-        st.warning("🔒 ATENÇÃO: Ao salvar como 'Finalizado', este projeto não poderá ser editado futuramente.")
+    
+    novo_status = st.selectbox("Fase Atual:", lista_status, index=idx_status)
+    
+    if novo_status == "Contratação Finalizada":
+        st.warning("⚠️ Ao finalizar, você deve obrigatoriamente informar o nome da empresa vencedora na aba 1.")
 
 st.markdown("---")
 
-# --- LÓGICA DE BOTÕES ---
-if status_atual == "Finalizado / Contratado" and 'modo_edicao' in st.session_state:
-    st.error("🔒 ESTE PROJETO JÁ FOI FINALIZADO. Edição bloqueada.")
-    st.download_button("📥 Apenas Baixar DOCX", gerar_docx(dados_edicao).getvalue(), f"Escopo_{val_forn}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+# --- LÓGICA DE SALVAMENTO ---
+if status_atual == "Contratação Finalizada" and 'modo_edicao' in st.session_state:
+    st.error("🔒 CONTRATAÇÃO FINALIZADA. Edição bloqueada.")
+    st.download_button("📥 Baixar Contrato Final", gerar_docx(dados_edicao).getvalue(), f"Escopo_{val_forn}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
 else:
-    label_botao = "💾 ATUALIZAR PROJETO" if id_linha_edicao else "🚀 GERAR CONTRATO & REGISTRAR"
+    label_botao = "💾 ATUALIZAR PROJETO" if id_linha_edicao else "🚀 REGISTRAR"
 
     if st.button(label_botao, type="primary", use_container_width=True):
-        if not fornecedor:
-            st.error("Faltou o fornecedor!")
-        else:
+        
+        # --- TRAVA DE SEGURANÇA (NOME OBRIGATÓRIO) ---
+        erro_validacao = False
+        if novo_status == "Contratação Finalizada":
+            # Verifica se é genérico ou vazio
+            if fornecedor_final == "PROPONENTE DE DUTOS" or not fornecedor_final.strip():
+                st.error("⛔ ERRO: Para marcar como 'Contratação Finalizada', você DEVE preencher o nome da empresa na Aba 1.")
+                st.toast("Preencha o nome do fornecedor!", icon="⛔")
+                erro_validacao = True
+        
+        if not erro_validacao:
             dados = {
-                'cliente': cliente, 'obra': obra, 'fornecedor': fornecedor, 'responsavel': responsavel, 
+                'cliente': cliente, 'obra': obra, 
+                'fornecedor': fornecedor_final,
+                'responsavel': responsavel, 
                 'revisao': revisao, 'projetos_ref': projetos_ref, 'resumo_escopo': resumo_escopo,
                 'itens_tecnicos': itens_tecnicos, 'tecnico_livre': tecnico_livre,
                 'itens_qualidade': itens_qualidade, 'qualidade_livre': qualidade_livre,
@@ -278,57 +283,58 @@ else:
             }
             
             docx_buffer = gerar_docx(dados)
-            nome_arq = f"Escopo_{fornecedor}.docx"
+            nome_arq_limpo = fornecedor_final.replace(" ", "_")
+            nome_arq = f"Escopo_{nome_arq_limpo}.docx"
             docx_buffer.seek(0)
             
-            with st.spinner("Salvando no Google Sheets..."):
+            with st.spinner("Salvando..."):
                 utils_db.registrar_projeto(dados, id_linha=id_linha_edicao)
-                if id_linha_edicao:
-                    st.success(f"✅ Projeto Atualizado!")
-                else:
-                    st.success("✅ Novo Projeto Registrado!")
+                st.success(f"✅ Projeto Atualizado! Fase: {novo_status}")
 
             st.divider()
-            st.markdown("### 📤 Próximos Passos:")
             
-            c_down, c_email = st.columns(2)
+            # --- ÁREA DE NOTIFICAÇÃO E DOWNLOAD ---
+            c1, c2, c3 = st.columns([1, 1, 1])
             
-            with c_down:
-                st.info("1️⃣ Baixe o arquivo:")
+            with c1:
                 st.download_button("📥 Baixar DOCX", docx_buffer.getvalue(), nome_arq, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True)
             
-            with c_email:
-                st.info("2️⃣ Envie para cotação:")
-                
-                assunto = f"Cotação Liberada: {obra} - {fornecedor}"
-                corpo = f"""Olá Time de Suprimentos,
-                
-O escopo técnico para a obra {obra} (Cliente: {cliente}) foi aprovado.
-Fornecedor: {fornecedor}
+            # BOTÃO DE STATUS (Só aparece se o status mudou)
+            if novo_status != status_atual:
+                with c2:
+                    assunto_status = f"Atualização de Status: {obra} -> {novo_status}"
+                    corpo_status = f"""Olá time,
+                    
+O projeto {obra} mudou de status.
 
-(Anexe o arquivo baixado aqui e envie).
+De: {status_atual}
+Para: {novo_status}
+Responsável: {responsavel}
 
-Att, {responsavel}"""
-                
-                assunto_enc = urllib.parse.quote(assunto)
-                corpo_enc = urllib.parse.quote(corpo)
-                link_email = f"mailto:{email_suprimentos}?subject={assunto_enc}&body={corpo_enc}"
+Favor verificar no sistema.
+Att,"""
+                    assunto_enc = urllib.parse.quote(assunto_status)
+                    corpo_enc = urllib.parse.quote(corpo_status)
+                    link_status = f"mailto:{email_suprimentos}?subject={assunto_enc}&body={corpo_enc}"
+                    
+                    st.markdown(f"""
+                    <a href="{link_status}" target="_blank">
+                        <button style="width:100%; background-color:#FFA500; color:white; border:none; padding:10px; border-radius:5px; font-weight:bold; cursor:pointer;">
+                        📢 Notificar Mudança de Status
+                        </button>
+                    </a>
+                    """, unsafe_allow_html=True)
+            
+            # BOTÃO DE ENVIO PADRÃO (Cotação)
+            with c3:
+                assunto_cot = f"Cotação: {obra} - {fornecedor_final}"
+                corpo_cot = f"Olá,\n\nSegue escopo para cotação.\nObra: {obra}\nFornecedor: {fornecedor_final}"
+                link_cot = f"mailto:{email_suprimentos}?subject={urllib.parse.quote(assunto_cot)}&body={urllib.parse.quote(corpo_cot)}"
                 
                 st.markdown(f"""
-                <a href="{link_email}" target="_blank" style="text-decoration:none;">
-                    <button style="
-                        width: 100%;
-                        background-color: #FF4B4B;
-                        color: white;
-                        padding: 10px;
-                        border: none;
-                        border-radius: 5px;
-                        cursor: pointer;
-                        font-weight: bold;">
-                        📧 Abrir E-mail (Outlook/Gmail)
+                <a href="{link_cot}" target="_blank">
+                    <button style="width:100%; background-color:#FF4B4B; color:white; border:none; padding:10px; border-radius:5px; font-weight:bold; cursor:pointer;">
+                    📧 Email de Cotação
                     </button>
                 </a>
-                <div style='font-size:0.8em; color:gray; text-align:center; margin-top:5px;'>
-                    Clique acima para abrir seu e-mail, depois anexe o arquivo baixado.
-                </div>
                 """, unsafe_allow_html=True)
