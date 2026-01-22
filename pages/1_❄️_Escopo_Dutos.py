@@ -54,11 +54,10 @@ if 'opcoes_db' not in st.session_state:
     with st.spinner("Carregando banco de dados..."):
         st.session_state['opcoes_db'] = utils_db.carregar_opcoes()
 
-# --- FUNÇÃO DOCX (FORMATAÇÃO NOVA) ---
+# --- FUNÇÃO DOCX ---
 def gerar_docx(dados):
     document = Document()
     
-    # Configurações de Fonte Padrão
     try:
         style = document.styles['Normal']
         font = style.font
@@ -66,10 +65,9 @@ def gerar_docx(dados):
         font.size = Pt(11)
     except: pass
 
-    # 1. CABEÇALHO (Texto Centralizado)
+    # 1. CABEÇALHO
     section = document.sections[0]
     header = section.header
-    # Limpa qualquer conteúdo anterior
     for paragraph in header.paragraphs:
         p = paragraph._element
         p.getparent().remove(p)
@@ -82,7 +80,7 @@ def gerar_docx(dados):
     p_head.style.font.size = Pt(14)
     p_head.style.font.name = 'Calibri'
 
-    # 2. TÍTULO E REVISÃO
+    # 2. TÍTULO
     document.add_paragraph("\n")
     title = document.add_heading('Escopo de fornecimento - Rede de dutos', 0)
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -90,7 +88,7 @@ def gerar_docx(dados):
     p_rev = document.add_paragraph(f"Data: {date.today().strftime('%d/%m/%Y')} | Rev: {dados['revisao']}")
     p_rev.alignment = WD_ALIGN_PARAGRAPH.RIGHT
 
-    # 3. CORPO DO DOCUMENTO
+    # 3. CORPO
     document.add_heading('1. OBJETIVO E RESUMO', level=1)
     table = document.add_table(rows=6, cols=2)
     try: table.style = 'Table Grid'
@@ -159,7 +157,7 @@ def gerar_docx(dados):
         document.add_paragraph(f"Total: {dados['valor_total']} | Pagamento: {dados['condicao_pgto']}")
         if dados['info_comercial']: document.add_paragraph(dados['info_comercial'])
     
-    # 4. RODAPÉ (Texto Centralizado)
+    # 4. RODAPÉ
     footer = section.footer
     for paragraph in footer.paragraphs:
         p = paragraph._element
@@ -172,14 +170,11 @@ def gerar_docx(dados):
     p_foot.style.font.size = Pt(9)
     p_foot.style.font.italic = True
 
-    # 5. ASSINATURAS
+    # 5. SEM ASSINATURAS (REMOVIDO A PEDIDO)
+    # Apenas o texto de acordo
     document.add_paragraph("\n\n")
-    sig_table = document.add_table(rows=1, cols=3)
-    sig_table.autofit = True
-    c1 = sig_table.cell(0, 0); c2 = sig_table.cell(0, 1); c3 = sig_table.cell(0, 2)
-    p1 = c1.paragraphs[0]; p1.add_run("______________________\nEngenharia:\n" + dados['responsavel']); p1.alignment = 1
-    p2 = c2.paragraphs[0]; p2.add_run("______________________\nObras:\n" + dados['resp_obras']); p2.alignment = 1
-    p3 = c3.paragraphs[0]; p3.add_run("______________________\nFornecedor:\n" + dados['fornecedor']); p3.alignment = 1
+    document.add_paragraph("_"*60)
+    document.add_paragraph(f"DE ACORDO: {dados['fornecedor']}")
 
     buffer = io.BytesIO()
     document.save(buffer)
@@ -306,7 +301,7 @@ with tab5:
 
 st.markdown("---")
 
-# --- BOTÃO FINAL ---
+# --- BOTÕES FINAIS ---
 if status_atual == "Contratação Finalizada" and 'modo_edicao' in st.session_state:
     st.error("🔒 CONTRATAÇÃO FINALIZADA. Edição bloqueada.")
     st.download_button("📥 Baixar Contrato Final", gerar_docx(dados_edicao).getvalue(), f"Escopo_{val_forn}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
@@ -338,11 +333,9 @@ else:
                 'nomes_anexos': [f.name for f in arquivos_anexos] if arquivos_anexos else []
             }
             
-            # 1. Gera o DOCX
             docx_buffer = gerar_docx(dados)
             nome_arq = f"Escopo_{fornecedor_final.replace(' ', '_')}.docx"
             
-            # 2. Gera o ZIP de Anexos (Se houver)
             zip_buffer = None
             if arquivos_anexos:
                 zip_buffer = io.BytesIO()
@@ -356,37 +349,102 @@ else:
                 st.success(f"✅ Projeto Atualizado! Fase: {novo_status}")
 
             st.divider()
-            
-            # --- ÁREA DE DOWNLOADS (SEPARADA) ---
             st.markdown("### 📥 Downloads")
             col_d1, col_d2, col_d3 = st.columns([1.5, 1.5, 2])
             
-            # Botão 1: O DOCX (Sempre existe)
             with col_d1:
-                st.download_button(
-                    label="📄 1. Baixar Escopo (DOCX)",
-                    data=docx_buffer.getvalue(),
-                    file_name=nome_arq,
-                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                    use_container_width=True
-                )
+                st.download_button("📄 1. Baixar Escopo (DOCX)", docx_buffer.getvalue(), nome_arq, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True)
             
-            # Botão 2: O ZIP (Só se tiver anexo)
             with col_d2:
                 if zip_buffer:
-                    st.download_button(
-                        label="📎 2. Baixar Anexos (ZIP)",
-                        data=zip_buffer,
-                        file_name=f"Anexos_{obra}.zip",
-                        mime="application/zip",
-                        use_container_width=True
-                    )
+                    st.download_button("📎 2. Baixar Anexos (ZIP)", zip_buffer, f"Anexos_{obra}.zip", "application/zip", use_container_width=True)
                 else:
-                    st.info("Sem anexos para baixar.")
+                    st.info("Sem anexos.")
 
-            # Botão 3: Email
             with col_d3:
                 assunto_cot = f"Atualização: {obra} - {novo_status}"
                 corpo_cot = f"Olá,\n\nSegue doc atualizado.\nObra: {obra}\nStatus: {novo_status}"
                 link_cot = f"mailto:{email_suprimentos}?subject={urllib.parse.quote(assunto_cot)}&body={urllib.parse.quote(corpo_cot)}"
                 st.markdown(f"""<a href="{link_cot}" target="_blank"><button style="width:100%; background-color:#FF4B4B; color:white; border:none; padding:10px; border-radius:5px; font-weight:bold; cursor:pointer;">📧 Notificar por E-mail</button></a>""", unsafe_allow_html=True)
+
+3. Atualizar o Dashboard (pages/0_📊_Dashboard.py)
+
+Adicionei o botão de lixeira 🗑️ em cada cartão do Kanban.
+Python
+
+import streamlit as st
+import pandas as pd
+import utils_db
+
+st.set_page_config(page_title="Dashboard | SIARCON", page_icon="📊", layout="wide")
+st.title("📊 Painel de Projetos (Kanban)")
+
+if st.button("🔄 Atualizar Quadro"): st.rerun()
+
+df = utils_db.listar_todos_projetos()
+
+if not df.empty:
+    if "Status" not in df.columns: df["Status"] = "Em Elaboração (Engenharia)"
+    
+    total = len(df)
+    pendencia_obras = len(df[df["Status"].str.contains("Aguardando Obras", na=False)])
+    
+    m1, m2 = st.columns([1, 3])
+    m1.metric("Total de Projetos", total)
+    if pendencia_obras > 0: m2.warning(f"⚠️ Atenção Obras: Existem {pendencia_obras} projetos na sua fila!")
+    else: m2.success("✅ Fila de Obras Zerada! O fluxo está fluindo.")
+
+    st.divider()
+
+    col_eng, col_obras, col_supr, col_fim = st.columns(4)
+    
+    # --- FUNÇÃO AUXILIAR PARA CRIAR O CARTÃO ---
+    def card_projeto(row, cor_status="blue"):
+        with st.container(border=True):
+            st.markdown(f"**{row['Cliente']}**")
+            st.caption(f"📍 {row['Obra']}")
+            st.markdown(f":{cor_status}[{row['Status']}]")
+            
+            c1, c2 = st.columns([4, 1])
+            with c1:
+                if st.button(f"✏️ Editar", key=f"edit_{row['_id_linha']}", use_container_width=True):
+                    st.session_state['dados_projeto'] = row.to_dict()
+                    st.session_state['modo_edicao'] = True
+                    st.switch_page("pages/1_❄️_Escopo_Dutos.py")
+            with c2:
+                # BOTÃO DE EXCLUIR
+                if st.button("🗑️", key=f"del_{row['_id_linha']}"):
+                    utils_db.excluir_projeto(row['_id_linha'])
+                    st.rerun()
+
+    # 1. ENGENHARIA
+    with col_eng:
+        st.subheader("👷 Engenharia")
+        st.markdown("---")
+        filtro = df[df["Status"] == "Em Elaboração (Engenharia)"]
+        for i, row in filtro.iterrows(): card_projeto(row, "blue")
+
+    # 2. OBRAS
+    with col_obras:
+        st.subheader("🚧 Obras")
+        st.markdown("---")
+        filtro = df[df["Status"] == "Aguardando Obras"]
+        for i, row in filtro.iterrows(): card_projeto(row, "orange")
+
+    # 3. SUPRIMENTOS
+    with col_supr:
+        st.subheader("💰 Suprimentos")
+        st.markdown("---")
+        lista = ["Recebido (Suprimentos)", "Enviado para Cotação", "Em Negociação"]
+        filtro = df[df["Status"].isin(lista)]
+        for i, row in filtro.iterrows(): card_projeto(row, "violet")
+
+    # 4. FINALIZADOS
+    with col_fim:
+        st.subheader("✅ Concluídos")
+        st.markdown("---")
+        filtro = df[df["Status"] == "Contratação Finalizada"]
+        for i, row in filtro.iterrows(): card_projeto(row, "green")
+
+else:
+    st.info("📭 Nenhum projeto encontrado no banco de dados.")
