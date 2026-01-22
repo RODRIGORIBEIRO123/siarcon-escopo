@@ -7,6 +7,7 @@ import zipfile
 from datetime import date, timedelta
 import urllib.parse
 import utils_db
+import utils_email # <--- Importamos o carteiro de volta
 
 # --- CONFIGURAÇÃO ---
 st.set_page_config(page_title="Escopo Dutos | SIARCON", page_icon="❄️", layout="wide")
@@ -140,13 +141,11 @@ with tab1:
         val_obra = dados_edicao.get('Obra', '')
         obra = st.text_input("Obra", value=val_obra)
         
-        # --- LÓGICA DO FORNECEDOR ---
         val_forn = dados_edicao.get('Fornecedor', '')
-        if val_forn == "PROPONENTE DE DUTOS": val_forn = "" # Limpa visualmente se for genérico
+        if val_forn == "PROPONENTE DE DUTOS": val_forn = "" 
         
         fornecedor_input = st.text_input("Fornecedor", value=val_forn, placeholder="Deixe em branco p/ genérico")
         
-        # Define o nome final
         if not fornecedor_input:
             fornecedor_final = "PROPONENTE DE DUTOS"
         else:
@@ -258,10 +257,8 @@ else:
 
     if st.button(label_botao, type="primary", use_container_width=True):
         
-        # --- TRAVA DE SEGURANÇA (NOME OBRIGATÓRIO) ---
         erro_validacao = False
         if novo_status == "Contratação Finalizada":
-            # Verifica se é genérico ou vazio
             if fornecedor_final == "PROPONENTE DE DUTOS" or not fornecedor_final.strip():
                 st.error("⛔ ERRO: Para marcar como 'Contratação Finalizada', você DEVE preencher o nome da empresa na Aba 1.")
                 st.toast("Preencha o nome do fornecedor!", icon="⛔")
@@ -293,48 +290,52 @@ else:
 
             st.divider()
             
-            # --- ÁREA DE NOTIFICAÇÃO E DOWNLOAD ---
-            c1, c2, c3 = st.columns([1, 1, 1])
+            c1, c2, c3 = st.columns([1, 1.5, 1.5])
             
             with c1:
+                st.info("Arquivo:")
                 st.download_button("📥 Baixar DOCX", docx_buffer.getvalue(), nome_arq, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True)
             
-            # BOTÃO DE STATUS (Só aparece se o status mudou)
-            if novo_status != status_atual:
-                with c2:
-                    assunto_status = f"Atualização de Status: {obra} -> {novo_status}"
-                    corpo_status = f"""Olá time,
-                    
-O projeto {obra} mudou de status.
+            # --- TENTATIVA AUTOMÁTICA ---
+            with c2:
+                st.info("Opção A (Automático):")
+                if st.button("🤖 Enviar via Sistema", use_container_width=True):
+                    with st.spinner("O robô está tentando enviar..."):
+                        
+                        corpo_auto = f"""Olá,
+                        
+Segue documento atualizado do projeto {obra}.
+Status: {novo_status}
+Fornecedor: {fornecedor_final}
 
-De: {status_atual}
-Para: {novo_status}
-Responsável: {responsavel}
+Att, Portal SIARCON"""
 
-Favor verificar no sistema.
-Att,"""
-                    assunto_enc = urllib.parse.quote(assunto_status)
-                    corpo_enc = urllib.parse.quote(corpo_status)
-                    link_status = f"mailto:{email_suprimentos}?subject={assunto_enc}&body={corpo_enc}"
-                    
-                    st.markdown(f"""
-                    <a href="{link_status}" target="_blank">
-                        <button style="width:100%; background-color:#FFA500; color:white; border:none; padding:10px; border-radius:5px; font-weight:bold; cursor:pointer;">
-                        📢 Notificar Mudança de Status
-                        </button>
-                    </a>
-                    """, unsafe_allow_html=True)
-            
-            # BOTÃO DE ENVIO PADRÃO (Cotação)
+                        res = utils_email.enviar_email_com_anexo(
+                            destinatario=email_suprimentos,
+                            assunto=f"Status {novo_status}: {obra}",
+                            corpo=corpo_auto,
+                            arquivo_bytes=docx_buffer.getvalue(),
+                            nome_arquivo=nome_arq
+                        )
+                        
+                        if res is True:
+                            st.balloons()
+                            st.success("✅ E-mail enviado com sucesso pelo sistema!")
+                        else:
+                            st.error(f"⚠️ O envio automático falhou (O Google bloqueou). Use a Opção B ao lado.")
+                            st.code(res)
+
+            # --- OPÇÃO MANUAL (BACKUP) ---
             with c3:
-                assunto_cot = f"Cotação: {obra} - {fornecedor_final}"
-                corpo_cot = f"Olá,\n\nSegue escopo para cotação.\nObra: {obra}\nFornecedor: {fornecedor_final}"
+                st.info("Opção B (Manual):")
+                assunto_cot = f"Atualização: {obra} - {novo_status}"
+                corpo_cot = f"Olá,\n\nSegue documento atualizado.\nObra: {obra}\nStatus: {novo_status}"
                 link_cot = f"mailto:{email_suprimentos}?subject={urllib.parse.quote(assunto_cot)}&body={urllib.parse.quote(corpo_cot)}"
                 
                 st.markdown(f"""
                 <a href="{link_cot}" target="_blank">
                     <button style="width:100%; background-color:#FF4B4B; color:white; border:none; padding:10px; border-radius:5px; font-weight:bold; cursor:pointer;">
-                    📧 Email de Cotação
+                    📧 Abrir Outlook/Gmail
                     </button>
                 </a>
                 """, unsafe_allow_html=True)
