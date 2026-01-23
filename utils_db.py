@@ -15,7 +15,7 @@ def conectar_google_sheets():
         st.error(f"Erro de conexão: {e}")
         return None
 
-# --- 2. CONFIGURAÇÕES ---
+# --- 2. CONFIGURAÇÕES (TODAS AS DISCIPLINAS) ---
 def carregar_opcoes():
     try:
         sh = conectar_google_sheets()
@@ -23,17 +23,32 @@ def carregar_opcoes():
         ws = sh.worksheet("Config")
         data = ws.get_all_records()
         df = pd.DataFrame(data)
+        
+        # Função auxiliar para filtrar
+        def get_list(cat): return df[df["Categoria"] == cat]["Item"].tolist()
+        
         return {
-            "tecnico": df[df["Categoria"] == "tecnico"]["Item"].tolist(),
-            "qualidade": df[df["Categoria"] == "qualidade"]["Item"].tolist(),
+            "tecnico": get_list("tecnico"), # Dutos
+            "qualidade": get_list("qualidade"),
             
-            "tecnico_hidraulica": df[df["Categoria"] == "tecnico_hidraulica"]["Item"].tolist(),
-            "qualidade_hidraulica": df[df["Categoria"] == "qualidade_hidraulica"]["Item"].tolist(),
+            "tecnico_hidraulica": get_list("tecnico_hidraulica"),
+            "qualidade_hidraulica": get_list("qualidade_hidraulica"),
             
-            "tecnico_eletrica": df[df["Categoria"] == "tecnico_eletrica"]["Item"].tolist(), # NOVO
-            "qualidade_eletrica": df[df["Categoria"] == "qualidade_eletrica"]["Item"].tolist(), # NOVO
+            "tecnico_eletrica": get_list("tecnico_eletrica"),
+            "qualidade_eletrica": get_list("qualidade_eletrica"),
             
-            "sms": df[df["Categoria"] == "sms"]["Item"].tolist()
+            "tecnico_automacao": get_list("tecnico_automacao"),
+            "qualidade_automacao": get_list("qualidade_automacao"),
+            
+            "tecnico_tab": get_list("tecnico_tab"),
+            
+            "tecnico_movimentacao": get_list("tecnico_movimentacao"), # NOVO
+            "qualidade_movimentacao": get_list("qualidade_movimentacao"), # NOVO
+            
+            "tecnico_cobre": get_list("tecnico_cobre"), # NOVO
+            "qualidade_cobre": get_list("qualidade_cobre"), # NOVO
+
+            "sms": get_list("sms")
         }
     except: return {}
 
@@ -52,11 +67,9 @@ def listar_todos_projetos():
         sh = conectar_google_sheets()
         if not sh: return pd.DataFrame()
         ws = sh.worksheet("Projetos")
-        
         rows = ws.get_all_values()
         if len(rows) < 2: return pd.DataFrame()
         
-        # Define colunas padrão para evitar erro de leitura
         colunas_padrao = ["Data", "Cliente", "Obra", "Fornecedor", "Responsavel", "Valor", "Status", "Resp_Obras", "Disciplina"]
         
         dados_tratados = []
