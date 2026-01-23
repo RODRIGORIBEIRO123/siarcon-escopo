@@ -87,7 +87,6 @@ def gerar_docx(dados):
         else: row[2].text = "X"; row[2].paragraphs[0].alignment = 1
 
     document.add_heading('5. SMS', 1)
-    
     docs_padrao = [
         "Ficha de registro",
         "ASO (Atestado de Saúde Ocupacional)",
@@ -101,19 +100,34 @@ def gerar_docx(dados):
 
     document.add_heading('6. CRONOGRAMA', 1)
     data_ini = dados.get('data_inicio')
-    if data_ini:
-        document.add_paragraph(f"Início: {data_ini.strftime('%d/%m/%Y')}")
-    
+    if data_ini: document.add_paragraph(f"Início: {data_ini.strftime('%d/%m/%Y')}")
     data_fim = dados.get('data_fim')
-    if data_fim: 
-        document.add_paragraph(f"Término: {data_fim.strftime('%d/%m/%Y')}")
+    if data_fim: document.add_paragraph(f"Término: {data_fim.strftime('%d/%m/%Y')}")
 
-    if dados.get('obs_gerais'): document.add_heading('7. OBSERVAÇÕES', 1); document.add_paragraph(dados['obs_gerais'])
+    # --- LÓGICA DE NUMERAÇÃO DINÂMICA (CORREÇÃO DO PULO 6->8) ---
+    num_secao = 7
+    
+    if dados.get('obs_gerais'): 
+        document.add_heading(f'{num_secao}. OBSERVAÇÕES', 1)
+        document.add_paragraph(dados['obs_gerais'])
+        num_secao += 1 
     
     if dados.get('status') == "Contratação Finalizada":
-        document.add_heading('8. COMERCIAL', 1)
-        document.add_paragraph(f"Total: {dados.get('valor_total', '')} | Pgto: {dados.get('condicao_pgto', '')}")
-        if dados.get('info_comercial'): document.add_paragraph(dados['info_comercial'])
+        document.add_heading(f'{num_secao}. COMERCIAL', 1)
+        
+        # Valor formatado em linha separada
+        p_val = document.add_paragraph()
+        p_val.add_run("Valor Global: ").bold = True
+        valor_limpo = dados.get('valor_total', '').replace('R$', '').strip() # Limpa se o usuário já digitou R$
+        p_val.add_run(f"R$ {valor_limpo} (Fixo e irreajustável)")
+        
+        # Pagamento em linha separada
+        p_pgto = document.add_paragraph()
+        p_pgto.add_run("Condição de Pagamento: ").bold = True
+        p_pgto.add_run(dados.get('condicao_pgto', ''))
+
+        if dados.get('info_comercial'): 
+            document.add_paragraph(dados['info_comercial'])
     
     section = document.sections[0]; footer = section.footer
     for p in footer.paragraphs: p._element.getparent().remove(p._element)
@@ -150,9 +164,8 @@ with tab2:
     key_tec = "multi_tec_cobre"
     if key_tec not in st.session_state: st.session_state[key_tec] = dados_edicao.get('itens_tecnicos', [])
     
-    # --- ORDEM ALFABÉTICA (sorted) ---
+    # ORDEM ALFABÉTICA
     lista_tec = sorted(st.session_state['opcoes_db'].get('tecnico_cobre', []))
-    
     itens_tec = st.multiselect("Selecione Itens Técnicos:", options=lista_tec, key=key_tec)
     
     c_add, c_free = st.columns(2)
@@ -165,9 +178,8 @@ with tab2:
     key_qual = "multi_qual_cobre"
     if key_qual not in st.session_state: st.session_state[key_qual] = dados_edicao.get('itens_qualidade', [])
 
-    # --- ORDEM ALFABÉTICA (sorted) ---
+    # ORDEM ALFABÉTICA
     lista_qual = sorted(st.session_state['opcoes_db'].get('qualidade_cobre', []))
-
     itens_qual = st.multiselect("Itens Qualidade:", options=lista_qual, key=key_qual)
     
     c_q1, c_q2 = st.columns(2)
@@ -203,7 +215,7 @@ with tab4:
     
     opcoes_nrs = list(set(nrs_padrao + st.session_state['opcoes_db'].get('sms', [])))
     
-    # Ordena as NRs também para ficar bonito
+    # ORDEM ALFABÉTICA
     nrs = st.multiselect("NRS Adicionais Opcionais:", sorted(opcoes_nrs))
     
     c_d1, c_d2 = st.columns(2)
@@ -212,7 +224,8 @@ with tab4:
     d_fim = st.date_input("Fim", date.today()+timedelta(days=15)) if usar_fim else None
 
 with tab5:
-    val = st.text_input("Valor Total", dados_edicao.get('Valor', '')); pgto = st.text_area("Pagamento"); info = st.text_input("Info"); obs = st.text_area("Obs")
+    val = st.text_input("Valor Total (numérico)", dados_edicao.get('Valor', '')); 
+    pgto = st.text_area("Pagamento"); info = st.text_input("Info"); obs = st.text_area("Obs")
     st.divider()
     status = st.selectbox("Status", ["Em Elaboração (Engenharia)", "Aguardando Obras", "Recebido (Suprimentos)", "Enviado para Cotação", "Em Negociação", "Contratação Finalizada"], index=0)
 
