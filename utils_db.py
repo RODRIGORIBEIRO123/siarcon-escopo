@@ -4,7 +4,7 @@ from google.oauth2.service_account import Credentials
 import pandas as pd
 from datetime import datetime
 
-# --- CONEXÃO ---
+# --- 1. CONEXÃO ---
 def conectar_google_sheets():
     try:
         scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
@@ -15,7 +15,7 @@ def conectar_google_sheets():
         st.error(f"Erro de conexão: {e}")
         return None
 
-# --- CONFIGURAÇÕES ---
+# --- 2. CONFIGURAÇÕES ---
 def carregar_opcoes():
     try:
         sh = conectar_google_sheets()
@@ -41,27 +41,28 @@ def aprender_novo_item(categoria, novo_item):
         return True
     except: return False
 
-# --- GESTÃO DE PROJETOS ---
+# --- 3. GESTÃO DE PROJETOS ---
 def listar_todos_projetos():
     try:
         sh = conectar_google_sheets()
         if not sh: return pd.DataFrame()
         ws = sh.worksheet("Projetos")
         rows = ws.get_all_values()
+        
         if len(rows) < 2: return pd.DataFrame()
         
         header = rows[0]
         data = rows[1:]
+        
         df = pd.DataFrame(data, columns=header)
-        df['_id_linha'] = range(2, len(data) + 2)
+        df['_id_linha'] = range(2, len(data) + 2) 
         return df
     except Exception as e:
         st.error(f"Erro ao ler: {e}")
         return pd.DataFrame()
 
-# --- NOVO: CRIAR OBRA (PACOTE DE ESCOPOS) ---
+# --- 4. CRIAR PACOTE DE OBRA (NOVO) ---
 def criar_pacote_obra(cliente, obra, lista_disciplinas):
-    """Cria várias linhas no banco, uma para cada disciplina selecionada"""
     try:
         sh = conectar_google_sheets()
         if not sh: return False
@@ -71,27 +72,20 @@ def criar_pacote_obra(cliente, obra, lista_disciplinas):
         data_hoje = datetime.now().strftime("%d/%m/%Y %H:%M")
         
         for disciplina in lista_disciplinas:
-            # Estrutura: [Data, Cli, Obra, Forn, RespEng, Valor, Status, RespObras, DISCIPLINA]
+            # [Data, Cli, Obra, Forn, RespEng, Valor, Status, RespObras, DISCIPLINA]
             linha = [
-                data_hoje,
-                cliente,
-                obra,
-                "", # Fornecedor Vazio
-                "", # Resp Engenharia Vazio
-                "", # Valor Vazio
-                "Não Iniciado", # Status Inicial
-                "", # Resp Obras Vazio
-                disciplina # Nova Coluna I
+                data_hoje, cliente, obra, "", "", "", 
+                "Não Iniciado", "", disciplina
             ]
             novas_linhas.append(linha)
             
-        # Adiciona todas de uma vez
         ws.append_rows(novas_linhas)
         return True
     except Exception as e:
         st.error(f"Erro ao criar obra: {e}")
         return False
 
+# --- 5. SALVAR ---
 def registrar_projeto(dados, id_linha=None):
     try:
         sh = conectar_google_sheets()
@@ -100,25 +94,22 @@ def registrar_projeto(dados, id_linha=None):
         
         linha = [
             datetime.now().strftime("%d/%m/%Y %H:%M"),
-            dados['cliente'],
-            dados['obra'],
-            dados['fornecedor'],
-            dados['responsavel'],     
-            dados['valor_total'],
+            dados['cliente'], dados['obra'], dados['fornecedor'],
+            dados['responsavel'], dados['valor_total'],
             dados.get('status', 'Em Elaboração (Engenharia)'),
             dados.get('resp_obras', ''),
-            dados.get('disciplina', '') # Garante que salva a disciplina
+            dados.get('disciplina', '')
         ]
         
         if id_linha:
-            range_celulas = f"A{id_linha}:I{id_linha}" # Agora vai até I
+            range_celulas = f"A{id_linha}:I{id_linha}"
             ws.update(range_name=range_celulas, values=[linha])
         else:
             ws.append_row(linha)
-            
     except Exception as e:
         st.error(f"Erro ao salvar: {e}")
 
+# --- 6. EXCLUIR ---
 def excluir_projeto(id_linha):
     try:
         sh = conectar_google_sheets()
