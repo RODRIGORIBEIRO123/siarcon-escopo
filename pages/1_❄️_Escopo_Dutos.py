@@ -1,3 +1,10 @@
+st.info("📭 Nenhum projeto. Utilize o formulário acima para cadastrar uma obra.")
+
+3️⃣ Arquivo: pages/1_❄️_Escopo_Dutos.py
+
+Atualizado para forçar o salvamento da disciplina "Dutos".
+Python
+
 import streamlit as st
 from docx import Document
 from docx.shared import Pt, Cm
@@ -40,7 +47,7 @@ dados_edicao = {}
 id_linha_edicao = None
 
 if 'modo_edicao' in st.session_state and st.session_state['modo_edicao']:
-    st.info("✏️ MODO EDIÇÃO ATIVO: Você está alterando um registro existente.")
+    st.info("✏️ MODO EDIÇÃO ATIVO: Editando registro.")
     dados_edicao = st.session_state.get('dados_projeto', {})
     id_linha_edicao = dados_edicao.get('_id_linha')
     
@@ -57,7 +64,6 @@ if 'opcoes_db' not in st.session_state:
 # --- FUNÇÃO DOCX ---
 def gerar_docx(dados):
     document = Document()
-    
     try:
         style = document.styles['Normal']
         font = style.font
@@ -65,10 +71,9 @@ def gerar_docx(dados):
         font.size = Pt(11)
     except: pass
 
-    # 1. CABEÇALHO (Texto Limpo)
+    # Cabeçalho
     section = document.sections[0]
     header = section.header
-    # Limpa parágrafos anteriores
     for paragraph in header.paragraphs:
         p = paragraph._element
         p.getparent().remove(p)
@@ -81,7 +86,6 @@ def gerar_docx(dados):
     p_head.style.font.size = Pt(14)
     p_head.style.font.name = 'Calibri'
 
-    # 2. TÍTULO
     document.add_paragraph("\n")
     title = document.add_heading('Escopo de fornecimento - Rede de dutos', 0)
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -89,7 +93,6 @@ def gerar_docx(dados):
     p_rev = document.add_paragraph(f"Data: {date.today().strftime('%d/%m/%Y')} | Rev: {dados['revisao']}")
     p_rev.alignment = WD_ALIGN_PARAGRAPH.RIGHT
 
-    # 3. CORPO
     document.add_heading('1. OBJETIVO E RESUMO', level=1)
     table = document.add_table(rows=6, cols=2)
     try: table.style = 'Table Grid'
@@ -138,20 +141,14 @@ def gerar_docx(dados):
             row[2].text = "X"; row[2].paragraphs[0].alignment = 1
 
     document.add_heading('5. SMS', level=1)
-    docs_padrao = [
-        "Ficha de registro", "ASO (Atestado de Saúde Ocupacional)", 
-        "Ficha de EPI", "Ordem de Serviço", 
-        "Certificados de Treinamento", "NR-06 (Equipamento de Proteção Individual)"
-    ]
+    docs_padrao = ["Ficha de registro", "ASO (Atestado de Saúde Ocupacional)", "Ficha de EPI", "Ordem de Serviço", "Certificados de Treinamento", "NR-06 (Equipamento de Proteção Individual)"]
     for doc in docs_padrao: document.add_paragraph(doc, style='List Bullet')
     for doc in dados['nrs_selecionadas']: document.add_paragraph(doc, style='List Bullet')
 
     document.add_heading('6. CRONOGRAMA', level=1)
     document.add_paragraph(f"Início: {dados['data_inicio'].strftime('%d/%m/%Y')}")
     document.add_paragraph(f"Prazo limite para envio de documentação: {dados['dias_integracao']} dias antes da integração.")
-    
-    if dados.get('data_fim'):
-        document.add_paragraph(f"Previsão de Término: {dados['data_fim'].strftime('%d/%m/%Y')}")
+    if dados.get('data_fim'): document.add_paragraph(f"Previsão de Término: {dados['data_fim'].strftime('%d/%m/%Y')}")
 
     num_secao = 7
     if dados['obs_gerais']: 
@@ -164,7 +161,6 @@ def gerar_docx(dados):
         document.add_paragraph(f"Total: {dados['valor_total']} | Pagamento: {dados['condicao_pgto']}")
         if dados['info_comercial']: document.add_paragraph(dados['info_comercial'])
     
-    # 4. RODAPÉ
     footer = section.footer
     for paragraph in footer.paragraphs:
         p = paragraph._element
@@ -177,7 +173,6 @@ def gerar_docx(dados):
     p_foot.style.font.size = Pt(9)
     p_foot.style.font.italic = True
 
-    # 5. SEM ASSINATURAS (Apenas o texto final)
     document.add_paragraph("\n\n")
     document.add_paragraph("_"*60)
     document.add_paragraph(f"DE ACORDO: {dados['fornecedor']}")
@@ -260,12 +255,7 @@ with tab2:
 
 with tab3:
     escolhas_matriz = {}
-    itens_matriz = [
-        "Materiais de dutos (Chapa, canto, isolamento)", "Materiais de difusão de ar", 
-        "Consumíveis (Discos, brocas, etc)", "Plataformas elevatórias e/ou andaimes", 
-        "Ferramentas manuais", "Escadas tipo \"A\"", "Alimentação, viagem, hospedagem", 
-        "Epis", "Uniformes"
-    ]
+    itens_matriz = ["Materiais de dutos (Chapa, canto, isolamento)", "Materiais de difusão de ar", "Consumíveis (Discos, brocas, etc)", "Plataformas elevatórias e/ou andaimes", "Ferramentas manuais", "Escadas tipo \"A\"", "Alimentação, viagem, hospedagem", "Epis", "Uniformes"]
     
     nome_na_matriz = fornecedor_final.upper() if fornecedor_final else "PROPONENTE"
     st.info(f"Matriz de responsabilidades para: **{nome_na_matriz}**")
@@ -341,14 +331,13 @@ else:
                 'data_inicio': d_ini, 'dias_integracao': d_int, 'data_fim': d_fim, 
                 'obs_gerais': obs, 'valor_total': valor, 'condicao_pgto': pgto, 'info_comercial': info,
                 'status': novo_status,
+                'disciplina': 'Dutos', # <--- FORÇA DISCIPLINA
                 'nomes_anexos': [f.name for f in arquivos_anexos] if arquivos_anexos else []
             }
             
-            # Gera DOCX
             docx_buffer = gerar_docx(dados)
             nome_arq = f"Escopo_{fornecedor_final.replace(' ', '_')}.docx"
             
-            # Gera ZIP de Anexos (se houver)
             zip_buffer = None
             if arquivos_anexos:
                 zip_buffer = io.BytesIO()
