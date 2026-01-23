@@ -1,10 +1,3 @@
-st.info("📭 Nenhum projeto. Utilize o formulário acima para cadastrar uma obra.")
-
-3️⃣ Arquivo: pages/1_❄️_Escopo_Dutos.py
-
-Atualizado para forçar o salvamento da disciplina "Dutos".
-Python
-
 import streamlit as st
 from docx import Document
 from docx.shared import Pt, Cm
@@ -148,7 +141,9 @@ def gerar_docx(dados):
     document.add_heading('6. CRONOGRAMA', level=1)
     document.add_paragraph(f"Início: {dados['data_inicio'].strftime('%d/%m/%Y')}")
     document.add_paragraph(f"Prazo limite para envio de documentação: {dados['dias_integracao']} dias antes da integração.")
-    if dados.get('data_fim'): document.add_paragraph(f"Previsão de Término: {dados['data_fim'].strftime('%d/%m/%Y')}")
+    
+    if dados.get('data_fim'):
+        document.add_paragraph(f"Previsão de Término: {dados['data_fim'].strftime('%d/%m/%Y')}")
 
     num_secao = 7
     if dados['obs_gerais']: 
@@ -161,6 +156,7 @@ def gerar_docx(dados):
         document.add_paragraph(f"Total: {dados['valor_total']} | Pagamento: {dados['condicao_pgto']}")
         if dados['info_comercial']: document.add_paragraph(dados['info_comercial'])
     
+    # Rodapé
     footer = section.footer
     for paragraph in footer.paragraphs:
         p = paragraph._element
