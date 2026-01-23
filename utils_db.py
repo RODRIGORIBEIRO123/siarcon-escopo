@@ -41,41 +41,50 @@ def aprender_novo_item(categoria, novo_item):
         return True
     except: return False
 
-# --- 3. GESTÃO DE PROJETOS (CORRIGIDO) ---
+# --- 3. GESTÃO DE PROJETOS (CORRIGIDA E BLINDADA) ---
 def listar_todos_projetos():
     try:
         sh = conectar_google_sheets()
         if not sh: return pd.DataFrame()
         ws = sh.worksheet("Projetos")
+        
+        # Pega todas as linhas como lista de listas
         rows = ws.get_all_values()
         
+        # Se não tiver dados suficientes
         if len(rows) < 2: return pd.DataFrame()
         
-        header = rows[0]
-        data = rows[1:]
+        # --- AQUI ESTÁ A CORREÇÃO ---
+        # Definimos manualmente as colunas esperadas na ordem exata de gravação
+        # Isso corrige o problema do cabeçalho antigo na planilha
+        colunas_padrao = [
+            "Data",          # A
+            "Cliente",       # B
+            "Obra",          # C
+            "Fornecedor",    # D
+            "Responsavel",   # E
+            "Valor",         # F
+            "Status",        # G
+            "Resp_Obras",    # H
+            "Disciplina"     # I (A nova coluna!)
+        ]
         
-        # CORREÇÃO: Garante que o cabeçalho tenha o tamanho dos dados
-        # Se os dados têm 9 colunas e o header só tem 8, adiciona "Disciplina" na força
-        max_cols = max([len(r) for r in data]) if data else len(header)
-        
-        while len(header) < max_cols:
-            if len(header) == 8: # A 9ª coluna é sempre Disciplina
-                header.append("Disciplina")
-            else:
-                header.append(f"Col_{len(header)+1}")
-        
-        # Normaliza linhas de dados para ter o mesmo tamanho do header
-        data_normalizada = []
-        for row in data:
-            while len(row) < len(header):
-                row.append("")
-            data_normalizada.append(row)
+        # Ignoramos o cabeçalho da planilha (rows[0]) e processamos apenas os dados (rows[1:])
+        dados_tratados = []
+        for row in rows[1:]:
+            # Garante que toda linha tenha exatamente 9 colunas
+            # Se tiver menos, completa com vazio. Se tiver mais, corta.
+            linha_normalizada = row + [""] * (len(colunas_padrao) - len(row))
+            dados_tratados.append(linha_normalizada[:len(colunas_padrao)])
             
-        df = pd.DataFrame(data_normalizada, columns=header)
-        df['_id_linha'] = range(2, len(data) + 2) 
+        df = pd.DataFrame(dados_tratados, columns=colunas_padrao)
+        
+        # Recria o ID baseado na posição da linha
+        df['_id_linha'] = range(2, len(dados_tratados) + 2) 
+        
         return df
     except Exception as e:
-        st.error(f"Erro ao ler: {e}")
+        st.error(f"Erro ao ler lista: {e}")
         return pd.DataFrame()
 
 # --- 4. CRIAR PACOTE ---
@@ -89,6 +98,7 @@ def criar_pacote_obra(cliente, obra, lista_disciplinas):
         data_hoje = datetime.now().strftime("%d/%m/%Y %H:%M")
         
         for disciplina in lista_disciplinas:
+            # Ordem: Data, Cli, Obra, Forn, RespEng, Valor, Status, RespObras, DISCIPLINA
             linha = [
                 data_hoje, cliente, obra, "", "", "", 
                 "Não Iniciado", "", disciplina
@@ -114,7 +124,7 @@ def registrar_projeto(dados, id_linha=None):
             dados['responsavel'], dados['valor_total'],
             dados.get('status', 'Em Elaboração (Engenharia)'),
             dados.get('resp_obras', ''),
-            dados.get('disciplina', '')
+            dados.get('disciplina', '') # Coluna I
         ]
         
         if id_linha:
