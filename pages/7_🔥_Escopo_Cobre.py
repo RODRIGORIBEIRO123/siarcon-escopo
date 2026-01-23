@@ -46,52 +46,79 @@ def gerar_docx(dados):
 
     document.add_paragraph("\n")
     document.add_heading('Escopo - Rede Frigorígena (Cobre/VRF)', 0).alignment = 1
-    document.add_paragraph(f"Data: {date.today().strftime('%d/%m/%Y')} | Rev: {dados['revisao']}").alignment = 2
+    
+    revisao_txt = dados.get('revisao', 'R-00')
+    document.add_paragraph(f"Data: {date.today().strftime('%d/%m/%Y')} | Rev: {revisao_txt}").alignment = 2
 
     document.add_heading('1. OBJETIVO', 1)
     table = document.add_table(rows=6, cols=2); 
     try: table.style = 'Table Grid'
     except: pass
-    infos = [("Cliente:", dados['cliente']), ("Obra:", dados['obra']), ("Ref:", dados['projetos_ref']), ("Fornecedor:", dados['fornecedor']), ("Resp. Eng:", dados['responsavel']), ("Resp. Obras:", dados['resp_obras'])]
+    
+    infos = [
+        ("Cliente:", dados.get('cliente', '')), 
+        ("Obra:", dados.get('obra', '')), 
+        ("Ref:", dados.get('projetos_ref', '')), 
+        ("Fornecedor:", dados.get('fornecedor', '')), 
+        ("Resp. Eng:", dados.get('responsavel', '')), 
+        ("Resp. Obras:", dados.get('resp_obras', ''))
+    ]
     for i, (k, v) in enumerate(infos): row = table.rows[i]; row.cells[0].text = k; row.cells[0].paragraphs[0].runs[0].bold = True; row.cells[1].text = v
-    document.add_paragraph(f"\nResumo: {dados['resumo_escopo']}")
+    document.add_paragraph(f"\nResumo: {dados.get('resumo_escopo', '')}")
 
     document.add_heading('2. TÉCNICO', 1)
-    for item in dados['itens_tecnicos']: document.add_paragraph(item, style='List Bullet')
-    if dados['tecnico_livre']: document.add_paragraph(dados['tecnico_livre'], style='List Bullet')
+    for item in dados.get('itens_tecnicos', []): document.add_paragraph(item, style='List Bullet')
+    if dados.get('tecnico_livre'): document.add_paragraph(dados['tecnico_livre'], style='List Bullet')
 
     document.add_heading('3. QUALIDADE', 1)
-    for item in dados['itens_qualidade']: document.add_paragraph(item, style='List Bullet')
-    if dados['qualidade_livre']: document.add_paragraph(dados['qualidade_livre'], style='List Bullet')
+    for item in dados.get('itens_qualidade', []): document.add_paragraph(item, style='List Bullet')
+    if dados.get('qualidade_livre'): document.add_paragraph(dados['qualidade_livre'], style='List Bullet')
 
     document.add_heading('4. MATRIZ RESPONSABILIDADES', 1)
     t_m = document.add_table(rows=1, cols=3); 
     try: t_m.style = 'Table Grid'
     except: pass
-    h = t_m.rows[0].cells; h[0].text = "ITEM"; h[1].text = "SIARCON"; h[2].text = dados['fornecedor'].upper()
-    for item, resp in dados['matriz'].items():
+    h = t_m.rows[0].cells; h[0].text = "ITEM"; h[1].text = "SIARCON"; h[2].text = dados.get('fornecedor', 'FORNECEDOR').upper()
+    
+    matriz = dados.get('matriz', {})
+    for item, resp in matriz.items():
         row = t_m.add_row().cells; row[0].text = item
         if resp == "SIARCON": row[1].text = "X"; row[1].paragraphs[0].alignment = 1
         else: row[2].text = "X"; row[2].paragraphs[0].alignment = 1
 
     document.add_heading('5. SMS', 1)
-    docs = ["Permissão de Trabalho a Quente (Solda)", "NR-35 (Altura)", "NR-33 (Espaço Confinado, se aplicável)", "ASO", "Ficha EPI"]
-    for d in docs: document.add_paragraph(d, style='List Bullet')
-    for d in dados['nrs_selecionadas']: document.add_paragraph(d, style='List Bullet')
+    
+    docs_padrao = [
+        "Ficha de registro",
+        "ASO (Atestado de Saúde Ocupacional)",
+        "Ficha de EPI",
+        "Ordem de Serviço",
+        "Certificados de Treinamento",
+        "NR-06 (Equipamento de Proteção Individual)"
+    ]
+    for d in docs_padrao: document.add_paragraph(d, style='List Bullet')
+    for d in dados.get('nrs_selecionadas', []): document.add_paragraph(d, style='List Bullet')
 
     document.add_heading('6. CRONOGRAMA', 1)
-    document.add_paragraph(f"Início: {dados['data_inicio'].strftime('%d/%m/%Y')}")
-    if dados.get('data_fim'): document.add_paragraph(f"Término: {dados['data_fim'].strftime('%d/%m/%Y')}")
+    data_ini = dados.get('data_inicio')
+    if data_ini:
+        document.add_paragraph(f"Início: {data_ini.strftime('%d/%m/%Y')}")
+    
+    data_fim = dados.get('data_fim')
+    if data_fim: 
+        document.add_paragraph(f"Término: {data_fim.strftime('%d/%m/%Y')}")
 
-    if dados['obs_gerais']: document.add_heading('7. OBSERVAÇÕES', 1); document.add_paragraph(dados['obs_gerais'])
-    if dados['status'] == "Contratação Finalizada":
-        document.add_heading('8. COMERCIAL', 1); document.add_paragraph(f"Total: {dados['valor_total']} | Pgto: {dados['condicao_pgto']}")
-        if dados['info_comercial']: document.add_paragraph(dados['info_comercial'])
+    if dados.get('obs_gerais'): document.add_heading('7. OBSERVAÇÕES', 1); document.add_paragraph(dados['obs_gerais'])
+    
+    if dados.get('status') == "Contratação Finalizada":
+        document.add_heading('8. COMERCIAL', 1)
+        document.add_paragraph(f"Total: {dados.get('valor_total', '')} | Pgto: {dados.get('condicao_pgto', '')}")
+        if dados.get('info_comercial'): document.add_paragraph(dados['info_comercial'])
     
     section = document.sections[0]; footer = section.footer
     for p in footer.paragraphs: p._element.getparent().remove(p._element)
     pf = footer.add_paragraph(); pf.text = "SIARCON - Climatização e VRF"; pf.alignment = 1; pf.style.font.size = Pt(9); pf.style.font.italic = True
-    document.add_paragraph("\n\n"); document.add_paragraph("_"*60); document.add_paragraph(f"DE ACORDO: {dados['fornecedor']}")
+    document.add_paragraph("\n\n"); document.add_paragraph("_"*60); document.add_paragraph(f"DE ACORDO: {dados.get('fornecedor', '')}")
     
     b = io.BytesIO(); document.save(b); b.seek(0); return b
 
@@ -120,13 +147,13 @@ with tab1:
 
 with tab2:
     st.subheader("Técnico")
-    # --- CORREÇÃO DO BUG DE SELEÇÃO: Uso de KEY fixa ---
     key_tec = "multi_tec_cobre"
     if key_tec not in st.session_state: st.session_state[key_tec] = dados_edicao.get('itens_tecnicos', [])
     
-    itens_tec = st.multiselect("Selecione Itens Técnicos:", 
-                               options=st.session_state['opcoes_db'].get('tecnico_cobre', []),
-                               key=key_tec)
+    # --- ORDEM ALFABÉTICA (sorted) ---
+    lista_tec = sorted(st.session_state['opcoes_db'].get('tecnico_cobre', []))
+    
+    itens_tec = st.multiselect("Selecione Itens Técnicos:", options=lista_tec, key=key_tec)
     
     c_add, c_free = st.columns(2)
     c_add.text_input("Novo Item", key="n_tec"); c_add.button("Salvar", on_click=adicionar_item_callback, args=("tecnico_cobre", "n_tec"))
@@ -138,9 +165,10 @@ with tab2:
     key_qual = "multi_qual_cobre"
     if key_qual not in st.session_state: st.session_state[key_qual] = dados_edicao.get('itens_qualidade', [])
 
-    itens_qual = st.multiselect("Itens Qualidade:", 
-                                options=st.session_state['opcoes_db'].get('qualidade_cobre', []),
-                                key=key_qual)
+    # --- ORDEM ALFABÉTICA (sorted) ---
+    lista_qual = sorted(st.session_state['opcoes_db'].get('qualidade_cobre', []))
+
+    itens_qual = st.multiselect("Itens Qualidade:", options=lista_qual, key=key_qual)
     
     c_q1, c_q2 = st.columns(2)
     c_q1.text_input("Novo Item Q.", key="n_qual"); c_q1.button("Salvar Q.", on_click=adicionar_item_callback, args=("qualidade_cobre", "n_qual"))
@@ -148,13 +176,12 @@ with tab2:
 
 with tab3:
     escolhas = {}
-    # --- MATRIZ ATUALIZADA ---
     itens_m = [
         "Tubos de Cobre e Conexões", "Isolamento Térmico", 
         "Gases (O2, Acetileno, Nitrogênio)", "Bomba de Vácuo / Manômetros", 
-        "Maçarico", "Phoscoper", # Novos
+        "Maçarico", "Phoscoper",
         "Cabos Elétricos e Comando", "Suportação e Fixação", 
-        "Andaimes/Escadas", "Plataforma elevatória", # Novo
+        "Andaimes/Escadas", "Plataforma elevatória",
         "EPIs"
     ]
     nome_m = forn.upper()
@@ -166,7 +193,19 @@ with tab3:
         st.divider()
 
 with tab4:
-    nrs = st.multiselect("SMS Adicional:", st.session_state['opcoes_db'].get('sms', []))
+    nrs_padrao = [
+        "NR-10 (Segurança em Eletricidade)",
+        "NR-12 (Segurança em Máquinas e Equipamentos)",
+        "NR-18 (Condições e Meio Ambiente de Trabalho na Indústria da Construção)",
+        "NR-33 (Segurança e Saúde nos Trabalhos em Espaços Confinados)",
+        "NR-35 (Trabalho em Altura)"
+    ]
+    
+    opcoes_nrs = list(set(nrs_padrao + st.session_state['opcoes_db'].get('sms', [])))
+    
+    # Ordena as NRs também para ficar bonito
+    nrs = st.multiselect("NRS Adicionais Opcionais:", sorted(opcoes_nrs))
+    
     c_d1, c_d2 = st.columns(2)
     d_ini = c_d1.date_input("Início"); d_int = c_d2.number_input("Dias Integração", 5)
     usar_fim = st.checkbox("Data Fim?", True)
