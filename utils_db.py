@@ -58,7 +58,7 @@ def aprender_novo_item(categoria, novo_item):
     except: return False
 
 # ==========================================
-# 3. GESTÃO DE PROJETOS (CORRIGIDO)
+# 3. GESTÃO DE PROJETOS
 # ==========================================
 def listar_todos_projetos():
     try:
@@ -66,42 +66,32 @@ def listar_todos_projetos():
         if not sh: return pd.DataFrame()
         ws = sh.worksheet("Projetos")
         
-        # Pega tudo como lista de listas
+        # Pega todas as linhas
         rows = ws.get_all_values()
         
         if len(rows) < 2: return pd.DataFrame()
         
-        # Define colunas esperadas (9 colunas)
+        # Define colunas esperadas (9 colunas - A até I)
         colunas_padrao = ["Data", "Cliente", "Obra", "Fornecedor", "Responsavel", "Valor", "Status", "Resp_Obras", "Disciplina"]
         
         dados_tratados = []
         
-        # Loop para limpar linhas vazias
-        # 'rows[1:]' ignora o cabeçalho
+        # Loop para limpar linhas vazias (ignora header row[0])
         for i, row in enumerate(rows[1:]):
             
-            # --- PROTEÇÃO CONTRA LINHAS VAZIAS ---
-            # Se a linha tiver menos de 3 colunas, ignoramos
-            if len(row) < 3:
-                continue
+            # --- PROTEÇÃO: Se a linha estiver visualmente vazia, pula ---
+            # Verifica se as 3 primeiras colunas estão vazias
+            if len(row) < 3: continue
+            if not str(row[0]).strip() and not str(row[1]).strip() and not str(row[2]).strip(): continue
             
-            # Converte para string antes de verificar (evita AttributeError se vier número)
-            cli_str = str(row[1]).strip()
-            obra_str = str(row[2]).strip()
-            
-            # Se Cliente e Obra estiverem vazios, pula a linha
-            if not cli_str and not obra_str:
-                continue
-            
-            # Normaliza tamanho (enche com vazio se faltar colunas)
+            # Normaliza tamanho para 9 colunas
             linha_normalizada = row + [""] * (len(colunas_padrao) - len(row))
             linha_final = linha_normalizada[:len(colunas_padrao)]
             
-            # Adiciona o ID real da linha (i + 2) para controle
+            # Adiciona ID real (i + 2, pois pulamos o header que é 1)
             dados_com_id = linha_final + [i + 2] 
             dados_tratados.append(dados_com_id)
             
-        # Cria DataFrame
         cols_df = colunas_padrao + ["_id_linha"]
         df = pd.DataFrame(dados_tratados, columns=cols_df)
         
@@ -112,7 +102,7 @@ def listar_todos_projetos():
         return pd.DataFrame()
 
 # ==========================================
-# 4. CRIAR PACOTE
+# 4. CRIAR PACOTE (FORÇANDO A POSIÇÃO)
 # ==========================================
 def criar_pacote_obra(cliente, obra, lista_disciplinas):
     try:
@@ -120,30 +110,40 @@ def criar_pacote_obra(cliente, obra, lista_disciplinas):
         if not sh: return False
         ws = sh.worksheet("Projetos")
         
+        # 1. Descobre a próxima linha vazia olhando a Coluna A
+        col_a = ws.col_values(1) 
+        proxima_linha = len(col_a) + 1
+        
         novas_linhas = []
         data_hoje = datetime.now().strftime("%d/%m/%Y %H:%M")
         
         for disciplina in lista_disciplinas:
-            # Estrutura: [Data, Cli, Obra, Forn, RespEng, Valor, Status, RespObras, DISCIPLINA]
+            # [Data, Cli, Obra, Forn, RespEng, Valor, Status, RespObras, DISCIPLINA]
             linha = [
-                data_hoje, 
-                cliente, 
-                obra, 
+                str(data_hoje), 
+                str(cliente), 
+                str(obra), 
                 "", "", "", 
                 "Não Iniciado", 
                 "", 
-                disciplina
+                str(disciplina)
             ]
             novas_linhas.append(linha)
-            
-        ws.append_rows(novas_linhas)
+        
+        # 2. Define o intervalo exato (Ex: A10:I12)
+        linha_final = proxima_linha + len(novas_linhas) - 1
+        range_name = f"A{proxima_linha}:I{linha_final}"
+        
+        # 3. Usa UPDATE em vez de APPEND (Obriga a escrever no lugar certo)
+        ws.update(range_name=range_name, values=novas_linhas)
+        
         return True
     except Exception as e:
         st.error(f"Erro ao criar obra: {e}")
         return False
 
 # ==========================================
-# 5. SALVAR
+# 5. SALVAR/REGISTRAR (FORÇANDO A POSIÇÃO)
 # ==========================================
 def registrar_projeto(dados, id_linha=None):
     try:
@@ -161,10 +161,16 @@ def registrar_projeto(dados, id_linha=None):
         ]
         
         if id_linha:
+            # Edição: Atualiza linha específica
             range_celulas = f"A{id_linha}:I{id_linha}"
             ws.update(range_name=range_celulas, values=[linha])
         else:
-            ws.append_row(linha)
+            # Novo Registro: Calcula próxima linha e força escrita
+            col_a = ws.col_values(1)
+            proxima_linha = len(col_a) + 1
+            range_celulas = f"A{proxima_linha}:I{proxima_linha}"
+            ws.update(range_name=range_celulas, values=[linha])
+            
     except Exception as e:
         st.error(f"Erro ao salvar: {e}")
 
