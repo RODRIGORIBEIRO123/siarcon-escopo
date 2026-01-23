@@ -1,97 +1,129 @@
 import streamlit as st
+import gspread
+from google.oauth2.service_account import Credentials
 import pandas as pd
-import utils_db
+from datetime import datetime
 
-st.set_page_config(page_title="Dashboard | SIARCON", page_icon="📊", layout="wide")
-st.title("📊 Painel de Projetos (Kanban)")
+# --- CONEXÃO ---
+def conectar_google_sheets():
+    try:
+        scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+        creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
+        client = gspread.authorize(creds)
+        return client.open("DB_SIARCON")
+    except Exception as e:
+        st.error(f"Erro de conexão: {e}")
+        return None
 
-if st.button("🔄 Atualizar Quadro"):
-    st.rerun()
+# --- CONFIGURAÇÕES ---
+def carregar_opcoes():
+    try:
+        sh = conectar_google_sheets()
+        if not sh: return {}
+        ws = sh.worksheet("Config")
+        data = ws.get_all_records()
+        df = pd.DataFrame(data)
+        return {
+            "tecnico": df[df["Categoria"] == "tecnico"]["Item"].tolist(),
+            "qualidade": df[df["Categoria"] == "qualidade"]["Item"].tolist(),
+            "tecnico_hidraulica": df[df["Categoria"] == "tecnico_hidraulica"]["Item"].tolist(),
+            "qualidade_hidraulica": df[df["Categoria"] == "qualidade_hidraulica"]["Item"].tolist(),
+            "sms": df[df["Categoria"] == "sms"]["Item"].tolist()
+        }
+    except: return {}
 
-# --- CARREGAR DADOS ---
-df = utils_db.listar_todos_projetos()
+def aprender_novo_item(categoria, novo_item):
+    try:
+        sh = conectar_google_sheets()
+        if not sh: return False
+        ws = sh.worksheet("Config")
+        ws.append_row([categoria, novo_item])
+        return True
+    except: return False
 
-# --- FUNÇÃO QUE CRIA O CARTÃO VISUAL ---
-def card_projeto(row, cor_status="blue"):
-    """Cria um cartão Kanban com botões Editar e Excluir lado a lado"""
-    with st.container(border=True):
-        st.markdown(f"**{row['Cliente']}**")
-        st.caption(f"📍 {row['Obra']}")
-        st.markdown(f":{cor_status}[{row['Status']}]")
+# --- GESTÃO DE PROJETOS ---
+def listar_todos_projetos():
+    try:
+        sh = conectar_google_sheets()
+        if not sh: return pd.DataFrame()
+        ws = sh.worksheet("Projetos")
+        rows = ws.get_all_values()
+        if len(rows) < 2: return pd.DataFrame()
         
-        # Cria duas colunas: 80% para Editar, 20% para Excluir
-        col_edit, col_del = st.columns([0.85, 0.15])
+        header = rows[0]
+        data = rows[1:]
+        df = pd.DataFrame(data, columns=header)
+        df['_id_linha'] = range(2, len(data) + 2)
+        return df
+    except Exception as e:
+        st.error(f"Erro ao ler: {e}")
+        return pd.DataFrame()
+
+# --- NOVO: CRIAR OBRA (PACOTE DE ESCOPOS) ---
+def criar_pacote_obra(cliente, obra, lista_disciplinas):
+    """Cria várias linhas no banco, uma para cada disciplina selecionada"""
+    try:
+        sh = conectar_google_sheets()
+        if not sh: return False
+        ws = sh.worksheet("Projetos")
         
-        with col_edit:
-            if st.button(f"✏️ Editar", key=f"edit_{row['_id_linha']}", use_container_width=True):
-                st.session_state['dados_projeto'] = row.to_dict()
-                st.session_state['modo_edicao'] = True
-                st.switch_page("pages/1_❄️_Escopo_Dutos.py")
+        novas_linhas = []
+        data_hoje = datetime.now().strftime("%d/%m/%Y %H:%M")
         
-        with col_del:
-            # Botão Compacto de Excluir
-            if st.button("🗑️", key=f"del_{row['_id_linha']}", help="Excluir este projeto permanentemente"):
-                sucesso = utils_db.excluir_projeto(row['_id_linha'])
-                if sucesso:
-                    st.toast("Projeto excluído com sucesso!", icon="🗑️")
-                    st.rerun()
-                else:
-                    st.error("Erro ao excluir.")
+        for disciplina in lista_disciplinas:
+            # Estrutura: [Data, Cli, Obra, Forn, RespEng, Valor, Status, RespObras, DISCIPLINA]
+            linha = [
+                data_hoje,
+                cliente,
+                obra,
+                "", # Fornecedor Vazio
+                "", # Resp Engenharia Vazio
+                "", # Valor Vazio
+                "Não Iniciado", # Status Inicial
+                "", # Resp Obras Vazio
+                disciplina # Nova Coluna I
+            ]
+            novas_linhas.append(linha)
+            
+        # Adiciona todas de uma vez
+        ws.append_rows(novas_linhas)
+        return True
+    except Exception as e:
+        st.error(f"Erro ao criar obra: {e}")
+        return False
 
-# --- RENDERIZAÇÃO DAS RAIAS ---
-if not df.empty:
-    # Garante coluna Status
-    if "Status" not in df.columns:
-        df["Status"] = "Em Elaboração (Engenharia)"
-    
-    # Métricas de Topo
-    total = len(df)
-    pendencia_obras = len(df[df["Status"].str.contains("Aguardando Obras", na=False)])
-    
-    m1, m2 = st.columns([1, 3])
-    m1.metric("Total de Projetos", total)
-    if pendencia_obras > 0:
-        m2.warning(f"⚠️ Atenção Obras: Existem {pendencia_obras} projetos na fila!")
-    else:
-        m2.success("✅ Fila de Obras Zerada!")
+def registrar_projeto(dados, id_linha=None):
+    try:
+        sh = conectar_google_sheets()
+        if not sh: return
+        ws = sh.worksheet("Projetos")
+        
+        linha = [
+            datetime.now().strftime("%d/%m/%Y %H:%M"),
+            dados['cliente'],
+            dados['obra'],
+            dados['fornecedor'],
+            dados['responsavel'],     
+            dados['valor_total'],
+            dados.get('status', 'Em Elaboração (Engenharia)'),
+            dados.get('resp_obras', ''),
+            dados.get('disciplina', '') # Garante que salva a disciplina
+        ]
+        
+        if id_linha:
+            range_celulas = f"A{id_linha}:I{id_linha}" # Agora vai até I
+            ws.update(range_name=range_celulas, values=[linha])
+        else:
+            ws.append_row(linha)
+            
+    except Exception as e:
+        st.error(f"Erro ao salvar: {e}")
 
-    st.divider()
-
-    # Define as 4 Colunas do Kanban
-    col_eng, col_obras, col_supr, col_fim = st.columns(4)
-    
-    # 1. ENGENHARIA
-    with col_eng:
-        st.subheader("👷 Engenharia")
-        st.markdown("---")
-        filtro = df[df["Status"] == "Em Elaboração (Engenharia)"]
-        for i, row in filtro.iterrows():
-            card_projeto(row, "blue")
-
-    # 2. OBRAS
-    with col_obras:
-        st.subheader("🚧 Obras")
-        st.markdown("---")
-        filtro = df[df["Status"] == "Aguardando Obras"]
-        for i, row in filtro.iterrows():
-            card_projeto(row, "orange")
-
-    # 3. SUPRIMENTOS
-    with col_supr:
-        st.subheader("💰 Suprimentos")
-        st.markdown("---")
-        lista = ["Recebido (Suprimentos)", "Enviado para Cotação", "Em Negociação"]
-        filtro = df[df["Status"].isin(lista)]
-        for i, row in filtro.iterrows():
-            card_projeto(row, "violet")
-
-    # 4. FINALIZADOS
-    with col_fim:
-        st.subheader("✅ Concluídos")
-        st.markdown("---")
-        filtro = df[df["Status"] == "Contratação Finalizada"]
-        for i, row in filtro.iterrows():
-            card_projeto(row, "green")
-
-else:
-    st.info("📭 Nenhum projeto encontrado. Cadastre um novo na aba lateral.")
+def excluir_projeto(id_linha):
+    try:
+        sh = conectar_google_sheets()
+        if not sh: return False
+        ws = sh.worksheet("Projetos")
+        ws.delete_rows(id_linha)
+        return True
+    except: return False
