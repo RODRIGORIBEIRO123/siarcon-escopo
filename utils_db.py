@@ -7,17 +7,8 @@ from datetime import datetime
 # --- 1. CONEXÃO CENTRAL ---
 def conectar_google_sheets():
     try:
-        # Define o escopo de acesso
-        scope = [
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive"
-        ]
-        # Carrega credenciais do secrets
-        creds = Credentials.from_service_account_info(
-            st.secrets["gcp_service_account"], 
-            scopes=scope
-        )
-        # Autoriza e abre a planilha
+        scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+        creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
         client = gspread.authorize(creds)
         return client.open("DB_SIARCON")
     except Exception as e:
@@ -28,19 +19,24 @@ def conectar_google_sheets():
 def carregar_opcoes():
     try:
         sh = conectar_google_sheets()
-        if not sh: return {"tecnico": [], "qualidade": [], "sms": []}
+        if not sh: return {}
         
         ws = sh.worksheet("Config")
         data = ws.get_all_records()
         df = pd.DataFrame(data)
         
+        # Carrega listas separadas para cada disciplina
         return {
-            "tecnico": df[df["Categoria"] == "tecnico"]["Item"].tolist(),
-            "qualidade": df[df["Categoria"] == "qualidade"]["Item"].tolist(),
-            "sms": df[df["Categoria"] == "sms"]["Item"].tolist()
+            "tecnico": df[df["Categoria"] == "tecnico"]["Item"].tolist(), # Dutos
+            "qualidade": df[df["Categoria"] == "qualidade"]["Item"].tolist(), # Dutos
+            
+            "tecnico_hidraulica": df[df["Categoria"] == "tecnico_hidraulica"]["Item"].tolist(), # Nova
+            "qualidade_hidraulica": df[df["Categoria"] == "qualidade_hidraulica"]["Item"].tolist(), # Nova
+            
+            "sms": df[df["Categoria"] == "sms"]["Item"].tolist() # Comum a todos
         }
     except:
-        return {"tecnico": [], "qualidade": [], "sms": []}
+        return {}
 
 def aprender_novo_item(categoria, novo_item):
     try:
@@ -51,7 +47,6 @@ def aprender_novo_item(categoria, novo_item):
         data = ws.get_all_records()
         df = pd.DataFrame(data)
         
-        # Verifica duplicidade
         if not df.empty:
             ja_existe = df[
                 (df['Categoria'] == categoria) & 
@@ -80,14 +75,13 @@ def listar_todos_projetos():
         data = rows[1:]
         
         df = pd.DataFrame(data, columns=header)
-        # Cria ID baseado na linha real (Header é 1, dados começam em 2)
         df['_id_linha'] = range(2, len(data) + 2) 
         return df
     except Exception as e:
         st.error(f"Erro ao ler lista de projetos: {e}")
         return pd.DataFrame()
 
-# --- 4. SALVAR E ATUALIZAR ---
+# --- 4. SALVAR ---
 def registrar_projeto(dados, id_linha=None):
     try:
         sh = conectar_google_sheets()
@@ -107,7 +101,6 @@ def registrar_projeto(dados, id_linha=None):
         ]
         
         if id_linha:
-            # Atualiza colunas A até H
             range_celulas = f"A{id_linha}:H{id_linha}"
             ws.update(range_name=range_celulas, values=[linha])
         else:
