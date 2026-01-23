@@ -40,10 +40,7 @@ dados_edicao = {}
 id_linha_edicao = None
 
 if 'modo_edicao' in st.session_state and st.session_state['modo_edicao']:
-    # IMPORTANTE: Verifica se o projeto clicado no dashboard é de Hidráulica?
-    # Como o dashboard mistura tudo, aqui assumimos que se o usuário entrou nesta página
-    # ele quer editar os dados carregados.
-    st.info("✏️ MODO EDIÇÃO ATIVO: Você está alterando um registro existente.")
+    st.info("✏️ MODO EDIÇÃO ATIVO: Editando registro.")
     dados_edicao = st.session_state.get('dados_projeto', {})
     id_linha_edicao = dados_edicao.get('_id_linha')
     
@@ -67,7 +64,6 @@ def gerar_docx(dados):
         font.size = Pt(11)
     except: pass
 
-    # 1. CABEÇALHO
     section = document.sections[0]
     header = section.header
     for paragraph in header.paragraphs:
@@ -82,16 +78,13 @@ def gerar_docx(dados):
     p_head.style.font.size = Pt(14)
     p_head.style.font.name = 'Calibri'
 
-    # 2. TÍTULO
     document.add_paragraph("\n")
-    # --- MUDANÇA: TÍTULO ESPECÍFICO ---
     title = document.add_heading('Escopo de fornecimento - Rede Hidráulica', 0)
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
     
     p_rev = document.add_paragraph(f"Data: {date.today().strftime('%d/%m/%Y')} | Rev: {dados['revisao']}")
     p_rev.alignment = WD_ALIGN_PARAGRAPH.RIGHT
 
-    # 3. CORPO
     document.add_heading('1. OBJETIVO E RESUMO', level=1)
     table = document.add_table(rows=6, cols=2)
     try: table.style = 'Table Grid'
@@ -140,11 +133,7 @@ def gerar_docx(dados):
             row[2].text = "X"; row[2].paragraphs[0].alignment = 1
 
     document.add_heading('5. SMS', level=1)
-    docs_padrao = [
-        "Ficha de registro", "ASO (Atestado de Saúde Ocupacional)", 
-        "Ficha de EPI", "Ordem de Serviço", 
-        "Certificados de Treinamento", "NR-06 (Equipamento de Proteção Individual)"
-    ]
+    docs_padrao = ["Ficha de registro", "ASO (Atestado de Saúde Ocupacional)", "Ficha de EPI", "Ordem de Serviço", "Certificados de Treinamento", "NR-06 (Equipamento de Proteção Individual)"]
     for doc in docs_padrao: document.add_paragraph(doc, style='List Bullet')
     for doc in dados['nrs_selecionadas']: document.add_paragraph(doc, style='List Bullet')
 
@@ -166,7 +155,6 @@ def gerar_docx(dados):
         document.add_paragraph(f"Total: {dados['valor_total']} | Pagamento: {dados['condicao_pgto']}")
         if dados['info_comercial']: document.add_paragraph(dados['info_comercial'])
     
-    # 4. RODAPÉ
     footer = section.footer
     for paragraph in footer.paragraphs:
         p = paragraph._element
@@ -179,7 +167,6 @@ def gerar_docx(dados):
     p_foot.style.font.size = Pt(9)
     p_foot.style.font.italic = True
 
-    # 5. SEM ASSINATURAS
     document.add_paragraph("\n\n")
     document.add_paragraph("_"*60)
     document.add_paragraph(f"DE ACORDO: {dados['fornecedor']}")
@@ -190,7 +177,7 @@ def gerar_docx(dados):
     return buffer
 
 # --- FRONT END ---
-st.title("💧 Escopo de Hidráulica") # Título da Página
+st.title("💧 Escopo de Hidráulica")
 
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["1. Cadastro", "2. Técnico", "3. Matriz", "4. SMS", "5. Comercial e Status"])
 
@@ -204,7 +191,7 @@ with tab1:
         obra = st.text_input("Obra", value=val_obra)
         
         val_forn = dados_edicao.get('Fornecedor', '')
-        if val_forn == "PROPONENTE DE HIDRÁULICA": val_forn = "" # Default diferente
+        if val_forn == "PROPONENTE DE HIDRÁULICA": val_forn = "" 
         fornecedor_input = st.text_input("Fornecedor", value=val_forn, placeholder="Deixe em branco p/ genérico")
         if not fornecedor_input: fornecedor_final = "PROPONENTE DE HIDRÁULICA"
         else: fornecedor_final = fornecedor_input
@@ -238,49 +225,31 @@ with tab1:
 
 with tab2:
     st.subheader("Técnico (Hidráulica)")
-    # --- MUDANÇA: Usa a lista específica de hidráulica ---
     opcoes_tec = st.session_state['opcoes_db'].get('tecnico_hidraulica', [])
     itens_tecnicos = st.multiselect("Selecione:", options=opcoes_tec)
     
     col_add, col_free = st.columns(2)
     with col_add:
         st.text_input("➕ Novo item (Técnico)", key="input_novo_tec")
-        # Salva em tecnico_hidraulica
         st.button("Salvar Item Técnico", on_click=adicionar_item_callback, args=("tecnico_hidraulica", "input_novo_tec"))
                 
     with col_free: tecnico_livre = st.text_area("Texto Livre (Técnico)")
     st.divider()
     
     st.subheader("Qualidade")
-    # --- MUDANÇA: Usa a lista específica de hidráulica ---
     opcoes_qual = st.session_state['opcoes_db'].get('qualidade_hidraulica', [])
     itens_qualidade = st.multiselect("Selecione Qualidade:", options=opcoes_qual)
     
     c_q1, c_q2 = st.columns(2)
     with c_q1:
         st.text_input("➕ Novo item (Qualidade)", key="input_novo_qual")
-        # Salva em qualidade_hidraulica
         st.button("Salvar Qualidade", on_click=adicionar_item_callback, args=("qualidade_hidraulica", "input_novo_qual"))
 
     with c_q2: qualidade_livre = st.text_input("Texto Livre (Qualidade)")
 
 with tab3:
     escolhas_matriz = {}
-    
-    # --- MUDANÇA: ITENS DA MATRIZ ESPECÍFICOS PARA HIDRÁULICA ---
-    itens_matriz = [
-        "Tubulações (Aço, Cobre, PPR, PVC)",
-        "Válvulas e Acessórios",
-        "Bombas e Equipamentos",
-        "Isolamento Térmico",
-        "Suportação e Fixação",
-        "Consumíveis (Eletrodos, solda, etc)",
-        "Testes de Pressão / Estanqueidade",
-        "Ferramentas manuais e Máquinas de Solda",
-        "Andaimes e Plataformas",
-        "Alimentação, viagem, hospedagem",
-        "Epis e Uniformes"
-    ]
+    itens_matriz = ["Tubulações (Aço, Cobre, PPR, PVC)", "Válvulas e Acessórios", "Bombas e Equipamentos", "Isolamento Térmico", "Suportação e Fixação", "Consumíveis (Eletrodos, solda, etc)", "Testes de Pressão / Estanqueidade", "Ferramentas manuais e Máquinas de Solda", "Andaimes e Plataformas", "Alimentação, viagem, hospedagem", "Epis e Uniformes"]
     
     nome_na_matriz = fornecedor_final.upper() if fornecedor_final else "PROPONENTE"
     st.info(f"Matriz de responsabilidades para: **{nome_na_matriz}**")
@@ -292,7 +261,6 @@ with tab3:
         st.divider()
 
 with tab4:
-    # SMS é compartilhado (mesma lista para todos)
     opcoes_sms = st.session_state['opcoes_db'].get('sms', [])
     nrs = st.multiselect("SMS Adicional:", options=opcoes_sms)
     st.text_input("➕ Novo Doc SMS", key="input_novo_sms")
@@ -357,6 +325,7 @@ else:
                 'data_inicio': d_ini, 'dias_integracao': d_int, 'data_fim': d_fim, 
                 'obs_gerais': obs, 'valor_total': valor, 'condicao_pgto': pgto, 'info_comercial': info,
                 'status': novo_status,
+                'disciplina': 'Hidráulica', # <--- FORÇA DISCIPLINA
                 'nomes_anexos': [f.name for f in arquivos_anexos] if arquivos_anexos else []
             }
             
