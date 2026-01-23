@@ -41,7 +41,7 @@ def aprender_novo_item(categoria, novo_item):
         return True
     except: return False
 
-# --- 3. GESTÃO DE PROJETOS ---
+# --- 3. GESTÃO DE PROJETOS (CORRIGIDO) ---
 def listar_todos_projetos():
     try:
         sh = conectar_google_sheets()
@@ -54,14 +54,31 @@ def listar_todos_projetos():
         header = rows[0]
         data = rows[1:]
         
-        df = pd.DataFrame(data, columns=header)
+        # CORREÇÃO: Garante que o cabeçalho tenha o tamanho dos dados
+        # Se os dados têm 9 colunas e o header só tem 8, adiciona "Disciplina" na força
+        max_cols = max([len(r) for r in data]) if data else len(header)
+        
+        while len(header) < max_cols:
+            if len(header) == 8: # A 9ª coluna é sempre Disciplina
+                header.append("Disciplina")
+            else:
+                header.append(f"Col_{len(header)+1}")
+        
+        # Normaliza linhas de dados para ter o mesmo tamanho do header
+        data_normalizada = []
+        for row in data:
+            while len(row) < len(header):
+                row.append("")
+            data_normalizada.append(row)
+            
+        df = pd.DataFrame(data_normalizada, columns=header)
         df['_id_linha'] = range(2, len(data) + 2) 
         return df
     except Exception as e:
         st.error(f"Erro ao ler: {e}")
         return pd.DataFrame()
 
-# --- 4. CRIAR PACOTE DE OBRA (NOVO) ---
+# --- 4. CRIAR PACOTE ---
 def criar_pacote_obra(cliente, obra, lista_disciplinas):
     try:
         sh = conectar_google_sheets()
@@ -72,7 +89,6 @@ def criar_pacote_obra(cliente, obra, lista_disciplinas):
         data_hoje = datetime.now().strftime("%d/%m/%Y %H:%M")
         
         for disciplina in lista_disciplinas:
-            # [Data, Cli, Obra, Forn, RespEng, Valor, Status, RespObras, DISCIPLINA]
             linha = [
                 data_hoje, cliente, obra, "", "", "", 
                 "Não Iniciado", "", disciplina
