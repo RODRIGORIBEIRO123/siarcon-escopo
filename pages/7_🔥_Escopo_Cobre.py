@@ -64,7 +64,7 @@ def gerar_docx(dados):
     for item in dados['itens_qualidade']: document.add_paragraph(item, style='List Bullet')
     if dados['qualidade_livre']: document.add_paragraph(dados['qualidade_livre'], style='List Bullet')
 
-    document.add_heading('4. MATRIZ', 1)
+    document.add_heading('4. MATRIZ RESPONSABILIDADES', 1)
     t_m = document.add_table(rows=1, cols=3); 
     try: t_m.style = 'Table Grid'
     except: pass
@@ -120,25 +120,43 @@ with tab1:
 
 with tab2:
     st.subheader("Técnico")
-    padroes_tec = [
-        "Instalação de tubulação de cobre (Linhas de líquido e gás)",
-        "Execução de soldas tipo foscoper com fluxo de nitrogênio passante",
-        "Instalação de isolamento térmico em borracha elastomérica",
-        "Instalação de infraestrutura (Eletrocalhas, perfilados, suportes)",
-        "Passagem de cabos de comunicação e força entre unidades",
-        "Instalação de unidades evaporadoras e condensadoras",
-        "Carga de fluido refrigerante complementar"
-    ]
-    opcoes = list(set(padroes_tec + st.session_state['opcoes_db'].get('tecnico_cobre', [])))
-    itens_tec = st.multiselect("Selecione:", opcoes)
+    # --- CORREÇÃO DO BUG DE SELEÇÃO: Uso de KEY fixa ---
+    key_tec = "multi_tec_cobre"
+    if key_tec not in st.session_state: st.session_state[key_tec] = dados_edicao.get('itens_tecnicos', [])
+    
+    itens_tec = st.multiselect("Selecione Itens Técnicos:", 
+                               options=st.session_state['opcoes_db'].get('tecnico_cobre', []),
+                               key=key_tec)
     
     c_add, c_free = st.columns(2)
     c_add.text_input("Novo Item", key="n_tec"); c_add.button("Salvar", on_click=adicionar_item_callback, args=("tecnico_cobre", "n_tec"))
     tec_livre = c_free.text_area("Livre")
+    
+    st.divider()
+    
+    st.subheader("Qualidade")
+    key_qual = "multi_qual_cobre"
+    if key_qual not in st.session_state: st.session_state[key_qual] = dados_edicao.get('itens_qualidade', [])
+
+    itens_qual = st.multiselect("Itens Qualidade:", 
+                                options=st.session_state['opcoes_db'].get('qualidade_cobre', []),
+                                key=key_qual)
+    
+    c_q1, c_q2 = st.columns(2)
+    c_q1.text_input("Novo Item Q.", key="n_qual"); c_q1.button("Salvar Q.", on_click=adicionar_item_callback, args=("qualidade_cobre", "n_qual"))
+    qual_livre = c_q2.text_input("Livre Q.")
 
 with tab3:
     escolhas = {}
-    itens_m = ["Tubos de Cobre e Conexões", "Isolamento Térmico", "Gases (O2, Acetileno, Nitrogênio)", "Bomba de Vácuo / Manômetros", "Cabos Elétricos e Comando", "Suportação e Fixação", "Andaimes/Escadas", "EPIs"]
+    # --- MATRIZ ATUALIZADA ---
+    itens_m = [
+        "Tubos de Cobre e Conexões", "Isolamento Térmico", 
+        "Gases (O2, Acetileno, Nitrogênio)", "Bomba de Vácuo / Manômetros", 
+        "Maçarico", "Phoscoper", # Novos
+        "Cabos Elétricos e Comando", "Suportação e Fixação", 
+        "Andaimes/Escadas", "Plataforma elevatória", # Novo
+        "EPIs"
+    ]
     nome_m = forn.upper()
     st.info(f"Matriz: {nome_m}")
     for i in itens_m:
@@ -148,21 +166,6 @@ with tab3:
         st.divider()
 
 with tab4:
-    st.subheader("Qualidade")
-    padrao_qual = [
-        "Teste de estanqueidade (Pressurização com Nitrogênio 600psi/41bar)",
-        "Teste de Vácuo (Estabilização abaixo de 500 microns)",
-        "Soldas sem vazamentos e limpas (sem fuligem interna)",
-        "Isolamento térmico sem rasgos ou condensação"
-    ]
-    opcoes_qual = list(set(padrao_qual + st.session_state['opcoes_db'].get('qualidade_cobre', [])))
-    itens_qual = st.multiselect("Itens Qualidade:", opcoes_qual)
-    
-    c_q1, c_q2 = st.columns(2)
-    c_q1.text_input("Novo Item Q.", key="n_qual"); c_q1.button("Salvar Q.", on_click=adicionar_item_callback, args=("qualidade_cobre", "n_qual"))
-    qual_livre = c_q2.text_input("Livre Q.")
-    
-    st.divider()
     nrs = st.multiselect("SMS Adicional:", st.session_state['opcoes_db'].get('sms', []))
     c_d1, c_d2 = st.columns(2)
     d_ini = c_d1.date_input("Início"); d_int = c_d2.number_input("Dias Integração", 5)
@@ -187,7 +190,7 @@ else:
             'matriz': escolhas, 'nrs_selecionadas': nrs,
             'data_inicio': d_ini, 'dias_integracao': d_int, 'data_fim': d_fim,
             'obs_gerais': obs, 'valor_total': val, 'condicao_pgto': pgto, 'info_comercial': info,
-            'status': status, 'disciplina': 'Linha de Cobre', # <--- IMPORTANTE
+            'status': status, 'disciplina': 'Linha de Cobre',
             'nomes_anexos': [f.name for f in anexos] if anexos else []
         }
         docx = gerar_docx(dados); nome_a = f"Escopo_{forn.replace(' ', '_')}.docx"
