@@ -9,7 +9,7 @@ from datetime import date, timedelta
 import urllib.parse
 import utils_db
 
-# --- CONFIGURAÇÃO ---
+# --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Escopo Hidráulica | SIARCON", page_icon="💧", layout="wide")
 
 # --- FUNÇÕES AUXILIARES ---
@@ -20,13 +20,11 @@ def adicionar_item_callback(categoria, key_input):
         if retorno is True:
             st.session_state[key_input] = ""
             if 'opcoes_db' in st.session_state: del st.session_state['opcoes_db']
-            st.toast(f"✅ Item '{novo_item}' salvo em {categoria}!", icon="✅")
+            st.toast(f"✅ Item salvo em {categoria}!", icon="✅")
         elif retorno == "Duplicado":
-            st.toast(f"⚠️ O item '{novo_item}' já existe na lista!", icon="⚠️")
+            st.toast(f"⚠️ Item já existe!", icon="⚠️")
         else:
-            st.toast("❌ Erro ao conectar com a planilha.", icon="❌")
-    else:
-        st.toast("⚠️ Digite algo antes de salvar.", icon="✍️")
+            st.toast("❌ Erro ao conectar.", icon="❌")
 
 def callback_atualizar_nomes_anexos():
     arquivos = st.session_state.get("uploader_anexos", [])
@@ -40,21 +38,21 @@ dados_edicao = {}
 id_linha_edicao = None
 
 if 'modo_edicao' in st.session_state and st.session_state['modo_edicao']:
-    st.info("✏️ MODO EDIÇÃO ATIVO: Editando registro.")
+    st.info("✏️ MODO EDIÇÃO ATIVO")
     dados_edicao = st.session_state.get('dados_projeto', {})
     id_linha_edicao = dados_edicao.get('_id_linha')
     
-    if st.button("❌ Cancelar Edição (Limpar)"):
+    if st.button("❌ Cancelar Edição"):
         st.session_state['modo_edicao'] = False
         st.session_state['dados_projeto'] = {}
         st.rerun()
 
-# --- CARREGAR DADOS ---
+# --- CARREGAR BANCO DE DADOS ---
 if 'opcoes_db' not in st.session_state:
     with st.spinner("Carregando banco de dados..."):
         st.session_state['opcoes_db'] = utils_db.carregar_opcoes()
 
-# --- FUNÇÃO DOCX ---
+# --- GERAR DOCX ---
 def gerar_docx(dados):
     document = Document()
     try:
@@ -64,6 +62,7 @@ def gerar_docx(dados):
         font.size = Pt(11)
     except: pass
 
+    # Cabeçalho
     section = document.sections[0]
     header = section.header
     for paragraph in header.paragraphs:
@@ -78,6 +77,7 @@ def gerar_docx(dados):
     p_head.style.font.size = Pt(14)
     p_head.style.font.name = 'Calibri'
 
+    # Título
     document.add_paragraph("\n")
     title = document.add_heading('Escopo de fornecimento - Rede Hidráulica', 0)
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -85,17 +85,16 @@ def gerar_docx(dados):
     p_rev = document.add_paragraph(f"Data: {date.today().strftime('%d/%m/%Y')} | Rev: {dados['revisao']}")
     p_rev.alignment = WD_ALIGN_PARAGRAPH.RIGHT
 
+    # 1. Resumo
     document.add_heading('1. OBJETIVO E RESUMO', level=1)
     table = document.add_table(rows=6, cols=2)
     try: table.style = 'Table Grid'
     except: pass
     
-    ref_proj = dados['projetos_ref'] 
-    
     infos = [
         ("Cliente:", dados['cliente']), 
         ("Local/Obra:", dados['obra']), 
-        ("Projetos Ref:", ref_proj), 
+        ("Projetos Ref:", dados['projetos_ref']), 
         ("Fornecedor:", dados['fornecedor']), 
         ("Resp. Engenharia:", dados['responsavel']),
         ("Resp. Obras:", dados['resp_obras'])
@@ -109,14 +108,17 @@ def gerar_docx(dados):
     
     document.add_paragraph(f"\nResumo: {dados['resumo_escopo']}")
 
+    # 2. Técnico
     document.add_heading('2. TÉCNICO', level=1)
     for item in dados['itens_tecnicos']: document.add_paragraph(item, style='List Bullet')
     if dados['tecnico_livre']: document.add_paragraph(dados['tecnico_livre'], style='List Bullet')
 
+    # 3. Qualidade
     document.add_heading('3. QUALIDADE', level=1)
     for item in dados['itens_qualidade']: document.add_paragraph(item, style='List Bullet')
     if dados['qualidade_livre']: document.add_paragraph(dados['qualidade_livre'], style='List Bullet')
 
+    # 4. Matriz
     document.add_heading('4. MATRIZ RESPONSABILIDADES', level=1)
     table_m = document.add_table(rows=1, cols=3)
     try: table_m.style = 'Table Grid'
@@ -132,17 +134,21 @@ def gerar_docx(dados):
         else: 
             row[2].text = "X"; row[2].paragraphs[0].alignment = 1
 
+    # 5. SMS
     document.add_heading('5. SMS', level=1)
-    docs_padrao = ["Ficha de registro", "ASO (Atestado de Saúde Ocupacional)", "Ficha de EPI", "Ordem de Serviço", "Certificados de Treinamento", "NR-06 (Equipamento de Proteção Individual)"]
+    docs_padrao = [
+        "Ficha de registro", "ASO (Atestado de Saúde Ocupacional)", 
+        "Ficha de EPI", "Ordem de Serviço", 
+        "Certificados de Treinamento", "NR-06 (Equipamento de Proteção Individual)"
+    ]
     for doc in docs_padrao: document.add_paragraph(doc, style='List Bullet')
     for doc in dados['nrs_selecionadas']: document.add_paragraph(doc, style='List Bullet')
 
+    # 6. Cronograma
     document.add_heading('6. CRONOGRAMA', level=1)
     document.add_paragraph(f"Início: {dados['data_inicio'].strftime('%d/%m/%Y')}")
     document.add_paragraph(f"Prazo limite para envio de documentação: {dados['dias_integracao']} dias antes da integração.")
-    
-    if dados.get('data_fim'):
-        document.add_paragraph(f"Previsão de Término: {dados['data_fim'].strftime('%d/%m/%Y')}")
+    if dados.get('data_fim'): document.add_paragraph(f"Previsão de Término: {dados['data_fim'].strftime('%d/%m/%Y')}")
 
     num_secao = 7
     if dados['obs_gerais']: 
@@ -155,6 +161,7 @@ def gerar_docx(dados):
         document.add_paragraph(f"Total: {dados['valor_total']} | Pagamento: {dados['condicao_pgto']}")
         if dados['info_comercial']: document.add_paragraph(dados['info_comercial'])
     
+    # Rodapé
     footer = section.footer
     for paragraph in footer.paragraphs:
         p = paragraph._element
@@ -176,7 +183,7 @@ def gerar_docx(dados):
     buffer.seek(0)
     return buffer
 
-# --- FRONT END ---
+# --- INTERFACE (FRONTEND) ---
 st.title("💧 Escopo de Hidráulica")
 
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["1. Cadastro", "2. Técnico", "3. Matriz", "4. SMS", "5. Comercial e Status"])
@@ -191,17 +198,16 @@ with tab1:
         obra = st.text_input("Obra", value=val_obra)
         
         val_forn = dados_edicao.get('Fornecedor', '')
-        if val_forn == "PROPONENTE DE HIDRÁULICA": val_forn = "" 
         fornecedor_input = st.text_input("Fornecedor", value=val_forn, placeholder="Deixe em branco p/ genérico")
         if not fornecedor_input: fornecedor_final = "PROPONENTE DE HIDRÁULICA"
         else: fornecedor_final = fornecedor_input
             
     with c2:
-        col_resp1, col_resp2 = st.columns(2)
-        with col_resp1:
+        c_r1, c_r2 = st.columns(2)
+        with c_r1:
             val_resp = dados_edicao.get('Responsável', 'Engenharia')
             responsavel = st.text_input("Resp. Engenharia", value=val_resp)
-        with col_resp2:
+        with c_r2:
             val_resp_obras = dados_edicao.get('Responsável Obras', '') 
             resp_obras = st.text_input("Resp. Obras", value=val_resp_obras)
         
@@ -211,7 +217,6 @@ with tab1:
             st.session_state["input_proj_ref"] = dados_edicao.get('projetos_ref', '')
 
         projetos_ref = st.text_input("Projetos Ref.", key="input_proj_ref", help="Preenchido automaticamente pelos anexos.")
-        
         email_suprimentos = st.text_input("📧 E-mail:", value="suprimentos@siarcon.com.br")
 
     resumo_escopo = st.text_area("Resumo")
@@ -225,8 +230,33 @@ with tab1:
 
 with tab2:
     st.subheader("Técnico (Hidráulica)")
-    opcoes_tec = st.session_state['opcoes_db'].get('tecnico_hidraulica', [])
-    itens_tecnicos = st.multiselect("Selecione:", options=opcoes_tec)
+    
+    # --- LISTA PADRÃO SOLICITADA ---
+    padroes_tec = [
+        "Fornecimento de materiais e mão de obra para execução das redes de água gelada",
+        "Fornecimento de materiais e mão de obra para execução das redes de água quente",
+        "Fornecimento de materiais e mão de obra para execução das redes de vapor e condensado",
+        "Fornecimento de materiais e mão de obra para execução dos cavaletes de água gelada",
+        "Fornecimento de materiais e mão de obra para execução dos cavaletes de água quente",
+        "Fornecimento de materiais e mão de obra para execução dos cavaletes de vapor e condensado",
+        "Fornecimento de materiais e MO para suportações das redes",
+        "Fornecimento de materiais e MO para suportações dos cavaletes",
+        "Fornecimento de materiais e MO para montagem dos drenos dos equipamentos",
+        "Fornecimento de materiais e mão de obra para execução do isolamento térmico em borracha elastomérica da rede de água gelada",
+        "Fornecimento de materiais e mão de obra para execução do isolamento térmico em borracha elastomérica da rede de água quente",
+        "Fornecimento de materiais e mão de obra para execução do isolamento térmico em calhas de lã de rocha das redes de vapor e condensado",
+        "Fornecimento de materiais e mão de obra para execução do chapeamento em alumínio liso das redes de água gelada",
+        "Fornecimento de materiais e mão de obra para execução do chapeamento em alumínio liso das redes de água quente",
+        "Fornecimento de materiais e mão de obra para execução do chapeamento em alumínio liso das redes de vapor e condensado",
+        "Fornecimento de materiais e mão de obra para execução do chapeamento em alumínio corrugado das redes de vapor e condensado",
+        "Fornecimento de todos os insumos de solda (Gases, eletrodos, etc)"
+    ]
+    
+    # Carrega do banco e junta com os padrões
+    opcoes_db_tec = st.session_state['opcoes_db'].get('tecnico_hidraulica', [])
+    opcoes_finais_tec = list(set(padroes_tec + opcoes_db_tec))
+    
+    itens_tecnicos = st.multiselect("Selecione:", options=opcoes_finais_tec)
     
     col_add, col_free = st.columns(2)
     with col_add:
@@ -237,8 +267,18 @@ with tab2:
     st.divider()
     
     st.subheader("Qualidade")
-    opcoes_qual = st.session_state['opcoes_db'].get('qualidade_hidraulica', [])
-    itens_qualidade = st.multiselect("Selecione Qualidade:", options=opcoes_qual)
+    # --- LISTA PADRÃO QUALIDADE ---
+    padroes_qual = [
+        "Deverá ser realizado teste HIDROSTÁTICO com 1,5x a pressão de trabalho da rede",
+        "Todos os pontos de picagem devem ter abertura completa, do diâmetro do tubo da derivação",
+        "Todos os cortes de boca de lobo, devem ter o material resultante retirado da tubulação",
+        "Os filtros Y deverão ser limpos após circulação de água no sistema"
+    ]
+    
+    opcoes_db_qual = st.session_state['opcoes_db'].get('qualidade_hidraulica', [])
+    opcoes_finais_qual = list(set(padroes_qual + opcoes_db_qual))
+    
+    itens_qualidade = st.multiselect("Selecione Qualidade:", options=opcoes_finais_qual)
     
     c_q1, c_q2 = st.columns(2)
     with c_q1:
@@ -249,7 +289,23 @@ with tab2:
 
 with tab3:
     escolhas_matriz = {}
-    itens_matriz = ["Tubulações (Aço, Cobre, PPR, PVC)", "Válvulas e Acessórios", "Bombas e Equipamentos", "Isolamento Térmico", "Suportação e Fixação", "Consumíveis (Eletrodos, solda, etc)", "Testes de Pressão / Estanqueidade", "Ferramentas manuais e Máquinas de Solda", "Andaimes e Plataformas", "Alimentação, viagem, hospedagem", "Epis e Uniformes"]
+    
+    # --- LISTA PADRÃO MATRIZ ---
+    itens_matriz = [
+        "Materiais de tubulação e conexões",
+        "Materiais de isolamento térmico",
+        "Insumos de soldagem",
+        "Consumíveis (Discos, eletrodos, brocas, etc)",
+        "Materiais dos cavaletes",
+        "Materiais dos drenos",
+        "Válvulas de controle e balanceamento",
+        "Plataformas elevatórias e/ou andaimes",
+        "Ferramentas manuais e bancadas",
+        "Escadas tipo \"A\"",
+        "Alimentação, viagem, hospedagem",
+        "Epis",
+        "Uniformes"
+    ]
     
     nome_na_matriz = fornecedor_final.upper() if fornecedor_final else "PROPONENTE"
     st.info(f"Matriz de responsabilidades para: **{nome_na_matriz}**")
@@ -311,6 +367,7 @@ else:
         
         if not erro:
             val_proj_ref = st.session_state.get("input_proj_ref", "")
+            
             dados = {
                 'cliente': cliente, 'obra': obra, 
                 'fornecedor': fornecedor_final,
@@ -325,7 +382,7 @@ else:
                 'data_inicio': d_ini, 'dias_integracao': d_int, 'data_fim': d_fim, 
                 'obs_gerais': obs, 'valor_total': valor, 'condicao_pgto': pgto, 'info_comercial': info,
                 'status': novo_status,
-                'disciplina': 'Hidráulica', # <--- FORÇA DISCIPLINA
+                'disciplina': 'Hidráulica', 
                 'nomes_anexos': [f.name for f in arquivos_anexos] if arquivos_anexos else []
             }
             
@@ -350,23 +407,11 @@ else:
             col_d1, col_d2, col_d3 = st.columns([1.5, 1.5, 2])
             
             with col_d1:
-                st.download_button(
-                    "📄 1. Baixar Escopo (DOCX)", 
-                    data=docx_buffer.getvalue(), 
-                    file_name=nome_arq, 
-                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", 
-                    use_container_width=True
-                )
+                st.download_button("📄 1. Baixar Escopo (DOCX)", docx_buffer.getvalue(), nome_arq, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True)
             
             with col_d2:
                 if zip_buffer:
-                    st.download_button(
-                        "📎 2. Baixar Anexos (ZIP)", 
-                        data=zip_buffer, 
-                        file_name=f"Anexos_{obra}.zip", 
-                        mime="application/zip", 
-                        use_container_width=True
-                    )
+                    st.download_button("📎 2. Baixar Anexos (ZIP)", zip_buffer, f"Anexos_{obra}.zip", "application/zip", use_container_width=True)
                 else:
                     st.info("Sem anexos.")
 
@@ -374,12 +419,5 @@ else:
                 assunto_cot = f"Atualização: {obra} - {novo_status}"
                 corpo_cot = f"Olá,\n\nSegue documento atualizado.\nObra: {obra}\nStatus: {novo_status}"
                 link_cot = f"mailto:{email_suprimentos}?subject={urllib.parse.quote(assunto_cot)}&body={urllib.parse.quote(corpo_cot)}"
-                
-                html_botao = f"""
-                <a href="{link_cot}" target="_blank" style="text-decoration:none;">
-                    <button style="width:100%; background-color:#FF4B4B; color:white; border:none; padding:10px; border-radius:5px; font-weight:bold; cursor:pointer;">
-                        📧 Notificar por E-mail
-                    </button>
-                </a>
-                """
+                html_botao = f"""<a href="{link_cot}" target="_blank" style="text-decoration:none;"><button style="width:100%; background-color:#FF4B4B; color:white; border:none; padding:10px; border-radius:5px; font-weight:bold; cursor:pointer;">📧 Notificar por E-mail</button></a>"""
                 st.markdown(html_botao, unsafe_allow_html=True)
