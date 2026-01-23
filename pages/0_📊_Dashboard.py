@@ -6,7 +6,6 @@ st.set_page_config(page_title="Dashboard | SIARCON", page_icon="📊", layout="w
 st.title("📊 Painel de Projetos (Kanban)")
 
 # --- MAPEAMENTO DE PÁGINAS ---
-# ATENÇÃO: Os nomes devem ser IDÊNTICOS aos arquivos na pasta pages
 MAPA_PAGINAS = {
     "Dutos": "pages/1_❄️_Escopo_Dutos.py",
     "Hidráulica": "pages/2_💧_Escopo_Hidraulica.py",
@@ -17,138 +16,106 @@ MAPA_PAGINAS = {
     "Linha de Cobre": "pages/7_🔥_Escopo_Cobre.py"
 }
 
-# --- 1. CADASTRO DE NOVA OBRA ---
-with st.expander("🏗️ CADASTRAR NOVA OBRA (Gerar Escopos)", expanded=False):
+# --- 1. CADASTRO ---
+with st.expander("🏗️ CADASTRAR NOVA OBRA", expanded=False):
     c1, c2 = st.columns(2)
     with c1: novo_cliente = st.text_input("Cliente")
     with c2: nova_obra = st.text_input("Nome da Obra")
         
     st.markdown("**Selecione os escopos:**")
-    
-    col_sel1, col_sel2, col_sel3 = st.columns(3)
-    with col_sel1:
-        check_dutos = st.checkbox("Dutos", value=True)
-        check_hidra = st.checkbox("Hidráulica")
-        check_eletrica = st.checkbox("Elétrica")
-    with col_sel2:
-        check_auto = st.checkbox("Automação")
-        check_tab = st.checkbox("TAB")
-    with col_sel3:
-        check_mov = st.checkbox("Movimentações")
-        check_cobre = st.checkbox("Linha de Cobre")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        chk_dutos = st.checkbox("Dutos", value=True)
+        chk_hidra = st.checkbox("Hidráulica")
+        chk_elet = st.checkbox("Elétrica")
+    with col2:
+        chk_auto = st.checkbox("Automação")
+        chk_tab = st.checkbox("TAB")
+    with col3:
+        chk_mov = st.checkbox("Movimentações")
+        chk_cobre = st.checkbox("Linha de Cobre")
         
     if st.button("🚀 Criar Projeto"):
         if novo_cliente and nova_obra:
             lista = []
-            if check_dutos: lista.append("Dutos")
-            if check_hidra: lista.append("Hidráulica")
-            if check_eletrica: lista.append("Elétrica")
-            if check_auto: lista.append("Automação")
-            if check_tab: lista.append("TAB")
-            if check_mov: lista.append("Movimentações")
-            if check_cobre: lista.append("Linha de Cobre")
+            if chk_dutos: lista.append("Dutos")
+            if chk_hidra: lista.append("Hidráulica")
+            if chk_elet: lista.append("Elétrica")
+            if chk_auto: lista.append("Automação")
+            if chk_tab: lista.append("TAB")
+            if chk_mov: lista.append("Movimentações")
+            if chk_cobre: lista.append("Linha de Cobre")
             
             if lista:
-                with st.spinner("Criando cartões..."):
-                    sucesso = utils_db.criar_pacote_obra(novo_cliente, nova_obra, lista)
-                    if sucesso:
-                        st.success(f"✅ Obra criada com {len(lista)} escopos!")
+                with st.spinner("Criando..."):
+                    if utils_db.criar_pacote_obra(novo_cliente, nova_obra, lista):
+                        st.success(f"✅ Obra criada com {len(lista)} disciplinas!")
                         st.rerun()
-                    else:
-                        st.error("Erro ao gravar no banco.")
-            else:
-                st.warning("Selecione pelo menos um escopo.")
-        else:
-            st.warning("Preencha Cliente e Obra.")
+            else: st.warning("Selecione um escopo.")
+        else: st.warning("Preencha Cliente e Obra.")
 
 st.divider()
+if st.button("🔄 Atualizar Quadro"): st.rerun()
 
-if st.button("🔄 Atualizar Quadro"):
-    st.rerun()
-
-# --- CARREGAR DADOS ---
+# --- KANBAN ---
 df = utils_db.listar_todos_projetos()
 
-# --- FUNÇÃO DO CARTÃO ---
 def card_projeto(row, cor_status="blue"):
     with st.container(border=True):
         st.markdown(f"**{row['Cliente']}**")
         st.caption(f"📍 {row['Obra']}")
         
-        # Disciplina (Coluna 9 do Banco)
-        disciplina = row.get('Disciplina', '')
-        if pd.isna(disciplina) or disciplina == "":
-            disciplina = "Geral"
+        # Pega a disciplina garantida pelo novo utils_db
+        disciplina = str(row['Disciplina']).strip() 
+        if not disciplina: disciplina = "Geral"
         
-        icones = {"Dutos": "❄️", "Hidráulica": "💧", "Elétrica": "⚡", "Automação": "🤖", "TAB": "💨", "Movimentações": "🏗️", "Linha de Cobre": "🔥"}
+        # Ícone
+        icones = {"Dutos":"❄️", "Hidráulica":"💧", "Elétrica":"⚡", "Automação":"🤖", "TAB":"💨", "Movimentações":"🏗️", "Linha de Cobre":"🔥"}
         icone = icones.get(disciplina, "📝")
         
-        st.markdown(f"**{icone} {disciplina}**")
+        # EXIBE A DISCIPLINA COM DESTAQUE
+        st.markdown(f"### {icone} {disciplina}") 
+        
         st.markdown(f":{cor_status}[{row['Status']}]")
         
-        c_edit, c_del = st.columns([0.85, 0.15])
-        
-        with c_edit:
-            label_btn = "▶️ Iniciar" if row['Status'] == "Não Iniciado" else "✏️ Editar"
-            
-            if st.button(f"{label_btn}", key=f"btn_{row['_id_linha']}", use_container_width=True):
+        c1, c2 = st.columns([0.8, 0.2])
+        with c1:
+            label = "▶️ Iniciar" if row['Status'] == "Não Iniciado" else "✏️ Editar"
+            if st.button(label, key=f"btn_{row['_id_linha']}", use_container_width=True):
                 st.session_state['dados_projeto'] = row.to_dict()
                 st.session_state['modo_edicao'] = True
                 
-                # Tenta Navegar
-                pagina_alvo = MAPA_PAGINAS.get(disciplina)
-                if pagina_alvo:
-                    try:
-                        st.switch_page(pagina_alvo)
-                    except Exception as e:
-                        st.error(f"Erro ao abrir: {pagina_alvo}")
-                        st.caption(f"Detalhe: {e}")
+                pagina = MAPA_PAGINAS.get(disciplina)
+                if pagina:
+                    try: st.switch_page(pagina)
+                    except: st.error(f"Página {disciplina} não criada.")
                 else:
-                    # Se não souber a disciplina, tenta ir pra Dutos por padrão
                     st.switch_page("pages/1_❄️_Escopo_Dutos.py")
-        
-        with c_del:
+        with c2:
             if st.button("🗑️", key=f"del_{row['_id_linha']}"):
-                utils_db.excluir_projeto(row['_id_linha'])
-                st.rerun()
+                utils_db.excluir_projeto(row['_id_linha']); st.rerun()
 
-# --- KANBAN ---
 if not df.empty:
-    if "Status" not in df.columns: df["Status"] = "Em Elaboração (Engenharia)"
-    if "Disciplina" not in df.columns: df["Disciplina"] = ""
-    
     c1, c2, c3, c4, c5 = st.columns(5)
-    
     with c1:
         st.subheader("⚪ Não Iniciado")
         st.markdown("---")
-        filtro = df[df["Status"] == "Não Iniciado"]
-        for i, row in filtro.iterrows(): card_projeto(row, "grey")
-
+        for i, r in df[df["Status"]=="Não Iniciado"].iterrows(): card_projeto(r, "grey")
     with c2:
         st.subheader("👷 Engenharia")
         st.markdown("---")
-        filtro = df[df["Status"] == "Em Elaboração (Engenharia)"]
-        for i, row in filtro.iterrows(): card_projeto(row, "blue")
-
+        for i, r in df[df["Status"]=="Em Elaboração (Engenharia)"].iterrows(): card_projeto(r, "blue")
     with c3:
         st.subheader("🚧 Obras")
         st.markdown("---")
-        filtro = df[df["Status"] == "Aguardando Obras"]
-        for i, row in filtro.iterrows(): card_projeto(row, "orange")
-
+        for i, r in df[df["Status"]=="Aguardando Obras"].iterrows(): card_projeto(r, "orange")
     with c4:
         st.subheader("💰 Suprimentos")
         st.markdown("---")
-        lista = ["Recebido (Suprimentos)", "Enviado para Cotação", "Em Negociação"]
-        filtro = df[df["Status"].isin(lista)]
-        for i, row in filtro.iterrows(): card_projeto(row, "violet")
-
+        for i, r in df[df["Status"].isin(["Recebido (Suprimentos)", "Enviado para Cotação", "Em Negociação"])].iterrows(): card_projeto(r, "violet")
     with c5:
         st.subheader("✅ Concluídos")
         st.markdown("---")
-        filtro = df[df["Status"] == "Contratação Finalizada"]
-        for i, row in filtro.iterrows(): card_projeto(row, "green")
-
+        for i, r in df[df["Status"]=="Contratação Finalizada"].iterrows(): card_projeto(r, "green")
 else:
-    st.info("📭 Nenhum projeto encontrado. Use o cadastro acima.")
+    st.info("Nenhum projeto encontrado.")
