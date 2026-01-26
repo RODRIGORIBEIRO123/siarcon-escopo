@@ -2,82 +2,61 @@ import streamlit as st
 import pandas as pd
 import utils_db
 import os
-import unicodedata
 
 st.set_page_config(page_title="Painel de Projetos (Kanban)", page_icon="📊", layout="wide")
 
 # ==================================================
-# 🧠 CÉREBRO DE NAVEGAÇÃO (AUTO-DETECÇÃO)
+# 🗺️ MAPA DA MINA (CONFIGURAÇÃO MANUAL E SEGURA)
 # ==================================================
-def normalizar(texto):
-    """Remove acentos e deixa minúsculo para comparar (ex: 'Elétrica' vira 'eletrica')"""
-    if not isinstance(texto, str): return ""
-    return unicodedata.normalize('NFKD', texto).encode('ASCII', 'ignore').decode('ASCII').lower()
-
-def encontrar_arquivo_automatico(disciplina_banco):
-    """
-    Varre a pasta 'pages' e encontra o arquivo certo baseada em palavras-chave.
-    """
-    # MAPA DE TRADUÇÃO:
-    # Esquerda: O que está escrito no Card/Banco de Dados
-    # Direita: Um pedaço do nome que OBRIGATORIAMENTE está no nome do arquivo
-    mapa_palavras = {
-        "dutos": "dutos",
-        "geral": "dutos", # Para corrigir os antigos "Geral"
-        "hidraulica": "hidraulica", # Sem acento
-        "hidráulica": "hidraulica", # Com acento
-        "eletrica": "eletrica",
-        "elétrica": "eletrica",
-        "automacao": "automacao",
-        "automação": "automacao",
-        "tab": "tab",
-        "movimentacoes": "movimentacoes",
-        "movimentações": "movimentacoes",
-        "cobre": "cobre",
-        "linha de cobre": "cobre"
-    }
-
-    # 1. Normaliza o nome que veio do banco (ex: "Elétrica" -> "eletrica")
-    termo_busca = mapa_palavras.get(normalizar(disciplina_banco))
+# Aqui conectamos o nome que está no BANCO DE DADOS
+# com o nome EXATO do arquivo que vi na sua pasta.
+MAPA_PAGINAS = {
+    # Dutos
+    "Dutos": "pages/1_Dutos.py",
+    "Geral": "pages/1_Dutos.py", # Para os antigos
     
-    if not termo_busca:
-        return None, f"Não sei procurar por: {disciplina_banco}"
-
-    try:
-        if not os.path.exists("pages"):
-            return None, "A pasta 'pages' não existe no diretório principal."
-
-        # 2. Lista todos os arquivos da pasta pages
-        arquivos = os.listdir("pages")
-        
-        for arq in arquivos:
-            # Pula arquivos que não sejam Python
-            if not arq.endswith(".py"): continue
-            
-            # 3. COMPARAÇÃO INTELIGENTE
-            # Se o termo (ex: "eletrica") estiver dentro do nome do arquivo (ex: "3_Eletrica.py")
-            if termo_busca in normalizar(arq):
-                return f"pages/{arq}", None # ACHOU! Retorna o caminho exato
-        
-        return None, f"Não encontrei nenhum arquivo na pasta 'pages' que tenha a palavra '{termo_busca}'."
-        
-    except Exception as e:
-        return None, f"Erro crítico ao ler pasta: {e}"
+    # Hidráulica (No banco tem acento, no arquivo não)
+    "Hidráulica": "pages/2_Hidraulica.py",
+    "Hidraulica": "pages/2_Hidraulica.py",
+    
+    # Elétrica
+    "Elétrica": "pages/3_Eletrica.py",
+    "Eletrica": "pages/3_Eletrica.py",
+    
+    # Automação
+    "Automação": "pages/4_Automacao.py",
+    "Automacao": "pages/4_Automacao.py",
+    
+    # TAB
+    "TAB": "pages/5_TAB.py",
+    
+    # Movimentações
+    "Movimentações": "pages/6_Movimentacoes.py",
+    "Movimentacoes": "pages/6_Movimentacoes.py",
+    
+    # Cobre
+    "Linha de Cobre": "pages/7_Cobre.py",
+    "Cobre": "pages/7_Cobre.py"
+}
 
 # --- AÇÃO DO BOTÃO ---
 def ir_para_edicao(row):
     disciplina = row['Disciplina']
     
-    # Usa a inteligência para achar o arquivo real
-    caminho, erro = encontrar_arquivo_automatico(disciplina)
-    
-    if caminho:
-        st.session_state['dados_projeto'] = row.to_dict()
-        st.session_state['modo_edicao'] = True
-        st.switch_page(caminho)
+    # Verifica se a disciplina existe no mapa
+    if disciplina in MAPA_PAGINAS:
+        arquivo_destino = MAPA_PAGINAS[disciplina]
+        
+        # Verifica se o arquivo existe fisicamente
+        if os.path.exists(arquivo_destino):
+            st.session_state['dados_projeto'] = row.to_dict()
+            st.session_state['modo_edicao'] = True
+            st.switch_page(arquivo_destino)
+        else:
+            st.error(f"🚨 Arquivo não encontrado: {arquivo_destino}")
+            st.info("Verifique se o nome do arquivo na pasta 'pages' mudou.")
     else:
-        st.toast(f"❌ Erro: {erro}", icon="🚨")
-        st.error(f"Detalhe do erro: {erro}")
+        st.error(f"❌ A disciplina '{disciplina}' não está mapeada no código.")
 
 # ==================================================
 # 🖥️ INTERFACE
@@ -94,6 +73,7 @@ with st.expander("➕ CADASTRO NOVA OBRA"):
         novo_cliente = c1.text_input("Cliente")
         nova_obra = c2.text_input("Nome da Obra")
         
+        # Opções padronizadas para salvar no banco
         opcoes_disciplinas = [
             "Dutos", "Hidráulica", "Elétrica", "Automação", 
             "TAB", "Movimentações", "Linha de Cobre"
@@ -112,7 +92,7 @@ st.divider()
 
 # Kanban
 if not df.empty:
-    colunas_status = st.columns(4) # Ajustado para 4 colunas como na imagem
+    colunas_status = st.columns(4)
     grupos = {
         "⚪ Não Iniciado": ["Não Iniciado"],
         "👷 Engenharia": ["Em Elaboração (Engenharia)", "Aguardando Obras"],
@@ -132,7 +112,7 @@ if not df.empty:
                     st.caption(f"{row['Cliente']}")
                     st.markdown(f"**📍 {row['Obra']}**")
                     
-                    # Ícone dinâmico dependendo da disciplina
+                    # Ícone dinâmico
                     icon_map = {
                         "Dutos": "❄️", "Geral": "📄", "Hidráulica": "💧", 
                         "Elétrica": "⚡", "Automação": "🤖", "TAB": "💨",
@@ -150,12 +130,13 @@ if not df.empty:
                     c_btn1, c_btn2 = st.columns([2,1])
                     btn_label = "▶️ Iniciar" if row['Status'] == "Não Iniciado" else "✏️ Editar"
                     
+                    # Identificador único para o botão
                     if c_btn1.button(btn_label, key=f"btn_{row['_id_linha']}", use_container_width=True):
                         ir_para_edicao(row)
                     
                     if c_btn2.button("🗑️", key=f"del_{row['_id_linha']}"):
-                        utils_db.excluir_projeto(row['_id_linha'])
-                        st.rerun()
+                        if utils_db.excluir_projeto(row['_id_linha']):
+                            st.rerun()
         col_index += 1
 else:
     st.info("Nenhum projeto encontrado.")
