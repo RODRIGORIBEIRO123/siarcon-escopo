@@ -4,3 +4,4 @@ Pillow
 gspread
 google-auth
 pandas
+pdfplumber
