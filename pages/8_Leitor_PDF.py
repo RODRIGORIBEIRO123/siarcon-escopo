@@ -4,148 +4,178 @@ import pandas as pd
 import re
 from io import BytesIO
 
-st.set_page_config(page_title="Leitor Turbo PDF", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="Auditor de Propostas", page_icon="🧐", layout="wide")
 
 # ==================================================
-# ⚙️ BARRA LATERAL DE AJUSTES (O SEGREDO DA ROBUSTEZ)
+# 🧠 CÉREBRO ANALÍTICO (Regras de Negócio)
 # ==================================================
-with st.sidebar:
-    st.header("⚙️ Ajustes de Leitura")
-    st.info("Se a tabela vier quebrada, mexa aqui:")
-    
-    # Escolha do método de extração
-    metodo = st.radio(
-        "Método de Detecção:",
-        ("lattice", "stream"),
-        index=0,
-        help="'Lattice' = Para tabelas com linhas desenhadas.\n'Stream' = Para tabelas separadas por espaços em branco."
-    )
-    
-    # Sensibilidade (Snap Tolerance)
-    tolerancia = st.slider(
-        "Tolerância de Alinhamento (x-tolerance)",
-        min_value=1, max_value=10, value=3,
-        help="Aumente se as colunas estiverem sendo quebradas erradas."
-    )
+def analisar_texto_inteligente(texto_completo):
+    analise = {
+        "resumo": "Não identificado.",
+        "escopo_detectado": [],
+        "alertas": [],
+        "sugestoes": []
+    }
 
-# ==================================================
-# 🧠 FUNÇÕES INTELIGENTES
-# ==================================================
-def limpar_cabecalho(lista_colunas):
-    """Renomeia colunas vazias ou duplicadas"""
-    colunas_limpas = []
-    contagem = {}
-    for i, col in enumerate(lista_colunas):
-        nome_base = str(col).strip() if col and str(col).strip() != "" else f"Dado_{i+1}"
-        # Remove quebras de linha no nome da coluna
-        nome_base = nome_base.replace('\n', ' ')
+    # 1. TENTA EXTRAIR UM RESUMO / OBJETIVO
+    # Geralmente vem após "Ref.:", "Assunto:", "Objeto:"
+    match_resumo = re.search(r'(?i)(ref\.|assunto|objeto|referência)[:\s]+(.+)', texto_completo)
+    if match_resumo:
+        analise["resumo"] = match_resumo.group(2).split('\n')[0] # Pega a primeira linha do assunto
+    else:
+        # Se não achar, pega os primeiros 300 caracteres como resumo provisório
+        analise["resumo"] = texto_completo[:300].replace('\n', ' ') + "..."
+
+    # 2. EXTRAÇÃO DETALHADA DO ESCOPO
+    # Procura blocos de texto que comecem com palavras chave
+    palavras_chave_escopo = ["Escopo", "Descrição dos Serviços", "Objeto", "Serviços Inclusos", "Premissas"]
+    linhas = texto_completo.split('\n')
+    capturando = False
+    buffer_escopo = []
+
+    for linha in linhas:
+        # Se encontrar um título de seção, começa a capturar
+        if any(key in linha for key in palavras_chave_escopo) and len(linha) < 50:
+            capturando = True
+            buffer_escopo.append(f"📌 **{linha.strip()}**") # Marca como título
+            continue
         
-        if nome_base in contagem:
-            contagem[nome_base] += 1
-            novo_nome = f"{nome_base}_{contagem[nome_base]}"
-        else:
-            contagem[nome_base] = 0
-            novo_nome = nome_base
-        colunas_limpas.append(novo_nome)
-    return colunas_limpas
+        # Se capturando, guarda a linha
+        if capturando:
+            # Se encontrar outro título grande ou "Valor", "Total", para de capturar
+            if "Valor" in linha or "Total" in linha or "Condições" in linha:
+                capturando = False
+            else:
+                if len(linha.strip()) > 3: # Ignora linhas vazias
+                    buffer_escopo.append(linha.strip())
+    
+    if buffer_escopo:
+        analise["escopo_detectado"] = buffer_escopo
+    else:
+        analise["escopo_detectado"].append("Não consegui isolar o texto do escopo automaticamente.")
 
-def minerar_metadados(texto_completo):
-    """Procura informações vitais fora das tabelas"""
-    info = {}
-    # Expressões Regulares simples para tentar achar padrões
-    # Procura por "Cliente:" seguido de qualquer coisa até o fim da linha
-    match_cliente = re.search(r'(?i)(cliente|tomador|destinatário)[:\s]+(.+)', texto_completo)
-    if match_cliente: info['Possível Cliente'] = match_cliente.group(2).strip()
+    # 3. VERIFICAÇÃO DE INCONSISTÊNCIAS (O Auditor)
+    termos_obrigatorios = {
+        "Validade": ["validade", "val.", "vencimento"],
+        "Prazo de Entrega": ["prazo", "entrega", "cronograma"],
+        "Condição de Pagamento": ["pagamento", "faturamento", "condição"],
+        "Impostos": ["impostos", "tributos", "icms", "iss"],
+        "Valor Total": ["valor total", "total global", "preço total"]
+    }
 
-    match_obra = re.search(r'(?i)(obra|projeto|referência)[:\s]+(.+)', texto_completo)
-    if match_obra: info['Possível Obra'] = match_obra.group(2).strip()
+    for item, keywords in termos_obrigatorios.items():
+        encontrou = any(k in texto_completo.lower() for k in keywords)
+        if not encontrou:
+            analise["alertas"].append(f"⚠️ **{item}** não foi encontrado explicitamente.")
+            analise["sugestoes"].append(f"Solicitar ao fornecedor que inclua a informação de **{item}**.")
 
-    # Tenta achar valores monetários grandes (Totais)
-    valores = re.findall(r'R\$\s?[\d\.,]+', texto_completo)
-    if valores:
-        info['Valores Encontrados (R$)'] = ", ".join(valores[-3:]) # Pega os últimos 3 (geralmente totais estão no fim)
-        
-    return info
+    # 4. VERIFICAÇÃO DE DATAS (Inconsistência Temporal)
+    anos_encontrados = re.findall(r'202[0-9]', texto_completo)
+    if anos_encontrados:
+        ano_atual = pd.Timestamp.now().year
+        anos_int = [int(a) for a in anos_encontrados]
+        if any(a < (ano_atual - 1) for a in anos_int):
+            analise["alertas"].append(f"🚨 Atenção: Encontrei menção a anos antigos ({set(anos_int)}). Verifique se a proposta não é antiga.")
+
+    return analise
 
 # ==================================================
-# 🖥️ APLICAÇÃO PRINCIPAL
+# 🧹 FUNÇÃO DE LIMPEZA DE TABELAS
 # ==================================================
-st.title("⚡ Leitor Turbo de Arquivos (PDF)")
-st.markdown("Extração avançada de tabelas e metadados.")
+def limpar_df(df):
+    # Remove linhas totalmente vazias
+    df = df.dropna(how='all')
+    # Remove colunas totalmente vazias
+    df = df.dropna(axis=1, how='all')
+    # Tenta definir cabeçalho
+    if not df.empty:
+        # Se a primeira linha tiver muitos 'None', tentamos renomear
+        df.columns = [f"{str(c).strip() if c else f'Col_{i}'}" for i, c in enumerate(df.columns)]
+    return df
 
-arquivo = st.file_uploader("Arraste o PDF aqui", type=["pdf"])
+# ==================================================
+# 🖥️ INTERFACE
+# ==================================================
+st.title("🧐 Auditor de Propostas e Contratos")
+st.markdown("Análise automática de escopo, materiais e inconsistências contratuais.")
+
+arquivo = st.file_uploader("Carregue o PDF (Orçamento/Contrato)", type=["pdf"])
 
 if arquivo:
     st.divider()
-    with st.spinner("Processando com inteligência aumentada..."):
+    with st.spinner("O Auditor está lendo o documento..."):
         try:
+            texto_full = ""
+            tabelas_full = []
+            
             with pdfplumber.open(arquivo) as pdf:
-                tabelas_finais = []
-                texto_geral = ""
-                
-                # Barra de progresso
-                bar = st.progress(0)
-                total_p = len(pdf.pages)
-                
-                for i, page in enumerate(pdf.pages):
-                    # 1. Extração de Texto Puro (para mineração)
-                    texto_geral += (page.extract_text() or "") + "\n"
-                    
-                    # 2. Extração de Tabelas com Configuração do Usuário
-                    # Aqui aplicamos as configs da barra lateral
-                    tabelas = page.extract_tables({
-                        "vertical_strategy": "lines" if metodo == "lattice" else "text",
-                        "horizontal_strategy": "lines" if metodo == "lattice" else "text",
-                        "snap_tolerance": tolerancia,
-                    })
-                    
-                    for tab in tabelas:
-                        df = pd.DataFrame(tab)
-                        # Limpeza: Remove linhas que estão 100% vazias
-                        df = df.dropna(how='all')
-                        
-                        if not df.empty and len(df) > 1:
-                            # Tratamento de Cabeçalho
-                            cols = df.iloc[0].tolist()
-                            df.columns = limpar_cabecalho(cols)
-                            df = df[1:].reset_index(drop=True)
-                            tabelas_finais.append(df)
-                    
-                    bar.progress((i + 1) / total_p)
+                for page in pdf.pages:
+                    # Texto
+                    texto_full += (page.extract_text() or "") + "\n"
+                    # Tabelas
+                    tabs = page.extract_tables()
+                    for t in tabs:
+                        df = pd.DataFrame(t)
+                        df_limpo = limpar_df(df)
+                        if len(df_limpo) > 1: # Só aceita tabelas com dados
+                            # Pega a 1ª linha como header
+                            new_header = df_limpo.iloc[0] 
+                            df_limpo = df_limpo[1:] 
+                            df_limpo.columns = new_header 
+                            tabelas_full.append(df_limpo)
 
-            # --- RESULTADOS ---
+            # --- RODA A ANÁLISE ---
+            resultado = analisar_texto_inteligente(texto_full)
+
+            # --- EXIBIÇÃO EM DASHBOARD ---
             
-            # BLOCO 1: O que ele achou fora da tabela (Cabeçalho/Rodapé)
-            metadados = minerar_metadados(texto_geral)
-            if metadados:
+            # 1. CABEÇALHO RESUMO
+            st.markdown(f"### 📄 Resumo: {resultado['resumo']}")
+            
+            col_a, col_b = st.columns([1, 1])
+            
+            # 2. ESCOPO DETALHADO (Lado Esquerdo)
+            with col_a:
+                st.subheader("🔍 Escopo Identificado")
                 with st.container(border=True):
-                    st.subheader("🕵️‍♂️ Informações Detectadas (Fora da Tabela)")
-                    c_meta = st.columns(len(metadados))
-                    for idx, (chave, valor) in enumerate(metadados.items()):
-                        c_meta[idx].metric(chave, valor if len(valor) < 30 else f"{valor[:30]}...")
+                    if resultado["escopo_detectado"]:
+                        for linha in resultado["escopo_detectado"]:
+                            if "📌" in linha:
+                                st.markdown(f"**{linha}**")
+                            else:
+                                st.write(linha)
+                    else:
+                        st.warning("Não consegui isolar o texto do escopo.")
 
-            # BLOCO 2: Tabelas
-            tab_vis, tab_txt = st.tabs(["📊 Tabelas Estruturadas", "📝 Texto Completo (Debug)"])
+            # 3. ALERTA DE INCONSISTÊNCIAS (Lado Direito)
+            with col_b:
+                st.subheader("🚨 Auditoria & Riscos")
+                with st.container(border=True):
+                    if resultado["alertas"]:
+                        for alerta in resultado["alertas"]:
+                            st.error(alerta)
+                    else:
+                        st.success("✅ O documento parece conter todas as cláusulas padrão.")
+
+                    if resultado["sugestoes"]:
+                        st.markdown("---")
+                        st.markdown("**💡 Sugestões de melhoria:**")
+                        for sug in resultado["sugestoes"]:
+                            st.info(sug)
+
+            st.divider()
+
+            # 4. LISTAS DE MATERIAIS (TABELAS)
+            st.subheader(f"📦 Listas de Materiais / Quantitativos ({len(tabelas_full)} encontradas)")
             
-            with tab_vis:
-                if tabelas_finais:
-                    st.success(f"Sucesso! {len(tabelas_finais)} tabelas extraídas.")
-                    for j, df in enumerate(tabelas_finais):
-                        with st.expander(f"Tabela {j+1} ({len(df)} linhas)", expanded=(j==0)):
-                            st.dataframe(df, use_container_width=True)
-                            
-                            # Download
-                            csv = df.to_csv(index=False).encode('utf-8')
-                            st.download_button(f"📥 Baixar CSV", csv, f"tabela_{j+1}.csv", "text/csv")
-                else:
-                    st.warning("⚠️ Nenhuma tabela perfeita encontrada.")
-                    st.markdown("**Tente mudar na Barra Lateral:**\n1. Troque de 'Lattice' para 'Stream'\n2. Aumente a tolerância.")
-
-            with tab_txt:
-                st.text_area("Tudo que consegui ler:", texto_geral, height=400)
+            if tabelas_full:
+                for i, df in enumerate(tabelas_full):
+                    with st.expander(f"📋 Lista {i+1} (Clique para ver)", expanded=True):
+                        st.dataframe(df, use_container_width=True)
+                        csv = df.to_csv(index=False).encode('utf-8')
+                        st.download_button(f"📥 Baixar Lista {i+1}", csv, "lista.csv", "text/csv")
+            else:
+                st.info("Nenhuma tabela de materiais foi detectada no formato padrão.")
 
         except Exception as e:
-            st.error(f"Erro crítico: {e}")
-
-else:
-    st.info("Aguarda upload...")
+            st.error(f"Erro na leitura: {e}")
