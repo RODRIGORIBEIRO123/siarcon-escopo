@@ -10,7 +10,7 @@ import io
 import re
 
 # Configuração da Página
-st.set_page_config(page_title="Siarcon - Leitor Técnico CAD", page_icon="📐", layout="wide")
+st.set_page_config(page_title="Siarcon - Leitor Master", page_icon="🏗️", layout="wide")
 
 # ==================================================
 # 🔑 CONFIGURAÇÃO (SIDEBAR)
@@ -30,14 +30,13 @@ with st.sidebar:
 
     st.divider()
 
-    st.subheader("📋 Parâmetros de Obra")
+    st.subheader("📋 Parâmetros de Leitura")
     
-    # ESTRATÉGIA DE LEITURA (NOVO)
     tipo_leitura = st.radio(
-        "Tipo de Desenho:",
+        "Estratégia de Desenho:",
         ("Contém Planta e Cortes (Filtrar)", "Apenas Planta Baixa (Somar Tudo)"),
         index=0,
-        help="Se o desenho tiver muitos cortes/detalhes repetidos, use a primeira opção para não duplicar valores."
+        help="Use 'Filtrar' para ignorar as repetições dos cortes e detalhes."
     )
 
     classe_pressao = st.selectbox(
@@ -46,13 +45,12 @@ with st.sidebar:
         index=1
     )
     
-    perda_corte = st.slider("Perda de Material (%)", 0, 40, 10) / 100
+    perda_corte = st.slider("Perda de Material / Retalhos (%)", 0, 40, 10) / 100
 
 # ==================================================
 # 📐 TABELAS TÉCNICAS (SMACNA/NBR)
 # ==================================================
 def definir_bitola(maior_lado_mm, classe):
-    # Lógica ajustada para economia e segurança
     if "250 Pa" in classe:
         if maior_lado_mm <= 450: return 26
         if maior_lado_mm <= 900: return 24
@@ -80,116 +78,125 @@ def calcular_peso_chapa(bitola):
     return pesos.get(bitola, 6.0)
 
 # ==================================================
-# 📝 GERADOR DE EXCEL
+# 📝 GERADOR DE EXCEL MULTI-ABA
 # ==================================================
-def gerar_excel(df_dados, resumo_meta):
+def gerar_excel_completo(df_dutos, df_equip, resumo_meta):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        # Aba Analítica
-        df_dados.to_excel(writer, sheet_name='Memorial Analítico', index=False)
+        
+        # 1. ABA RESUMO
         wb = writer.book
-        ws = writer.sheets['Memorial Analítico']
-        
-        # Estilos
-        fmt_header = wb.add_format({'bold': True, 'bg_color': '#E0E0E0', 'border': 1})
-        fmt_center = wb.add_format({'align': 'center'})
-        
-        for idx, col in enumerate(df_dados.columns):
-            ws.write(0, idx, col, fmt_header)
-            ws.set_column(idx, idx, 18, fmt_center)
-
-        # Aba Resumo
         ws_res = wb.add_worksheet('Resumo Executivo')
-        ws_res.write(0, 0, "Parâmetro", fmt_header)
+        fmt_header = wb.add_format({'bold': True, 'bg_color': '#4F81BD', 'font_color': 'white', 'border': 1})
+        fmt_dado = wb.add_format({'border': 1})
+        
+        ws_res.write(0, 0, "Item", fmt_header)
         ws_res.write(0, 1, "Valor", fmt_header)
         
         row = 1
         for k, v in resumo_meta.items():
-            ws_res.write(row, 0, k)
-            ws_res.write(row, 1, v)
+            ws_res.write(row, 0, k, fmt_dado)
+            ws_res.write(row, 1, v, fmt_dado)
             row += 1
+        ws_res.set_column(0, 0, 25)
+        ws_res.set_column(1, 1, 15)
+
+        # 2. ABA DUTOS
+        if not df_dutos.empty:
+            df_dutos.to_excel(writer, sheet_name='Memorial Dutos', index=False)
+            ws_dutos = writer.sheets['Memorial Dutos']
+            for idx, col in enumerate(df_dutos.columns):
+                ws_dutos.write(0, idx, col, fmt_header)
+                ws_dutos.set_column(idx, idx, 15)
+
+        # 3. ABA EQUIPAMENTOS
+        if not df_equip.empty:
+            df_equip.to_excel(writer, sheet_name='Lista Equipamentos', index=False)
+            ws_equip = writer.sheets['Lista Equipamentos']
+            for idx, col in enumerate(df_equip.columns):
+                ws_equip.write(0, idx, col, fmt_header)
+                ws_equip.set_column(idx, idx, 25)
             
     output.seek(0)
     return output
 
 # ==================================================
-# 🔧 LIMPEZA INTELIGENTE DE CAD
+# 🔧 LIMPEZA DE TEXTO (CORREÇÃO DE CONCATENAÇÃO)
 # ==================================================
 def limpar_texto_cad(lista_textos, modo_rigoroso):
     texto_limpo = []
     
-    # 1. Palavras Proibidas (Carimbos, Legendas, Escalas)
-    # Isso resolve o problema de ler a margem
+    # Lista negra de palavras para evitar leitura de margem/carimbo
     proibidos = [
         "LAYER", "VIEWPORT", "STANDARD", "ISO", "BYLAYER", 
         "COTAS", "MODEL", "LAYOUT", "PRANCHA", "FOLHA", 
         "DESENHO", "APROVADO", "DATA", "REVISÃO", "CLIENTE",
-        "ESCALA", "SCALE", "1:50", "1:100", "1/50", "1/100", "1:25"
+        "ESCALA", "SCALE", "1:50", "1:100", "1/50", "1:20", "NOME DO ARQUIVO"
     ]
     
-    padrao_cota_isolada = re.compile(r'^\d{1,3}$') # Números soltos como "100", "50" (geralmente cotas de parede)
-
+    # Regex para identificar números isolados que parecem tags (ex: "1", "02")
+    # Se o texto for só um número pequeno, a gente descarta se não tiver unidade perto na IA
+    
     for item in lista_textos:
         t = str(item).strip()
         t_upper = t.upper()
         
-        # Filtros iniciais
-        if len(t) < 3: continue
+        if len(t) < 2: continue # Ignora letras soltas
         if any(p in t_upper for p in proibidos): continue
-        if padrao_cota_isolada.match(t): continue # Ignora números isolados que confundem a IA
         
         texto_limpo.append(t)
         
-    # Se modo rigoroso (tem cortes), remove duplicatas exatas para diminuir ruído
+    # Se modo cortes ativo, remove duplicatas exatas
     if "Cortes" in modo_rigoroso:
-        return "\n".join(list(dict.fromkeys(texto_limpo)))
+        lista_final = list(dict.fromkeys(texto_limpo))
     else:
-        # Se for só planta, mantém tudo para contar peças
-        return "\n".join(texto_limpo[:3500])
+        lista_final = texto_limpo[:4000]
+
+    # TRUQUE: Usar " | " como separador visual para a IA não juntar "Duto 3" com "3m" virando "33m"
+    return " | ".join(lista_final)
 
 # ==================================================
-# 🧠 CÉREBRO DA IA (PROMPT CORRIGIDO)
+# 🧠 CÉREBRO DA IA (PROMPT REFINADO)
 # ==================================================
 def processar_ia(texto, tipo_leitura):
     if not api_key: return None
 
-    # Define o comportamento com base na escolha do usuário
-    comportamento = ""
+    instrucao_cortes = ""
     if "Cortes" in tipo_leitura:
-        comportamento = """
-        MODO DE FILTRAGEM DE CORTES ATIVO:
-        Este texto contém redundâncias (Planta Baixa + Cortes A/B/C).
-        1. PRIORIDADE: Identifique as dimensões apenas na PLANTA BAIXA.
-        2. IGNORAR: Se uma medida aparecer repetida perto de palavras como "CORTE", "VISTA", "DETALHE", ignore-a.
-        3. ESCALA: Ignore textos de escala (ex: 1:50) que possam parecer quantidades.
-        """
-    else:
-        comportamento = """
-        MODO DE SOMA TOTAL:
-        O texto refere-se apenas à planta. Pode somar itens repetidos como quantidades adicionais.
-        """
+        instrucao_cortes = "ATENÇÃO: O desenho tem Cortes e Vistas. IGNORE medidas repetidas nestas áreas. Use apenas a Planta Baixa."
 
     prompt = f"""
-    Você é um Engenheiro Orçamentista Sênior.
-    {comportamento}
+    Você é um Engenheiro Sênior de Orçamentos (MEP). Analise os textos extraídos de um CAD.
+    Os textos estão separados por " | ".
+    {instrucao_cortes}
 
-    Tarefa: Identificar TRECHOS DE DUTOS DE AR CONDICIONADO no texto bruto.
-    
-    Regras de Ouro:
-    1. Identifique o padrão "Largura x Altura" (ex: 300x200, 50x30). Converta tudo para MM.
-    2. Identifique o COMPRIMENTO linear (m). Se não houver unidade explícita e o número for pequeno (<100), assuma metros.
-    3. Se encontrar o mesmo duto (ex: 300x200) várias vezes e estiver no 'Modo Cortes', conte apenas UMA VEZ o comprimento do trecho, a menos que fique claro que são trechos distintos.
+    TAREFA 1: DUTOS E QUANTITATIVOS
+    - Encontre padrões "Largura x Altura" (ex: 300x200). Converta para mm.
+    - Encontre COMPRIMENTO (m). 
+    - CRÍTICO: Cuidado com concatenação. Se ver "Duto 3 | 3.00", o comprimento é 3, NÃO 33.
+    - Ignore números inteiros pequenos (1, 2, 3) isolados, pois geralmente são TAGS ou números de peças, não metros. Só aceite como metro se tiver unidade (m) ou for dimensional lógico.
+
+    TAREFA 2: LISTA DE EQUIPAMENTOS
+    - Identifique itens como: Fancoil, Split, Cassete, VRF, Chiller, Bomba, Ventilador, Exaustor, Quadro Elétrico (QDL/QD).
+    - Conte as quantidades.
 
     SAÍDA JSON OBRIGATÓRIA:
     {{
-        "resumo_analise": "Explique brevemente o que foi considerado e o que foi descartado (ex: 'Ignorei as repetições dos cortes').",
+        "resumo_analise": "Comentário sobre a qualidade da leitura.",
         "dutos": [
             {{
                 "dimensao": "300x200", 
                 "largura_mm": 300, 
                 "altura_mm": 200, 
-                "comprimento_total_m": 10.5,
+                "comprimento_m": 3.0,
                 "nota": "Rede Principal"
+            }}
+        ],
+        "equipamentos": [
+            {{
+                "item": "Fancoil 5TR",
+                "quantidade": 2,
+                "detalhe": "Modelo Teto"
             }}
         ]
     }}
@@ -200,9 +207,9 @@ def processar_ia(texto, tipo_leitura):
             model="gpt-4o",
             messages=[
                 {"role": "system", "content": prompt},
-                {"role": "user", "content": f"Analise este levantamento:\n\n{texto[:35000]}"} 
+                {"role": "user", "content": f"Analise este texto cru:\n\n{texto[:45000]}"} 
             ],
-            temperature=0.1, # Criatividade quase zero para ser exato
+            temperature=0.0, # Zero criatividade para máxima precisão matemática
             response_format={"type": "json_object"}
         )
         return json.loads(response.choices[0].message.content)
@@ -212,8 +219,8 @@ def processar_ia(texto, tipo_leitura):
 # ==================================================
 # 🖥️ INTERFACE PRINCIPAL
 # ==================================================
-st.title("📏 Leitor e Calculador de Dutos")
-st.markdown("Extração de quantitativos CAD com algoritmo anti-duplicidade.")
+st.title("📏 Leitor Técnico Master (Dutos + Equipamentos)")
+st.markdown("Extração precisa com separação de **Planta vs Cortes** e listagem de equipamentos.")
 
 arquivo = st.file_uploader("Upload DXF", type=["dxf"])
 
@@ -230,91 +237,107 @@ if arquivo:
         if doc:
             msp = doc.modelspace()
             
-            # 1. Extração
+            # Leitura
             raw_text = []
-            with st.spinner("Lendo geometrias e textos..."):
+            with st.spinner("Lendo geometrias e separando textos..."):
                 for entity in msp.query('TEXT MTEXT'):
                     if entity.dxf.text: raw_text.append(entity.dxf.text)
             
-            # 2. Limpeza (Aplica Filtro de Margem/Escala)
+            # Limpeza com separador visual
             texto_proc = limpar_texto_cad(raw_text, tipo_leitura)
             
-            # Layout Coluna Dividida (Anterior)
-            col1, col2 = st.columns([1, 2])
+            st.info(f"Leitura: {len(raw_text)} blocos de texto processados.")
             
-            with col1:
-                st.info(f"Leitura: {len(raw_text)} linhas brutas.")
-                st.caption(f"Modo: {tipo_leitura}")
-                with st.expander("Ver Texto Filtrado"):
-                    st.text_area("", texto_proc, height=400)
-            
-            with col2:
-                st.subheader("📊 Resultado do Cálculo")
-                
+            if st.button("🚀 Processar Leitura Fina", type="primary"):
                 if not api_key:
-                    st.error("Chave API ausente.")
+                    st.error("Configure a API Key na barra lateral.")
                 else:
-                    if st.button("🚀 Processar Quantitativo", type="primary"):
-                        with st.spinner("IA analisando dimensões e eliminando redundâncias..."):
-                            dados = processar_ia(texto_proc, tipo_leitura)
+                    with st.spinner("IA analisando dimensões, corrigindo erros de leitura e listando equipamentos..."):
+                        dados = processar_ia(texto_proc, tipo_leitura)
+                        
+                        if "erro" in dados:
+                            st.error(f"Erro Crítico: {dados['erro']}")
+                        else:
+                            # --- PROCESSAMENTO DOS DADOS ---
                             
-                            if "erro" in dados:
-                                st.error(f"Erro: {dados['erro']}")
-                            else:
-                                lista = dados.get("dutos", [])
-                                if lista:
-                                    # Cálculos Matemáticos
-                                    res_final = []
-                                    tot_kg = 0
-                                    tot_m2 = 0
+                            # 1. DUTOS
+                            lista_dutos = dados.get("dutos", [])
+                            tot_kg = 0
+                            tot_m2 = 0
+                            res_dutos = []
+                            
+                            for d in lista_dutos:
+                                w, h = d.get('largura_mm', 0), d.get('altura_mm', 0)
+                                l = d.get('comprimento_m', 0)
+                                if w > 0 and h > 0 and l > 0:
+                                    gauge = definir_bitola(max(w, h), classe_pressao)
+                                    perim = 2 * (w/1000 + h/1000)
+                                    area = (perim * l) * (1 + perda_corte)
+                                    peso = area * calcular_peso_chapa(gauge)
                                     
-                                    for item in lista:
-                                        w = item.get('largura_mm', 0)
-                                        h = item.get('altura_mm', 0)
-                                        l = item.get('comprimento_total_m', 0)
-                                        
-                                        if w > 0 and h > 0:
-                                            # Bitola
-                                            maior = max(w, h)
-                                            gauge = definir_bitola(maior, classe_pressao)
-                                            
-                                            # Área
-                                            perim = 2 * (w/1000 + h/1000)
-                                            area_tot = (perim * l) * (1 + perda_corte)
-                                            
-                                            # Peso
-                                            peso = area_tot * calcular_peso_chapa(gauge)
-                                            
-                                            res_final.append({
-                                                "Dimensão": f"{int(w)}x{int(h)}",
-                                                "Comp. (m)": round(l, 2),
-                                                "Bitola": f"#{gauge}",
-                                                "Área (m²)": round(area_tot, 2),
-                                                "Peso (kg)": round(peso, 2),
-                                                "Nota": item.get("nota", "-")
-                                            })
-                                            tot_kg += peso
-                                            tot_m2 += area_tot
-                                    
-                                    # Exibição
-                                    st.success(f"✅ Análise Completa: {tot_kg:,.1f} kg")
-                                    st.info(f"IA: {dados.get('resumo_analise')}")
-                                    
-                                    df = pd.DataFrame(res_final)
-                                    st.dataframe(df, use_container_width=True)
-                                    
-                                    # Excel
-                                    meta = {
-                                        "Peso Total (kg)": tot_kg,
-                                        "Área Total (m²)": tot_m2,
-                                        "Classe": classe_pressao,
-                                        "Estratégia": tipo_leitura
-                                    }
-                                    xlsx = gerar_excel(df, meta)
-                                    st.download_button("📥 Baixar Planilha (.xlsx)", xlsx, "Memorial_Dutos.xlsx")
-                                    
+                                    tot_kg += peso
+                                    tot_m2 += area
+                                    res_dutos.append({
+                                        "Dimensão": f"{int(w)}x{int(h)}",
+                                        "Comp. (m)": round(l, 2),
+                                        "Bitola": f"#{gauge}",
+                                        "Área Isol. (m²)": round(area, 2),
+                                        "Peso (kg)": round(peso, 2),
+                                        "Nota": d.get("nota", "")
+                                    })
+
+                            # 2. EQUIPAMENTOS
+                            lista_equip = dados.get("equipamentos", [])
+                            tot_equip = sum([e.get('quantidade', 0) for e in lista_equip])
+                            res_equip = []
+                            if lista_equip:
+                                res_equip = pd.DataFrame(lista_equip)
+
+                            # --- LAYOUT DE MÉTRICAS (VOLTOU!) ---
+                            st.divider()
+                            c1, c2, c3 = st.columns(3)
+                            
+                            c1.metric("📦 Peso Total Dutos", f"{tot_kg:,.1f} kg", help="Considerando perda configurada")
+                            c2.metric("🧣 Área Isolamento", f"{tot_m2:,.1f} m²", help="Equivalente à área de chapa + perda")
+                            c3.metric("⚙️ Equipamentos", f"{tot_equip} un", help="Total de itens identificados")
+                            
+                            st.caption(f"Análise da IA: {dados.get('resumo_analise')}")
+
+                            # --- ABAS DE DETALHE ---
+                            tab1, tab2 = st.tabs(["📝 Memorial de Dutos", "🏗️ Lista de Equipamentos"])
+                            
+                            with tab1:
+                                if res_dutos:
+                                    df_dutos = pd.DataFrame(res_dutos)
+                                    st.dataframe(df_dutos, use_container_width=True)
                                 else:
-                                    st.warning("Nenhum duto detectado com segurança.")
+                                    st.warning("Nenhum duto identificado.")
+                                    df_dutos = pd.DataFrame()
+
+                            with tab2:
+                                if not res_equip.empty:
+                                    st.dataframe(res_equip, use_container_width=True)
+                                else:
+                                    st.info("Nenhum equipamento de grande porte identificado (Fancoil, Split, etc).")
+                                    df_equip = pd.DataFrame()
+
+                            # --- EXPORTAÇÃO EXCEL COMPLETO ---
+                            meta_dados = {
+                                "Peso Total (kg)": tot_kg,
+                                "Área Isolamento (m²)": tot_m2,
+                                "Qtd Equipamentos": tot_equip,
+                                "Pressão": classe_pressao,
+                                "Perda": f"{int(perda_corte*100)}%"
+                            }
+                            
+                            excel_file = gerar_excel_completo(df_dutos, res_equip if isinstance(res_equip, pd.DataFrame) else pd.DataFrame(), meta_dados)
+                            
+                            st.download_button(
+                                label="📥 Baixar Relatório Completo (.xlsx)",
+                                data=excel_file,
+                                file_name="Relatorio_Obra_Completo.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                            )
 
     except Exception as e:
         st.error(f"Erro ao ler arquivo: {e}")
