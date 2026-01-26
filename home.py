@@ -7,25 +7,25 @@ import unicodedata
 st.set_page_config(page_title="Painel de Projetos (Kanban)", page_icon="📊", layout="wide")
 
 # ==================================================
-# 🧠 CÉREBRO DE NAVEGAÇÃO (AUTO-DETECÇÃO)
+# 🧠 NAVEGADOR FLEXÍVEL (A SOLUÇÃO DO PROBLEMA)
 # ==================================================
 def normalizar(texto):
-    """Remove acentos e deixa minúsculo para comparar (ex: 'Elétrica' vira 'eletrica')"""
+    """Remove acentos e deixa minúsculo"""
     if not isinstance(texto, str): return ""
     return unicodedata.normalize('NFKD', texto).encode('ASCII', 'ignore').decode('ASCII').lower()
 
-def encontrar_arquivo_automatico(disciplina_banco):
+def encontrar_arquivo_flexivel(disciplina_banco):
     """
-    Varre a pasta 'pages' e encontra o arquivo certo baseada em palavras-chave.
+    1. Define uma palavra-chave para cada disciplina.
+    2. Varre a pasta 'pages'.
+    3. Retorna o PRIMEIRO arquivo que contiver a palavra-chave no nome.
     """
-    # MAPA DE TRADUÇÃO:
-    # Esquerda: O que está escrito no Card/Banco de Dados
-    # Direita: Um pedaço do nome que OBRIGATORIAMENTE está no nome do arquivo
-    mapa_palavras = {
+    # MAPA: Nome no Banco -> Palavra-chave obrigatória no nome do arquivo
+    mapa_keywords = {
         "dutos": "dutos",
-        "geral": "dutos", # Para corrigir os antigos "Geral"
-        "hidraulica": "hidraulica", # Sem acento
-        "hidráulica": "hidraulica", # Com acento
+        "geral": "dutos",
+        "hidraulica": "hidraulica",
+        "hidráulica": "hidraulica",
         "eletrica": "eletrica",
         "elétrica": "eletrica",
         "automacao": "automacao",
@@ -37,47 +37,53 @@ def encontrar_arquivo_automatico(disciplina_banco):
         "linha de cobre": "cobre"
     }
 
-    # 1. Normaliza o nome que veio do banco (ex: "Elétrica" -> "eletrica")
-    termo_busca = mapa_palavras.get(normalizar(disciplina_banco))
+    term_busca = mapa_keywords.get(normalizar(disciplina_banco))
     
-    if not termo_busca:
-        return None, f"Não sei procurar por: {disciplina_banco}"
+    if not term_busca:
+        return None, f"Disciplina '{disciplina_banco}' sem palavra-chave definida."
 
     try:
         if not os.path.exists("pages"):
-            return None, "A pasta 'pages' não existe no diretório principal."
+            return None, "Pasta 'pages' não encontrada."
 
-        # 2. Lista todos os arquivos da pasta pages
-        arquivos = os.listdir("pages")
+        # Lista arquivos reais na pasta (Ex: ['1_Dutos.py', '2_Hidraulica.py'])
+        arquivos_reais = os.listdir("pages")
         
-        for arq in arquivos:
-            # Pula arquivos que não sejam Python
-            if not arq.endswith(".py"): continue
+        for arquivo_real in arquivos_reais:
+            # Ignora arquivos que não sejam Python
+            if not arquivo_real.endswith(".py"): continue
             
-            # 3. COMPARAÇÃO INTELIGENTE
-            # Se o termo (ex: "eletrica") estiver dentro do nome do arquivo (ex: "3_Eletrica.py")
-            if termo_busca in normalizar(arq):
-                return f"pages/{arq}", None # ACHOU! Retorna o caminho exato
+            # COMPARAÇÃO INTELIGENTE:
+            # Se a palavra 'dutos' estiver dentro de '1_Dutos.py' (normalizado), achamos!
+            if term_busca in normalizar(arquivo_real):
+                return f"pages/{arquivo_real}", None # Retorna o caminho EXATO que existe no disco
         
-        return None, f"Não encontrei nenhum arquivo na pasta 'pages' que tenha a palavra '{termo_busca}'."
-        
+        return None, f"Não achei nenhum arquivo contendo '{term_busca}' na pasta pages."
+
     except Exception as e:
-        return None, f"Erro crítico ao ler pasta: {e}"
+        return None, f"Erro ao ler pasta: {e}"
 
 # --- AÇÃO DO BOTÃO ---
 def ir_para_edicao(row):
     disciplina = row['Disciplina']
     
-    # Usa a inteligência para achar o arquivo real
-    caminho, erro = encontrar_arquivo_automatico(disciplina)
+    # Usa a função flexível
+    caminho_arquivo, erro = encontrar_arquivo_flexivel(disciplina)
     
-    if caminho:
+    if caminho_arquivo:
         st.session_state['dados_projeto'] = row.to_dict()
         st.session_state['modo_edicao'] = True
-        st.switch_page(caminho)
+        try:
+            st.switch_page(caminho_arquivo)
+        except Exception as e:
+            st.error(f"Erro crítico ao trocar de página: {e}")
     else:
-        st.toast(f"❌ Erro: {erro}", icon="🚨")
-        st.error(f"Detalhe do erro: {erro}")
+        st.error(f"❌ Erro de Link: {erro}")
+        # Debug para ajudar você a ver o que está acontecendo
+        st.caption("Arquivos disponíveis na pasta:")
+        try:
+            st.code(os.listdir("pages"))
+        except: pass
 
 # ==================================================
 # 🖥️ INTERFACE
@@ -112,7 +118,7 @@ st.divider()
 
 # Kanban
 if not df.empty:
-    colunas_status = st.columns(4) # Ajustado para 4 colunas como na imagem
+    colunas_status = st.columns(4)
     grupos = {
         "⚪ Não Iniciado": ["Não Iniciado"],
         "👷 Engenharia": ["Em Elaboração (Engenharia)", "Aguardando Obras"],
@@ -132,7 +138,7 @@ if not df.empty:
                     st.caption(f"{row['Cliente']}")
                     st.markdown(f"**📍 {row['Obra']}**")
                     
-                    # Ícone dinâmico dependendo da disciplina
+                    # Ícone dinâmico
                     icon_map = {
                         "Dutos": "❄️", "Geral": "📄", "Hidráulica": "💧", 
                         "Elétrica": "⚡", "Automação": "🤖", "TAB": "💨",
@@ -154,8 +160,8 @@ if not df.empty:
                         ir_para_edicao(row)
                     
                     if c_btn2.button("🗑️", key=f"del_{row['_id_linha']}"):
-                        utils_db.excluir_projeto(row['_id_linha'])
-                        st.rerun()
+                        if utils_db.excluir_projeto(row['_id_linha']):
+                            st.rerun()
         col_index += 1
 else:
     st.info("Nenhum projeto encontrado.")
