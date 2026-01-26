@@ -10,7 +10,7 @@ import io
 import re
 
 # Configuração da Página
-st.set_page_config(page_title="Siarcon - Leitor Pro V13", page_icon="🛡️", layout="wide")
+st.set_page_config(page_title="Siarcon - Leitor V15", page_icon="🎯", layout="wide")
 
 # ==================================================
 # 🔧 FUNÇÕES DE SEGURANÇA
@@ -18,9 +18,17 @@ st.set_page_config(page_title="Siarcon - Leitor Pro V13", page_icon="🛡️", l
 def safe_float(valor):
     try:
         if valor is None: return 0.0
-        limpo = str(valor).replace(',', '.').strip()
-        nums = re.findall(r"[-+]?\d*\.\d+|\d+", limpo)
-        if nums: return float(nums[0])
+        # Remove pontos de milhar se existirem (ex: 1.300 -> 1300)
+        # Mas cuidado com 1.5 (metro). A IA já deve mandar limpo, aqui é o backup.
+        val_str = str(valor).replace('mm', '').strip()
+        
+        # Se tiver vírgula, troca por ponto
+        val_str = val_str.replace(',', '.')
+        
+        # Extrai número
+        nums = re.findall(r"[-+]?\d*\.\d+|\d+", val_str)
+        if nums: 
+            return float(nums[0])
         return 0.0
     except:
         return 0.0
@@ -43,15 +51,14 @@ with st.sidebar:
     st.divider()
     st.subheader("🛡️ Travas de Segurança")
     
-    # NOVA TRAVA CRÍTICA
     max_len_segmento = st.number_input(
         "Máx. Comprimento por Trecho (m):", 
-        min_value=1.0, max_value=20.0, value=6.0,
-        help="Ignora valores maiores que isso. Evita confundir Vazão (34000) com Comprimento (34m)."
+        min_value=1.0, max_value=50.0, value=10.0,
+        help="Qualquer medida lida acima disso será zerada (evita confundir vazão com metro)."
     )
 
     tipo_leitura = st.radio(
-        "Estratégia:", ("Filtrar Cortes", "Ler Tudo"), index=0
+        "Estratégia:", ("Filtrar Cortes (Recomendado)", "Ler Tudo"), index=0
     )
 
     st.subheader("📋 Parâmetros NBR 16401")
@@ -126,53 +133,70 @@ def limpar_texto_cad(lista_textos, modo_filtrar):
         if len(t) < 2: continue
         if any(p in t.upper() for p in proibidos): continue
         
-        # Filtro de pré-processamento: Se for número gigante (>50000), nem manda pra IA
-        try:
-            val = float(t.replace(',','.'))
-            if val > 50000: continue # Ignora coordenadas UTM
-        except:
-            pass
-            
+        # MANTÉM OS NÚMEROS COM PONTO (Ex: 1.300) PARA A IA INTERPRETAR
+        # NÃO FILTRA NÚMEROS GRANDES AQUI, DEIXA A IA DECIDIR PELO PARÊNTESES
+        
         texto_limpo.append(t)
         
     if "Filtrar" in modo_filtrar:
         lista_final = list(dict.fromkeys(texto_limpo))
     else:
-        lista_final = texto_limpo[:5000]
+        lista_final = texto_limpo[:6000]
 
     return " | ".join(lista_final)
 
 # ==================================================
-# 🧠 CÉREBRO DA IA (PROMPT ANTI-VAZÃO)
+# 🧠 CÉREBRO DA IA (RECONHECIMENTO DE FORMATAÇÃO BR)
 # ==================================================
 def processar_ia(texto, tipo_leitura, max_len):
     if not api_key: return None
 
+    instrucao_cortes = ""
+    if "Filtrar" in tipo_leitura:
+        instrucao_cortes = "O desenho tem Cortes. IGNORE textos de medidas repetidos. Use apenas a Planta Baixa."
+
     prompt = f"""
-    Você é um Engenheiro de HVAC. Analise o texto do CAD (separado por ' | ').
+    Você é um Engenheiro de HVAC Sênior.
+    Analise o texto cru do CAD (separado por ' | ').
+    {instrucao_cortes}
+
+    PADRÃO DE FORMATAÇÃO DO ARQUIVO (IMPORTANTE):
+    1. OS NÚMEROS USAM PONTO PARA MILHAR: "1.300" = 1300mm. "34.000" = 34000.
+    2. VAZÃO ESTÁ ENTRE PARÊNTESES: "(34.000)" = Vazão. "(4.250)" = Vazão.
+
+    REGRAS DE EXTRAÇÃO:
     
-    PROBLEMA A EVITAR: Confundir VAZÃO ($m^3/h$) com COMPRIMENTO (mm).
+    1. DIMENSÕES DE DUTO:
+       - Procure padrão "LARGURA x ALTURA" onde os números podem ter pontos.
+       - Exemplo: "1.300x700" -> LEIA COMO: Largura 1300mm, Altura 700mm.
+       - Exemplo: "500x450" -> Largura 500mm, Altura 450mm.
+       - REMOVA OS PONTOS DAS DIMENSÕES.
+
+    2. VAZÃO (O INIMIGO):
+       - Qualquer número dentro de parênteses `(...)` é VAZÃO.
+       - Exemplo: "(34.000)" -> IGNORE COMPLETAMENTE PARA COMPRIMENTO.
+       - Exemplo: "(4.250)" -> IGNORE.
     
-    REGRAS DE OURO:
-    1. DIMENSÕES: Padrão "Largura x Altura" (ex: 1300x700). Assuma mm.
-    
-    2. FILTRO DE VAZÃO (IMPORTANTE):
-       - Números grandes como 34000, 17000, 15000 ao lado de dutos SÃO VAZÃO ($m^3/h$).
-       - NUNCA converta esses números para metros. IGNORE-OS.
-       - Dutos raramente têm trechos únicos maiores que 6m. Se você achar "34m", está errado.
-    
-    3. FILTRO DE NÍVEL:
-       - Números como 2800, 3000, 2600 soltos são Altura do Forro. IGNORE.
-    
-    4. COMPRIMENTO VÁLIDO:
-       - Procure números pequenos (ex: 1.5, 3, 5.2).
-       - Procure prefixos (L=, C=) ou sufixos (m).
-       - Se encontrar "1300x700 | 34000", o comprimento é DESCONHECIDO (não use 34!).
-    
+    3. COMPRIMENTO (A MISSÃO):
+       - Procure números que NÃO estão entre parênteses.
+       - Procure números próximos às dimensões.
+       - Se encontrar "1.300x700 | (34.000)", e não houver outro número, o comprimento é 0.
+       - Se encontrar "1.300x700 | (34.000) | 2000", o comprimento é 2000mm (2m).
+       - Se encontrar "1.300x700 | (34.000) | 2", o comprimento é 2m.
+
+    4. EQUIPAMENTOS:
+       - Liste Fancoil, Split, Cassete, VRF, Exaustor.
+
     SAÍDA JSON:
     {{
         "dutos": [
-            {{ "dimensao": "1300x700", "largura_mm": 1300, "altura_mm": 700, "comprimento_m": 0, "nota": "Ignorado 34000 (Vazão)" }}
+            {{ 
+                "dimensao_original": "1.300x700",
+                "largura_mm": 1300, 
+                "altura_mm": 700, 
+                "comprimento_m": 0, 
+                "nota": "Ignorado (34.000) pois é vazão. Sem comprimento explícito." 
+            }}
         ],
         "equipamentos": []
     }}
@@ -183,7 +207,7 @@ def processar_ia(texto, tipo_leitura, max_len):
             model="gpt-4o",
             messages=[
                 {"role": "system", "content": prompt},
-                {"role": "user", "content": f"Limite Máximo aceitável p/ trecho: {max_len}m. Texto:\n\n{texto[:50000]}"} 
+                {"role": "user", "content": f"Limite Máx Trecho: {max_len}m. Texto:\n\n{texto[:60000]}"} 
             ],
             temperature=0.0,
             response_format={"type": "json_object"}
@@ -195,8 +219,8 @@ def processar_ia(texto, tipo_leitura, max_len):
 # ==================================================
 # 🖥️ INTERFACE
 # ==================================================
-st.title("🛡️ Leitor Pro V13 (Filtro Vazão)")
-st.markdown("Algoritmo ajustado para diferenciar **Vazão ($m^3/h$)** de **Comprimento (m)**.")
+st.title("🎯 Leitor V15 (Ponto de Milhar e Parênteses)")
+st.markdown("Algoritmo ajustado para formatação: `1.300` = 1300 e `(34.000)` = Vazão.")
 
 arquivo = st.file_uploader("Upload DXF", type=["dxf"])
 
@@ -213,18 +237,18 @@ if arquivo:
         if doc:
             msp = doc.modelspace()
             raw_text = []
-            with st.spinner("Lendo..."):
+            with st.spinner("Lendo textos..."):
                 for entity in msp.query('TEXT MTEXT'):
                     if entity.dxf.text: raw_text.append(entity.dxf.text)
             
             texto_proc = limpar_texto_cad(raw_text, tipo_leitura)
             st.info(f"Dados lidos: {len(raw_text)} blocos.")
             
-            if st.button("🚀 Calcular (Com Trava de Segurança)", type="primary"):
+            if st.button("🚀 Calcular (Corrigido)", type="primary"):
                 if not api_key:
                     st.error("Sem API Key.")
                 else:
-                    with st.spinner("Filtrando vazões e níveis..."):
+                    with st.spinner("Interpretando 1.300x700 e ignorando (Vazão)..."):
                         dados = processar_ia(texto_proc, tipo_leitura, max_len_segmento)
                         
                         if "erro" in dados:
@@ -241,16 +265,16 @@ if arquivo:
                                 h = safe_float(d.get('altura_mm'))
                                 l = safe_float(d.get('comprimento_m'))
                                 
-                                # --- TRAVA DE SEGURANÇA FINAL (HARD CODE) ---
-                                # Se a IA falhar e mandar um 34m, o Python corta aqui.
+                                # TRAVA DE SEGURANÇA
                                 if l > max_len_segmento:
-                                    d['nota'] += f" [CORTE: {l}m > limite {max_len_segmento}m]"
-                                    l = 0 # Zera ou assume um valor padrão? Melhor zerar para não dar falso positivo.
+                                    d['nota'] += f" [CORTE: {l}m > limite]"
+                                    l = 0 
                                 
-                                if w > 0 and h > 0 and l > 0:
+                                if w > 0 and h > 0:
                                     maior = max(w, h)
                                     gauge = definir_bitola_nbr(maior, classe_pressao)
                                     perim = 2 * (w/1000 + h/1000)
+                                    # Se L=0, Área=0, Peso=0 (Correto para orçamento não inventado)
                                     area = (perim * l) * (1 + perda_corte)
                                     peso = area * calcular_peso_chapa(gauge)
                                     
@@ -274,12 +298,11 @@ if arquivo:
                             if res_dutos:
                                 st.dataframe(pd.DataFrame(res_dutos), use_container_width=True)
                             else:
-                                st.warning("Nenhum duto válido encontrado (Talvez todos os números fossem vazão?).")
+                                st.warning("Dutos encontrados, mas nenhum texto de comprimento válido foi identificado.")
                                 
-                            # Download
                             meta = {"Norma": "NBR 16401", "Peso Total": tot_kg, "Trava Máx (m)": max_len_segmento}
                             xlsx = gerar_excel_completo(pd.DataFrame(res_dutos), pd.DataFrame(dados.get("equipamentos",[])), meta)
-                            st.download_button("📥 Baixar Excel", xlsx, "Levantamento_V13.xlsx")
+                            st.download_button("📥 Baixar Excel", xlsx, "Levantamento_V15.xlsx")
 
     except Exception as e:
         st.error(f"Erro: {e}")
