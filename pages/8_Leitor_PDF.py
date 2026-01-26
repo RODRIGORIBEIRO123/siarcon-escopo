@@ -117,4 +117,92 @@ def analisar_texto_inteligente(texto_completo):
     return analise
 
 # ==================================================
-# 🖥
+# 🖥️ APLICAÇÃO PRINCIPAL
+# ==================================================
+st.title("⚡ Leitor & Auditor de Propostas")
+st.markdown("Extração robusta de tabelas + Análise de contrato.")
+
+arquivo = st.file_uploader("Carregue o PDF aqui", type=["pdf"])
+
+if arquivo:
+    st.divider()
+    with st.spinner("Processando (Modo Turbo + Auditor)..."):
+        try:
+            texto_full = ""
+            tabelas_finais = []
+            
+            with pdfplumber.open(arquivo) as pdf:
+                total_paginas = len(pdf.pages)
+                bar = st.progress(0)
+                
+                for i, page in enumerate(pdf.pages):
+                    # A. Extração de Texto (Para o Auditor)
+                    texto_full += (page.extract_text() or "") + "\n"
+                    
+                    # B. Extração de Tabelas (Modo Turbo)
+                    # Usa as configurações da Barra Lateral para evitar erros
+                    tabelas = page.extract_tables({
+                        "vertical_strategy": "lines" if metodo == "lattice" else "text",
+                        "horizontal_strategy": "lines" if metodo == "lattice" else "text",
+                        "snap_tolerance": tolerancia,
+                    })
+                    
+                    for tab in tabelas:
+                        df = pd.DataFrame(tab)
+                        # Remove linhas vazias
+                        df = df.dropna(how='all')
+                        
+                        if not df.empty and len(df) > 1:
+                            # --- AQUI ESTÁ A CORREÇÃO DO ERRO ---
+                            cabecalho_bruto = df.iloc[0].tolist()
+                            
+                            # Limpa nomes duplicados ou None ANTES de criar as colunas
+                            cabecalho_limpo = limpar_cabecalho(cabecalho_bruto)
+                            
+                            df.columns = cabecalho_limpo
+                            df = df[1:].reset_index(drop=True) # Remove a linha do header
+                            
+                            tabelas_finais.append(df)
+                    
+                    bar.progress((i + 1) / total_paginas)
+
+            # --- EXIBIÇÃO: PARTE 1 (AUDITORIA) ---
+            resultado = analisar_texto_inteligente(texto_full)
+            
+            st.markdown(f"### 📄 Resumo: {resultado['resumo']}")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.subheader("🔍 Escopo Detectado")
+                with st.container(border=True):
+                    for linha in resultado["escopo_detectado"]:
+                        if "📌" in linha: st.markdown(f"**{linha}**")
+                        else: st.write(linha)
+
+            with col2:
+                st.subheader("🚨 Riscos & Alertas")
+                with st.container(border=True):
+                    if resultado["alertas"]:
+                        for a in resultado["alertas"]: st.error(a)
+                    else: st.success("✅ Documento parece completo.")
+                    
+                    if resultado["sugestoes"]:
+                        st.caption("Sugestões:")
+                        for s in resultado["sugestoes"]: st.info(s)
+
+            st.divider()
+
+            # --- EXIBIÇÃO: PARTE 2 (MATERIAIS / TABELAS) ---
+            st.subheader(f"📦 Listas de Materiais ({len(tabelas_finais)} encontradas)")
+            
+            if tabelas_finais:
+                for idx, df in enumerate(tabelas_finais):
+                    with st.expander(f"📋 Tabela {idx+1} ({len(df)} linhas) - Clique para ver", expanded=(idx==0)):
+                        st.dataframe(df, use_container_width=True)
+                        csv = df.to_csv(index=False).encode('utf-8')
+                        st.download_button(f"📥 Baixar CSV", csv, f"tabela_{idx+1}.csv", "text/csv")
+            else:
+                st.warning("Nenhuma tabela estruturada encontrada. Tente mudar para 'Stream' na barra lateral.")
+
+        except Exception as e:
+            st.error(f"Erro crítico no processamento: {e}")
