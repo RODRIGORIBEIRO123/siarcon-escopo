@@ -4,12 +4,12 @@ import os
 import json
 from datetime import datetime
 
-# Nome do arquivo onde os dados serão salvos localmente
+# --- CONFIGURAÇÃO DOS ARQUIVOS (JSON) ---
 DB_FILE = "dados_projetos.json"
 FORNECEDORES_FILE = "dados_fornecedores.json"
 ITENS_FILE = "dados_itens.json"
 
-# --- FUNÇÕES AUXILIARES ---
+# --- FUNÇÕES BÁSICAS DE ARQUIVO ---
 def carregar_dados(arquivo):
     if os.path.exists(arquivo):
         try:
@@ -22,61 +22,49 @@ def salvar_dados(arquivo, dados):
     with open(arquivo, "w", encoding="utf-8") as f:
         json.dump(dados, f, ensure_ascii=False, indent=4)
 
-# --- GERENCIAMENTO DE PROJETOS ---
+# --- FUNÇÕES DE PROJETOS ---
 def listar_todos_projetos():
     dados = carregar_dados(DB_FILE)
     if not dados:
+        # Retorna DataFrame vazio com as colunas certas para não quebrar o Kanban
         return pd.DataFrame(columns=["_id_linha", "Cliente", "Obra", "Disciplina", "Status", "Fornecedor"])
     
-    # Converte para DataFrame
     df = pd.DataFrame(dados)
-    # Garante que as colunas principais existam para não dar erro no display
-    cols_obrigatorias = ["_id_linha", "Cliente", "Obra", "Disciplina", "Status", "Fornecedor"]
-    for col in cols_obrigatorias:
-        if col not in df.columns:
-            df[col] = ""
-            
+    # Garante colunas mínimas
+    cols = ["_id_linha", "Cliente", "Obra", "Disciplina", "Status", "Fornecedor"]
+    for c in cols:
+        if c not in df.columns: df[c] = ""
     return df
 
 def criar_pacote_obra(cliente, obra, disciplinas):
     dados = carregar_dados(DB_FILE)
-    
     for disc in disciplinas:
-        novo_projeto = {
-            "_id_linha": str(datetime.now().timestamp()) + "_" + disc, # ID único
-            "Cliente": cliente,
-            "Obra": obra,
-            "Disciplina": disc,
-            "Status": "Não Iniciado",
-            "Fornecedor": "",
+        novo = {
+            "_id_linha": f"{int(datetime.now().timestamp())}_{disc}", 
+            "Cliente": cliente, "Obra": obra, "Disciplina": disc,
+            "Status": "Não Iniciado", "Fornecedor": "",
             "Data Criacao": datetime.now().strftime("%Y-%m-%d")
         }
-        dados.append(novo_projeto)
-    
+        dados.append(novo)
     salvar_dados(DB_FILE, dados)
     return True
 
-def registrar_projeto(dados_projeto, id_linha=None):
-    """Atualiza ou cria um projeto completo"""
-    lista_projetos = carregar_dados(DB_FILE)
-    
-    # Se já tem ID, é atualização
-    if id_linha:
-        for i, proj in enumerate(lista_projetos):
-            if proj.get("_id_linha") == id_linha:
-                # Atualiza mantendo o ID
-                dados_atualizados = {**proj, **dados_projeto}
-                # Garante que campos chave fiquem maiúsculos para o Kanban
-                dados_atualizados["Cliente"] = dados_projeto.get("cliente", proj["Cliente"])
-                dados_atualizados["Obra"] = dados_projeto.get("obra", proj["Obra"])
-                dados_atualizados["Status"] = dados_projeto.get("status", proj["Status"])
-                dados_atualizados["Fornecedor"] = dados_projeto.get("fornecedor", proj["Fornecedor"])
-                dados_atualizados["Disciplina"] = dados_projeto.get("disciplina", proj["Disciplina"])
-                
-                lista_projetos[i] = dados_atualizados
-                salvar_dados(DB_FILE, lista_projetos)
-                return True
-    
+def registrar_projeto(dados_novos, id_linha):
+    lista = carregar_dados(DB_FILE)
+    for i, proj in enumerate(lista):
+        if proj.get("_id_linha") == id_linha:
+            # Atualiza dicionário existente com novos dados
+            proj.update(dados_novos)
+            # Garante campos chave para o Kanban
+            proj["Cliente"] = dados_novos.get("cliente", proj["Cliente"])
+            proj["Obra"] = dados_novos.get("obra", proj["Obra"])
+            proj["Status"] = dados_novos.get("status", proj["Status"])
+            proj["Disciplina"] = dados_novos.get("disciplina", proj["Disciplina"])
+            proj["Fornecedor"] = dados_novos.get("fornecedor", proj["Fornecedor"])
+            
+            lista[i] = proj
+            salvar_dados(DB_FILE, lista)
+            return True
     return False
 
 def excluir_projeto(id_linha):
@@ -85,47 +73,49 @@ def excluir_projeto(id_linha):
     salvar_dados(DB_FILE, nova_lista)
     return True
 
-# --- GERENCIAMENTO DE APRENDIZADO (ITENS TÉCNICOS) ---
+# --- FUNÇÕES DE APRENDIZADO (TÉCNICO) ---
 def carregar_opcoes():
     padrao = {
-        "tecnico_dutos": ["Dutos em chapa galvanizada", "Grelhas e Difusores"],
-        "tecnico_hidraulica": ["Tubulação de Aço Carbono", "Válvulas de Controle"],
-        "tecnico_eletrica": ["Quadros Elétricos", "Cabos de Força", "Infraestrutura (Eletrocalhas)"],
-        "tecnico_automacao": ["Controladores DDC", "Sensores de Temperatura", "Atuadores"],
-        "tecnico_tab": ["Balanceamento de Ar", "Balanceamento de Água"],
-        "tecnico_movimentacoes": ["Guindaste", "Munck", "Equipe de Remoção"],
-        "tecnico_cobre": ["Tubulação de Cobre", "Isolamento Térmico", "Solda Phoscoper"],
-        "sms": ["NR-10", "NR-35", "NR-12"],
-        "qualidade_dutos": ["Teste de Estanqueidade", "Relatório Fotográfico"],
-        "qualidade_cobre": ["Teste de Pressão (N2)", "Vácuo < 500 microns"]
+        "tecnico_dutos": ["Dutos Galvanizados", "Difusores"],
+        "tecnico_hidraulica": ["Tubulação Aço Carbono", "Válvulas"],
+        "tecnico_eletrica": ["Quadros", "Cabos", "Eletrocalhas"],
+        "tecnico_automacao": ["Sensores", "Controladores", "Atuadores"],
+        "tecnico_tab": ["Balanceamento Ar", "Balanceamento Água"],
+        "tecnico_movimentacoes": ["Guindaste", "Munck"],
+        "tecnico_cobre": ["Tubos Cobre", "Isolamento", "Solda"],
+        "sms": ["NR-10", "NR-35", "NR-06", "NR-12", "NR-18", "NR-33"],
+        "qualidade_dutos": ["Teste Estanqueidade"],
+        "qualidade_cobre": ["Teste Pressão N2"]
     }
     salvos = carregar_dados(ITENS_FILE)
     if not salvos: return padrao
-    # Mescla o que salvou com o padrão para garantir chaves
-    return {**padrao, **salvos}
+    # Mescla dicionários
+    for k, v in salvos.items():
+        if k in padrao: padrao[k].extend([x for x in v if x not in padrao[k]])
+        else: padrao[k] = v
+    return padrao
 
-def aprender_novo_item(categoria, novo_item):
-    opcoes = carregar_opcoes()
-    if categoria not in opcoes:
-        opcoes[categoria] = []
+def aprender_novo_item(categoria, item):
+    if not item: return False
+    dic_itens = carregar_dados(ITENS_FILE)
+    if not isinstance(dic_itens, dict): dic_itens = {}
     
-    if novo_item not in opcoes[categoria]:
-        opcoes[categoria].append(novo_item)
-        salvar_dados(ITENS_FILE, opcoes)
+    if categoria not in dic_itens: dic_itens[categoria] = []
+    
+    if item not in dic_itens[categoria]:
+        dic_itens[categoria].append(item)
+        salvar_dados(ITENS_FILE, dic_itens)
         return True
-    return False # Já existia
+    return False
 
-# --- GERENCIAMENTO DE FORNECEDORES ---
+# --- FUNÇÕES DE FORNECEDORES ---
 def listar_fornecedores():
     return carregar_dados(FORNECEDORES_FILE)
 
 def cadastrar_fornecedor_db(nome, cnpj):
-    fornecedores = listar_fornecedores()
-    # Verifica duplicidade
-    for f in fornecedores:
-        if f['Fornecedor'].upper() == nome.upper() or f['CNPJ'] == cnpj:
-            return "Existe"
-    
-    fornecedores.append({"Fornecedor": nome, "CNPJ": cnpj})
-    salvar_dados(FORNECEDORES_FILE, fornecedores)
+    lista = listar_fornecedores()
+    for f in lista:
+        if f.get("Fornecedor", "").upper() == nome.upper(): return "Existe"
+    lista.append({"Fornecedor": nome, "CNPJ": cnpj})
+    salvar_dados(FORNECEDORES_FILE, lista)
     return True
