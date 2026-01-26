@@ -2,90 +2,78 @@ import streamlit as st
 import pandas as pd
 import utils_db
 import os
-import unicodedata
+from streamlit.source_util import get_pages as st_get_pages
 
 st.set_page_config(page_title="Dashboard SIARCON", page_icon="📊", layout="wide")
 
 # ==================================================
-# 🧠 CÉREBRO DE NAVEGAÇÃO (AUTO-DETECÇÃO)
+# 🧠 NAVEGADOR VIA REGISTRO INTERNO (INFALÍVEL)
 # ==================================================
-def normalizar(texto):
-    """Transforma 'Elétrica' em 'eletrica' para facilitar a busca"""
-    if not isinstance(texto, str): return ""
-    return unicodedata.normalize('NFKD', texto).encode('ASCII', 'ignore').decode('ASCII').lower()
-
-def encontrar_arquivo_automatico(disciplina_banco):
-    """
-    Varre a pasta 'pages' e encontra o arquivo certo baseada em palavras-chave.
-    """
-    # Palavras-chave para identificar cada disciplina
-    # A esquerda: O que está no Excel/Banco
-    # A direita: Um pedaço do nome que TEM que estar no nome do arquivo
-    mapa_palavras = {
+def navegar_para_disciplina(row):
+    disciplina_alvo = row['Disciplina'].lower()
+    
+    # Mapeia nomes do banco para palavras-chave no nome do arquivo
+    # Esquerda: Nome no Excel (minúsculo) | Direita: Trecho único do nome do arquivo
+    palavras_chave = {
         "dutos": "dutos",
-        "geral": "dutos", # Legado
+        "geral": "dutos",
+        "hidráulica": "hidraulica", # ou hidr
         "hidraulica": "hidraulica",
+        "elétrica": "eletrica",     # ou eletr
         "eletrica": "eletrica",
+        "automação": "automacao",   # ou auto
         "automacao": "automacao",
         "tab": "tab",
+        "movimentações": "movimentacoes", # ou mov
         "movimentacoes": "movimentacoes",
+        "linha de cobre": "cobre",
         "cobre": "cobre"
     }
 
-    termo_busca = mapa_palavras.get(normalizar(disciplina_banco))
+    # 1. Pega a palavra-chave
+    keyword = palavras_chave.get(disciplina_alvo)
+    if not keyword:
+        st.error(f"Não sei procurar por: {row['Disciplina']}")
+        return
+
+    # 2. Pede ao Streamlit a lista oficial de páginas registradas
+    # Isso retorna exatamente o que aparece no menu lateral
+    paginas_registradas = st_get_pages("Home.py")
     
-    if not termo_busca:
-        return None, f"Não sei procurar por: {disciplina_banco}"
-
-    try:
-        if not os.path.exists("pages"):
-            return None, "A pasta 'pages' não existe no diretório principal."
-
-        arquivos = os.listdir("pages")
-        
-        for arq in arquivos:
-            # Pula arquivos que não sejam Python
-            if not arq.endswith(".py"): continue
-            
-            # Se o pedaço do nome (ex: "dutos") estiver no nome do arquivo (ex: "1_dutos.py")
-            if termo_busca in normalizar(arq):
-                return f"pages/{arq}", None # ACHOU! Retorna o caminho completo
-        
-        return None, f"Não encontrei nenhum arquivo na pasta 'pages' que tenha '{termo_busca}' no nome."
-        
-    except Exception as e:
-        return None, f"Erro crítico ao ler pasta: {e}"
-
-# --- AÇÃO DO BOTÃO ---
-def ir_para_edicao(row):
-    disciplina = row['Disciplina']
-    caminho, erro = encontrar_arquivo_automatico(disciplina)
+    caminho_final = None
     
-    if caminho:
+    # 3. Procura a página correta na lista interna
+    for page_hash, page_info in paginas_registradas.items():
+        script_path = page_info["script_path"]
+        # Verifica se a palavra chave (ex: "eletrica") está no caminho do arquivo
+        if keyword in script_path.lower():
+            caminho_final = script_path
+            break
+    
+    # 4. Executa a ação
+    if caminho_final:
         st.session_state['dados_projeto'] = row.to_dict()
         st.session_state['modo_edicao'] = True
-        st.switch_page(caminho)
+        st.switch_page(caminho_final)
     else:
-        st.error(f"🚨 Erro: {erro}")
-        st.info("Verifique se os arquivos na pasta 'pages' contêm palavras como: dutos, hidraulica, eletrica, etc.")
+        st.error(f"❌ O Streamlit não encontrou nenhuma página registrada contendo '{keyword}'.")
+        st.info("Debug: Confira os nomes no menu lateral.")
 
 # ==================================================
 # 🖥️ INTERFACE
 # ==================================================
 st.title("📊 Dashboard de Contratos")
 
-# --- DEBUG LATERAL (Para te ajudar a ver o que está acontecendo) ---
-with st.sidebar:
-    st.header("🔍 Arquivos Detectados")
-    if os.path.exists("pages"):
-        arquivos = sorted([f for f in os.listdir("pages") if f.endswith(".py")])
-        for f in arquivos:
-            st.code(f, language="text")
-    else:
-        st.error("⚠️ Pasta 'pages' não encontrada!")
-    st.divider()
+# Debug Discreto (Expander)
+with st.sidebar.expander("🔧 Debug Técnico"):
+    st.write("Páginas que o Streamlit enxerga:")
+    try:
+        pages = st_get_pages("Home.py")
+        for k, v in pages.items():
+            st.code(v['script_path'], language="text")
+    except:
+        st.write("Erro ao ler registro interno.")
 
-# Carregar Dados
 df = utils_db.listar_todos_projetos()
 
 # Criar Nova Obra
@@ -113,7 +101,6 @@ if not df.empty:
     c_filt1, c_filt2 = st.columns(2)
     lista_clientes = sorted(list(df['Cliente'].unique())) if 'Cliente' in df.columns else []
     filtro_cliente = c_filt1.selectbox("Filtrar Cliente:", ["Todos"] + lista_clientes)
-    
     if filtro_cliente != "Todos": df = df[df['Cliente'] == filtro_cliente]
 
     colunas_status = st.columns(3)
@@ -130,15 +117,13 @@ if not df.empty:
             
             for index, row in df_grupo.iterrows():
                 with st.container(border=True):
-                    # Mostra o nome real
-                    disc_nome = "Dutos (Antigo)" if row['Disciplina'] == "Geral" else row['Disciplina']
+                    d_nome = "Dutos" if row['Disciplina'] == "Geral" else row['Disciplina']
                     
                     st.markdown(f"**{row['Obra']}**")
-                    st.caption(f"{row['Cliente']} | {disc_nome}")
+                    st.caption(f"{row['Cliente']} | {d_nome}")
                     if row['Fornecedor']: st.text(f"🏢 {row['Fornecedor']}")
                     
-                    # O Botão Mágico
                     if st.button(f"✏️ Editar", key=f"btn_{row['_id_linha']}"):
-                        ir_para_edicao(row)
+                        navegar_para_disciplina(row) # Função Nova
 else:
     st.info("Nenhum projeto encontrado.")
