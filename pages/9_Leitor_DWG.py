@@ -5,95 +5,103 @@ import pandas as pd
 import os
 import tempfile
 import openai
+import json
+import re
 
 # Configuração da Página
-st.set_page_config(page_title="Leitor CAD com IA", page_icon="🧠", layout="wide")
+st.set_page_config(page_title="Leitor CAD Pro", page_icon="🏗️", layout="wide")
 
 # ==================================================
-# 🔑 CONFIGURAÇÃO DA IA (BARRA LATERAL)
+# 🔑 CONFIGURAÇÃO (SIDEBAR)
 # ==================================================
 with st.sidebar:
-    st.header("🧠 Inteligência Artificial")
-    api_key = st.text_input("Insira sua API Key (OpenAI):", type="password", help="Necessário para organizar a bagunça do CAD.")
+    st.header("🧠 Configuração da IA")
+    api_key = st.text_input("Sua API Key (OpenAI):", type="password")
     
     if api_key:
         openai.api_key = api_key
-        st.success("IA Conectada!")
+        st.success("✅ IA Pronta para Análise")
     else:
-        st.warning("Sem a chave, faremos apenas a leitura básica (bagunçada).")
+        st.warning("⚠️ Insira a chave para ativar a análise inteligente.")
 
 # ==================================================
-# 🧠 CÉREBRO DA IA
+# 🧠 CÉREBRO DA IA (MODO JSON ESTRUTURADO)
 # ==================================================
-def processar_texto_com_ia(texto_sujo):
-    """Envia a 'sopa de letrinhas' do CAD para o GPT-4 organizar."""
-    if not api_key:
-        return "⚠️ Erro: API Key não configurada."
+def processar_com_inteligencia(texto_sujo):
+    if not api_key: return None
 
+    # O segredo está aqui: Forçamos a IA a agir como um Orçamentista Sênior
     prompt_sistema = """
-    Você é um Engenheiro Sênior Especialista em Orçamentos e Projetos (HVAC, Elétrica, Hidráulica).
-    Sua missão é analisar um texto desorganizado extraído de um arquivo CAD (DXF) e estruturá-lo.
+    Você é um Orçamentista Sênior de Engenharia (MEP - Mecânica, Elétrica, Hidráulica).
+    Sua tarefa é analisar o texto bruto extraído de um arquivo DXF e transformá-lo em dados estruturados.
     
-    O texto contém muito 'lixo' (cotas, layers, números soltos). IGNORE o lixo.
-    Foque em encontrar:
-    1. ESCOPO: Do que se trata o projeto? (Dutos, Elétrica, etc).
-    2. CLIENTE/OBRA: Se houver menção em carimbos.
-    3. LISTA DE MATERIAIS: Extraia tudo que parece especificação técnica (Ex: 'Tubo Cobre 1/2"', 'Chapa #26', 'Disjuntor 50A').
-    4. NOTAS TÉCNICAS: Avisos importantes (Ex: 'Solda foscoper', 'Isolamento 25mm').
-
-    Saída OBRIGATÓRIA em Markdown limpo. Seja direto. Se não achar algo, diga 'Não detectado'.
+    O texto contém muito lixo (cotas, layers). Ignore isso. Foque nas especificações.
+    
+    SAÍDA OBRIGATÓRIA: Responda APENAS um JSON válido com a seguinte estrutura:
+    {
+        "resumo_executivo": "Breve descrição do que é este projeto (ex: Planta de Dutos do 2º andar).",
+        "disciplina": "Qual a disciplina principal? (Elétrica, Hidráulica, AVAC, Civil)",
+        "lista_materiais": [
+            {"item": "Nome do item (ex: Tubo Cobre 1/2)", "detalhe": "Especificação técnica", "unidade": "m/pç/kg (estime se possível)"}
+        ],
+        "pontos_atencao": [
+            "Lista de avisos importantes encontrados (ex: Notas de 'Não cotar', 'Verificar em obra', normas antigas)"
+        ],
+        "cliente_obra": "Nome do cliente ou obra se encontrar no carimbo."
+    }
     """
 
     try:
         response = openai.chat.completions.create(
-            model="gpt-4o", # O modelo mais inteligente disponível
+            model="gpt-4o",
             messages=[
                 {"role": "system", "content": prompt_sistema},
-                {"role": "user", "content": f"Analise este texto cru do CAD:\n\n{texto_sujo[:15000]}"} # Limite de caracteres para não estourar tokens
+                {"role": "user", "content": f"Analise este texto cru e extraia o JSON:\n\n{texto_sujo[:25000]}"} 
             ],
-            temperature=0.2 # Baixa criatividade (queremos precisão)
+            temperature=0.1, # Muito baixo para garantir que o JSON venha perfeito
+            response_format={"type": "json_object"} # Força saída JSON
         )
-        return response.choices[0].message.content
+        return json.loads(response.choices[0].message.content)
     except Exception as e:
-        return f"Erro na IA: {e}"
+        return {"erro": str(e)}
 
 # ==================================================
-# 🔧 FUNÇÕES DE CAD
+# 🔧 FUNÇÕES AUXILIARES
 # ==================================================
-def salvar_temp(arquivo):
-    sulfixo = ".dxf"
-    with tempfile.NamedTemporaryFile(delete=False, suffix=sulfixo) as tmp:
-        tmp.write(arquivo.getbuffer())
-        return tmp.name
-
 def limpar_texto_cad(lista_textos):
-    """Remove lixo óbvio (números sozinhos, textos de 1 letra) antes de mandar pra IA"""
+    """Limpeza pesada para economizar tokens e ajudar a IA"""
     texto_limpo = []
+    ignorar = ["LAYER", "COTAS", "VIEWPORT", "STANDARD", "ISO-25", "BYLAYER"]
+    
     for item in lista_textos:
         t = str(item).strip()
-        # Remove números puros (cotas) ex: "300", "5.4"
-        if t.replace('.', '', 1).isdigit():
-            continue
-        # Remove textos muito curtos (nomes de eixos A, B, C)
-        if len(t) < 3:
+        # Remove números sozinhos (cotas), textos curtos ou palavras de sistema CAD
+        if len(t) < 4 or t.replace('.', '', 1).isdigit() or any(x in t.upper() for x in ignorar):
             continue
         texto_limpo.append(t)
-    return "\n".join(set(texto_limpo)) # Remove duplicatas
+    
+    # Remove duplicatas mantendo ordem
+    return "\n".join(list(dict.fromkeys(texto_limpo)))
+
+def salvar_temp(arquivo):
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".dxf") as tmp:
+        tmp.write(arquivo.getbuffer())
+        return tmp.name
 
 # ==================================================
 # 🖥️ INTERFACE PRINCIPAL
 # ==================================================
-st.title("🧠 Leitor de Projetos CAD (IA Powered)")
-st.markdown("Extração de dados de **.DXF** utilizando GPT-4 para estruturar as informações.")
+st.title("🏗️ Extrator de Projetos CAD (IA Sênior)")
+st.markdown("Transforma a 'bagunça' do DXF em **Listas de Materiais** e **Relatórios de Engenharia**.")
 
-arquivo_cad = st.file_uploader("Arraste seu arquivo .DXF aqui", type=["dxf"])
+arquivo_cad = st.file_uploader("Arraste o DXF aqui", type=["dxf"])
 
 if arquivo_cad:
     st.divider()
     path_temp = salvar_temp(arquivo_cad)
 
     try:
-        # Tenta ler o DXF
+        # Leitura do Arquivo
         try:
             doc = ezdxf.readfile(path_temp)
         except:
@@ -102,50 +110,78 @@ if arquivo_cad:
         if doc:
             msp = doc.modelspace()
             
-            # 1. EXTRAÇÃO DO TEXTO BRUTO
+            # 1. Extração
             textos_crus = []
-            with st.spinner("Extraindo texto bruto do desenho..."):
+            with st.spinner("Lendo vetores e textos do CAD..."):
                 for entity in msp.query('TEXT MTEXT'):
-                    if entity.dxf.text:
-                        textos_crus.append(entity.dxf.text)
+                    if entity.dxf.text: textos_crus.append(entity.dxf.text)
             
-            # 2. LIMPEZA INICIAL
-            texto_compilado = limpar_texto_cad(textos_crus)
-            
-            col_esq, col_dir = st.columns(2)
+            texto_pronto = limpar_texto_cad(textos_crus)
 
-            # LADO ESQUERDO: TEXTO EXTRAÍDO (DEBUG)
-            with col_esq:
-                st.subheader("📝 Texto Extraído (Bruto)")
-                st.caption(f"Encontrei {len(textos_crus)} objetos de texto. Após limpeza: {len(texto_compilado.splitlines())} linhas.")
-                st.text_area("Prévia do conteúdo:", texto_compilado, height=400)
+            # 2. Interface de Resultados
+            col1, col2 = st.columns([1, 1.5])
 
-            # LADO DIREITO: ANÁLISE DA IA
-            with col_dir:
-                st.subheader("🤖 Análise da IA (Estruturada)")
+            with col1:
+                st.subheader("📋 Dados Brutos")
+                st.info(f"{len(texto_pronto.splitlines())} linhas relevantes encontradas.")
+                with st.expander("Ver texto extraído (Debug)"):
+                    st.text_area("", texto_pronto, height=300)
+
+            with col2:
+                st.subheader("🤖 Análise Inteligente")
                 
-                if api_key:
-                    if st.button("🚀 Processar com IA", type="primary"):
-                        if not texto_compilado:
-                            st.warning("O arquivo parece não ter textos legíveis (pode ser um bloco explodido ou imagem).")
-                        else:
-                            with st.spinner("A IA está lendo o projeto e organizando os dados..."):
-                                relatorio = processar_texto_com_ia(texto_compilado)
-                                st.markdown(relatorio)
-                                
-                                # Botão para baixar o relatório
-                                st.download_button("📥 Baixar Relatório", relatorio, "relatorio_cad.md")
+                if not api_key:
+                    st.warning("👈 Insira sua API Key na barra lateral para gerar o relatório.")
                 else:
-                    st.info("👈 Insira sua API Key na barra lateral para ativar a Inteligência Artificial.")
-                    st.warning("Sem a IA, você só consegue ver o texto bruto ao lado.")
+                    if st.button("🚀 Gerar Relatório de Engenharia", type="primary"):
+                        with st.spinner("O Engenheiro IA está analisando o projeto..."):
+                            dados = processar_com_inteligencia(texto_pronto)
+                            
+                            if "erro" in dados:
+                                st.error(f"Erro na IA: {dados['erro']}")
+                            else:
+                                # --- EXIBIÇÃO PROFISSIONAL ---
+                                
+                                # Cabeçalho
+                                st.success("Análise Concluída!")
+                                c_a, c_b = st.columns(2)
+                                c_a.metric("Disciplina", dados.get("disciplina", "Geral"))
+                                c_b.metric("Cliente/Obra", dados.get("cliente_obra", "Não detectado"))
+                                
+                                st.markdown(f"**Resumo:** {dados.get('resumo_executivo')}")
+                                
+                                st.divider()
+                                
+                                # Abas de Detalhe
+                                tab_mat, tab_risco = st.tabs(["📦 Lista de Materiais (Estimada)", "🚨 Pontos de Atenção"])
+                                
+                                with tab_mat:
+                                    materiais = dados.get("lista_materiais", [])
+                                    if materiais:
+                                        df_mat = pd.DataFrame(materiais)
+                                        st.dataframe(df_mat, use_container_width=True)
+                                        
+                                        # Download Excel
+                                        csv = df_mat.to_csv(index=False).encode('utf-8')
+                                        st.download_button("📥 Baixar Lista (Excel/CSV)", csv, "materiais_cad.csv", "text/csv")
+                                    else:
+                                        st.info("Nenhuma especificação de material clara encontrada.")
+                                
+                                with tab_risco:
+                                    riscos = dados.get("pontos_atencao", [])
+                                    if riscos:
+                                        for r in riscos:
+                                            st.warning(f"⚠️ {r}")
+                                    else:
+                                        st.success("Nenhum ponto de atenção crítico detectado no texto.")
 
     except Exception as e:
-        st.error(f"Erro ao ler arquivo: {e}")
-    
+        st.error(f"Erro ao processar: {e}")
     finally:
         if os.path.exists(path_temp): os.remove(path_temp)
 
 else:
-    c1, c2 = st.columns(2)
-    with c1: st.info("💡 **Como funciona:** O Python extrai todo texto solto do desenho.")
-    with c2: st.info("💡 **Onde a IA entra:** Ela pega esse texto solto e descobre o que é Material, o que é Cliente e o que é Lixo.")
+    c1, c2, c3 = st.columns(3)
+    with c1: st.info("Use arquivos **.DXF** (Salvar Como > DXF 2010)")
+    with c2: st.info("A IA ignora cotas e foca em **Especificações**.")
+    with c3: st.info("Gera lista de materiais exportável para **Excel**.")
