@@ -1,7 +1,6 @@
 import streamlit as st
 from docx import Document
 from docx.shared import Pt
-from docx.enum.text import WD_ALIGN_PARAGRAPH
 import io
 import zipfile
 from datetime import date, timedelta
@@ -16,6 +15,14 @@ def adicionar_item_callback(categoria, key_input):
             st.session_state[key_input] = ""
             if 'opcoes_db' in st.session_state: del st.session_state['opcoes_db']
             st.toast("✅ Salvo!", icon="✅")
+
+def cadastrar_fornecedor_callback():
+    nome = st.session_state.get("novo_forn_nome")
+    cnpj = st.session_state.get("novo_forn_cnpj")
+    if nome and cnpj:
+        res = utils_db.cadastrar_fornecedor_db(nome, cnpj)
+        if res is True: st.toast("Cadastrado!", icon="✅"); st.rerun()
+        elif res == "Existe": st.toast("Já existe.", icon="⚠️")
 
 def atualizar_anexos():
     arquivos = st.session_state.get("uploader_anexos", [])
@@ -54,12 +61,13 @@ def gerar_docx(dados):
     document.add_paragraph(f"Data: {date.today().strftime('%d/%m/%Y')} | Rev: {revisao_txt}").alignment = 2
 
     document.add_heading('1. OBJETIVO', 1)
-    table = document.add_table(rows=7, cols=2); 
+    table = document.add_table(rows=8, cols=2); 
     try: table.style = 'Table Grid'
     except: pass
     infos = [
         ("Cliente:", dados.get('cliente', '')), ("Obra:", dados.get('obra', '')), ("Ref:", dados.get('projetos_ref', '')), 
-        ("Fornecedor:", dados.get('fornecedor', '')), ("Resp. Eng:", dados.get('responsavel', '')), 
+        ("Fornecedor:", dados.get('fornecedor', '')), ("CNPJ:", dados.get('cnpj_fornecedor', '')),
+        ("Resp. Eng:", dados.get('responsavel', '')), 
         ("Resp. Obras:", dados.get('resp_obras', '')), ("Resp. Suprimentos:", dados.get('resp_suprimentos', ''))
     ]
     for i, (k, v) in enumerate(infos): 
@@ -87,7 +95,7 @@ def gerar_docx(dados):
         else: row[2].text = "X"; row[2].paragraphs[0].alignment = 1
 
     document.add_heading('5. SMS', 1)
-    for d in ["Ficha de registro", "ASO", "Ficha EPI", "NR-35"] + dados.get('nrs_selecionadas', []): document.add_paragraph(d, style='List Bullet')
+    for d in ["Ficha de registro", "ASO", "Ficha EPI"] + dados.get('nrs_selecionadas', []): document.add_paragraph(d, style='List Bullet')
     
     document.add_heading('6. CRONOGRAMA', 1)
     d_ini = dados.get('data_inicio')
@@ -127,9 +135,28 @@ with tab1:
     with c1:
         cli = st.text_input("Cliente", value=dados_edicao.get('Cliente', ''))
         obra = st.text_input("Obra", value=dados_edicao.get('Obra', ''))
-        forn = st.text_input("Fornecedor", value=dados_edicao.get('Fornecedor', '')); 
-        if not forn: forn = "PROPONENTE TAB"
-        email_sup = st.text_input("E-mail Suprimentos", value="suprimentos@siarcon.com.br")
+        
+        st.markdown("### 🏢 Fornecedor")
+        db_fornecedores = utils_db.listar_fornecedores()
+        opcoes_nomes = [""] + [f['Fornecedor'] for f in db_fornecedores]
+        sel_forn = st.selectbox("📚 Selecionar:", options=opcoes_nomes)
+        
+        val_nome = sel_forn if sel_forn else dados_edicao.get('Fornecedor', '')
+        val_cnpj = ""
+        if sel_forn:
+            for item in db_fornecedores:
+                if item['Fornecedor'] == sel_forn:
+                    val_cnpj = str(item['CNPJ']); break
+        else: val_cnpj = str(dados_edicao.get('CNPJ', ''))
+
+        forn = st.text_input("Razão Social:", value=val_nome)
+        cnpj_forn = st.text_input("CNPJ:", value=val_cnpj)
+        
+        with st.expander("➕ Novo Fornecedor"):
+            st.text_input("Nome", key="novo_forn_nome")
+            st.text_input("CNPJ", key="novo_forn_cnpj")
+            st.button("Salvar no Banco", on_click=cadastrar_fornecedor_callback)
+
     with c2:
         c_r1, c_r2, c_r3 = st.columns(3)
         resp = c_r1.text_input("Resp. Eng.", value=dados_edicao.get('Responsável', ''))
@@ -138,6 +165,7 @@ with tab1:
         rev = st.text_input("Revisão", "R-00")
         if "input_proj_ref" not in st.session_state: st.session_state["input_proj_ref"] = dados_edicao.get('projetos_ref', '')
         ref = st.text_input("Projetos Ref.", key="input_proj_ref")
+        email_sup = st.text_input("E-mail Suprimentos", value="suprimentos@siarcon.com.br")
     resumo = st.text_area("Resumo")
     anexos = st.file_uploader("Anexos", accept_multiple_files=True, key="uploader_anexos", on_change=atualizar_anexos)
 
@@ -147,51 +175,62 @@ with tab2:
     if key_tec not in st.session_state: st.session_state[key_tec] = dados_edicao.get('itens_tecnicos', [])
     lista_tec = sorted(st.session_state['opcoes_db'].get('tecnico_tab', []))
     itens_tec = st.multiselect("Itens:", options=lista_tec, key=key_tec)
-    
     c_add, c_free = st.columns(2)
     c_add.text_input("Novo", key="n_t"); c_add.button("Salvar T.", on_click=adicionar_item_callback, args=("tecnico_tab", "n_t"))
     tec_l = c_free.text_area("Livre T.")
-    
     st.divider()
     st.subheader("Qualidade")
     key_qual = "multi_qual_tab"
     if key_qual not in st.session_state: st.session_state[key_qual] = dados_edicao.get('itens_qualidade', [])
     lista_qual = sorted(st.session_state['opcoes_db'].get('qualidade_tab', st.session_state['opcoes_db'].get('qualidade', [])))
     itens_qual = st.multiselect("Itens:", options=lista_qual, key=key_qual)
-    
     c_q1, c_q2 = st.columns(2)
     c_q1.text_input("Novo Q.", key="n_q"); c_q1.button("Salvar Q.", on_click=adicionar_item_callback, args=("qualidade_tab", "n_q"))
     qual_l = c_q2.text_input("Livre Q.")
 
 with tab3:
     esc = {}
-    # MATRIZ ORIGINAL DE TAB
     itens = ["Instrumentos de medição", "Ferramentas manuais", "Polias/Correias", "Escadas/Andaimes", "Relatórios", "Alimentação/Viagem", "EPIs"]
-    nome_m = forn.upper(); st.info(f"Matriz: {nome_m}")
+    nome_m = forn.upper() if forn else "FORNECEDOR"; st.info(f"Matriz: {nome_m}")
     for i in itens:
         c1, c2 = st.columns([3,2]); c1.write(f"**{i}**")
         esc[i] = c2.radio(f"m_{i}", ["SIARCON", nome_m], horizontal=True, label_visibility="collapsed"); st.divider()
 
 with tab4:
-    nrs = st.multiselect("SMS:", sorted(st.session_state['opcoes_db'].get('sms', [])))
-    c_d1, c_d2 = st.columns(2); d_ini = c_d1.date_input("Início"); d_int = c_d2.number_input("Dias Int.", 5)
+    lista_nrs_completa = [
+        "NR-06 (Equipamento de Proteção Individual - EPI)",
+        "NR-10 (Segurança em Instalações e Serviços em Eletricidade)",
+        "NR-11 (Transporte, Movimentação, Armazenagem e Manuseio de Materiais)",
+        "NR-12 (Segurança no Trabalho em Máquinas e Equipamentos)",
+        "NR-18 (Condições e Meio Ambiente de Trabalho na Indústria da Construção)",
+        "NR-33 (Segurança e Saúde nos Trabalhos em Espaços Confinados)",
+        "NR-35 (Trabalho em Altura)"
+    ]
+    opcoes_nrs = sorted(list(set(lista_nrs_completa + st.session_state['opcoes_db'].get('sms', []))))
+    nrs = st.multiselect("Selecione as NRs Aplicáveis (Opcional):", options=opcoes_nrs)
+    c_d1, c_d2 = st.columns(2); d_ini = c_d1.date_input("Início"); d_int = c_d2.number_input("Dias Int.", min_value=1, value=5)
     uf = st.checkbox("Data Fim?", True); d_fim = st.date_input("Fim", date.today()+timedelta(days=10)) if uf else None
 
 with tab5:
-    val = st.text_input("Total", dados_edicao.get('Valor', '')); pgto = st.text_area("Pgto"); info = st.text_input("Info"); obs = st.text_area("Obs")
-    status = st.selectbox("Status", ["Em Elaboração (Engenharia)", "Aguardando Obras", "Recebido (Suprimentos)", "Contratação Finalizada"])
+    val = st.text_input("Total (Ex: 20000.00)", dados_edicao.get('Valor', '')); pgto = st.text_area("Pgto"); info = st.text_input("Info"); obs = st.text_area("Obs")
+    status_atual_db = dados_edicao.get('Status')
+    status = st.selectbox("Status", ["Em Elaboração (Engenharia)", "Aguardando Obras", "Recebido (Suprimentos)", "Enviado para Cotação", "Em Negociação", "Contratação Finalizada"])
 
 st.markdown("---")
-if st.button("💾 SALVAR", type="primary"):
-    dados = {
-        'cliente': cli, 'obra': obra, 'fornecedor': forn, 'responsavel': resp, 'resp_obras': obr, 'resp_suprimentos': sup,
-        'revisao': rev, 'projetos_ref': ref, 'resumo_escopo': resumo, 
-        'itens_tecnicos': itens_tec, 'tecnico_livre': tec_l,
-        'itens_qualidade': itens_qual, 'qualidade_livre': qual_l, 
-        'matriz': esc, 'nrs_selecionadas': nrs,
-        'data_inicio': d_ini, 'dias_integracao': d_int, 'data_fim': d_fim, 'obs_gerais': obs,
-        'valor_total': val, 'condicao_pgto': pgto, 'info_comercial': info, 'status': status, 'disciplina': 'TAB',
-        'nomes_anexos': [f.name for f in anexos] if anexos else []
-    }
-    docx = gerar_docx(dados); utils_db.registrar_projeto(dados, id_linha_edicao)
-    st.success("✅ Salvo!"); st.download_button("📥 Baixar", docx.getvalue(), f"Escopo_{forn}.docx")
+if status_atual_db == "Contratação Finalizada" and 'modo_edicao' in st.session_state:
+    st.error("🔒 Finalizado."); st.download_button("📥 Baixar", gerar_docx(dados_edicao).getvalue(), f"Escopo_{forn}.docx")
+else:
+    if st.button("💾 SALVAR / ATUALIZAR", type="primary"):
+        dados = {
+            'cliente': cli, 'obra': obra, 'fornecedor': forn, 'cnpj_fornecedor': cnpj_forn,
+            'responsavel': resp, 'resp_obras': obr, 'resp_suprimentos': sup,
+            'revisao': rev, 'projetos_ref': ref, 'resumo_escopo': resumo, 
+            'itens_tecnicos': itens_tec, 'tecnico_livre': tec_l,
+            'itens_qualidade': itens_qual, 'qualidade_livre': qual_l, 
+            'matriz': esc, 'nrs_selecionadas': nrs,
+            'data_inicio': d_ini, 'dias_integracao': d_int, 'data_fim': d_fim, 'obs_gerais': obs,
+            'valor_total': val, 'condicao_pgto': pgto, 'info_comercial': info, 'status': status, 'disciplina': 'TAB',
+            'nomes_anexos': [f.name for f in anexos] if anexos else []
+        }
+        docx = gerar_docx(dados); utils_db.registrar_projeto(dados, id_linha_edicao)
+        st.success("✅ Salvo!"); st.download_button("📥 Baixar", docx.getvalue(), f"Escopo_{forn}.docx")
