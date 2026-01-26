@@ -2,78 +2,75 @@ import streamlit as st
 import pandas as pd
 import utils_db
 import os
-from streamlit.source_util import get_pages as st_get_pages
+import unicodedata
 
 st.set_page_config(page_title="Dashboard SIARCON", page_icon="📊", layout="wide")
 
-# ==================================================
-# 🧠 NAVEGADOR VIA REGISTRO INTERNO (INFALÍVEL)
-# ==================================================
-def navegar_para_disciplina(row):
-    disciplina_alvo = row['Disciplina'].lower()
-    
-    # Mapeia nomes do banco para palavras-chave no nome do arquivo
-    # Esquerda: Nome no Excel (minúsculo) | Direita: Trecho único do nome do arquivo
-    palavras_chave = {
-        "dutos": "dutos",
-        "geral": "dutos",
-        "hidráulica": "hidraulica", # ou hidr
-        "hidraulica": "hidraulica",
-        "elétrica": "eletrica",     # ou eletr
-        "eletrica": "eletrica",
-        "automação": "automacao",   # ou auto
-        "automacao": "automacao",
-        "tab": "tab",
-        "movimentações": "movimentacoes", # ou mov
-        "movimentacoes": "movimentacoes",
-        "linha de cobre": "cobre",
-        "cobre": "cobre"
-    }
-
-    # 1. Pega a palavra-chave
-    keyword = palavras_chave.get(disciplina_alvo)
-    if not keyword:
-        st.error(f"Não sei procurar por: {row['Disciplina']}")
-        return
-
-    # 2. Pede ao Streamlit a lista oficial de páginas registradas
-    # Isso retorna exatamente o que aparece no menu lateral
-    paginas_registradas = st_get_pages("Home.py")
-    
-    caminho_final = None
-    
-    # 3. Procura a página correta na lista interna
-    for page_hash, page_info in paginas_registradas.items():
-        script_path = page_info["script_path"]
-        # Verifica se a palavra chave (ex: "eletrica") está no caminho do arquivo
-        if keyword in script_path.lower():
-            caminho_final = script_path
-            break
-    
-    # 4. Executa a ação
-    if caminho_final:
-        st.session_state['dados_projeto'] = row.to_dict()
-        st.session_state['modo_edicao'] = True
-        st.switch_page(caminho_final)
-    else:
-        st.error(f"❌ O Streamlit não encontrou nenhuma página registrada contendo '{keyword}'.")
-        st.info("Debug: Confira os nomes no menu lateral.")
-
-# ==================================================
-# 🖥️ INTERFACE
-# ==================================================
 st.title("📊 Dashboard de Contratos")
 
-# Debug Discreto (Expander)
-with st.sidebar.expander("🔧 Debug Técnico"):
-    st.write("Páginas que o Streamlit enxerga:")
-    try:
-        pages = st_get_pages("Home.py")
-        for k, v in pages.items():
-            st.code(v['script_path'], language="text")
-    except:
-        st.write("Erro ao ler registro interno.")
+# =========================================================
+# 🕵️‍♂️ DIAGNÓSTICO VISUAL (NA TELA PRINCIPAL)
+# =========================================================
+st.subheader("🕵️‍♂️ Área de Diagnóstico")
+arquivos_encontrados = []
 
+if os.path.exists("pages"):
+    arquivos_encontrados = [f for f in os.listdir("pages") if f.endswith(".py")]
+    arquivos_encontrados.sort()
+    
+    # Mostra os arquivos encontrados
+    st.info(f"O Sistema encontrou {len(arquivos_encontrados)} arquivos na pasta 'pages':")
+    st.code(arquivos_encontrados)
+else:
+    st.error("🚨 ERRO CRÍTICO: A pasta 'pages' NÃO foi encontrada no diretório onde o Home.py está.")
+    st.stop()
+
+st.divider()
+
+# =========================================================
+# 🧠 LÓGICA DE NAVEGAÇÃO DINÂMICA
+# =========================================================
+def normalizar(texto):
+    """Remove acentos e deixa minúsculo"""
+    if not isinstance(texto, str): return ""
+    return unicodedata.normalize('NFKD', texto).encode('ASCII', 'ignore').decode('ASCII').lower()
+
+def encontrar_arquivo_e_navegar(row):
+    disciplina_alvo = normalizar(row['Disciplina'])
+    
+    # Palavras-chave para busca
+    mapa_busca = {
+        "dutos": "dutos", "geral": "dutos",
+        "hidraulica": "hidraulica", "hidr": "hidraulica",
+        "eletrica": "eletrica", "eletr": "eletrica",
+        "automacao": "automacao", "auto": "automacao",
+        "tab": "tab",
+        "movimentacoes": "movimentacoes", "mov": "movimentacoes",
+        "cobre": "cobre", "linha": "cobre"
+    }
+    
+    termo = mapa_busca.get(disciplina_alvo)
+    
+    # Tenta achar um arquivo que contenha o termo
+    arquivo_destino = None
+    if termo:
+        for arq in arquivos_encontrados:
+            if termo in normalizar(arq):
+                arquivo_destino = f"pages/{arq}"
+                break
+    
+    # Ação
+    if arquivo_destino:
+        st.session_state['dados_projeto'] = row.to_dict()
+        st.session_state['modo_edicao'] = True
+        st.switch_page(arquivo_destino)
+    else:
+        st.error(f"❌ Não encontrei nenhum arquivo para '{row['Disciplina']}'")
+        st.warning(f"Procurei por arquivos contendo: '{termo}' na lista azul acima.")
+
+# =========================================================
+# 📋 KANBAN
+# =========================================================
 df = utils_db.listar_todos_projetos()
 
 # Criar Nova Obra
@@ -83,47 +80,33 @@ with st.expander("➕ Criar Novo Pacote de Obra"):
         novo_cliente = c1.text_input("Cliente")
         nova_obra = c2.text_input("Nome da Obra")
         
-        opcoes_disciplinas = [
-            "Dutos", "Hidráulica", "Elétrica", "Automação", 
-            "TAB", "Movimentações", "Linha de Cobre"
-        ]
-        disciplinas_selecionadas = st.multiselect("Quais escopos farão parte?", options=opcoes_disciplinas)
+        opcoes = ["Dutos", "Hidráulica", "Elétrica", "Automação", "TAB", "Movimentações", "Linha de Cobre"]
+        sel = st.multiselect("Escopos:", options=opcoes)
         
-        if st.form_submit_button("🚀 Criar Pacote"):
-            if utils_db.criar_pacote_obra(novo_cliente, nova_obra, disciplinas_selecionadas):
-                st.success("Criado! Atualize a página."); st.rerun()
-            else: st.error("Erro ao criar.")
+        if st.form_submit_button("🚀 Criar"):
+            if utils_db.criar_pacote_obra(novo_cliente, nova_obra, sel):
+                st.success("Criado!"); st.rerun()
+            else: st.error("Erro.")
 
-st.divider()
-
-# Kanban
 if not df.empty:
-    c_filt1, c_filt2 = st.columns(2)
-    lista_clientes = sorted(list(df['Cliente'].unique())) if 'Cliente' in df.columns else []
-    filtro_cliente = c_filt1.selectbox("Filtrar Cliente:", ["Todos"] + lista_clientes)
-    if filtro_cliente != "Todos": df = df[df['Cliente'] == filtro_cliente]
+    filtro_cli = st.selectbox("Cliente:", ["Todos"] + sorted(list(df['Cliente'].unique())))
+    if filtro_cli != "Todos": df = df[df['Cliente'] == filtro_cli]
 
-    colunas_status = st.columns(3)
+    cols = st.columns(3)
     grupos = {
         "🔴 A Fazer": ["Não Iniciado", "Aguardando Obras"],
         "🟡 Em Andamento": ["Em Elaboração (Engenharia)", "Recebido (Suprimentos)", "Enviado para Cotação", "Em Negociação"],
         "🟢 Concluído": ["Contratação Finalizada"]
     }
 
-    for i, (grupo_nome, status_grupo) in enumerate(grupos.items()):
-        with colunas_status[i]:
-            st.markdown(f"### {grupo_nome}")
-            df_grupo = df[df['Status'].isin(status_grupo)]
-            
-            for index, row in df_grupo.iterrows():
+    for i, (g_nome, g_status) in enumerate(grupos.items()):
+        with cols[i]:
+            st.markdown(f"### {g_nome}")
+            for _, row in df[df['Status'].isin(g_status)].iterrows():
                 with st.container(border=True):
-                    d_nome = "Dutos" if row['Disciplina'] == "Geral" else row['Disciplina']
-                    
                     st.markdown(f"**{row['Obra']}**")
-                    st.caption(f"{row['Cliente']} | {d_nome}")
-                    if row['Fornecedor']: st.text(f"🏢 {row['Fornecedor']}")
-                    
+                    st.caption(f"{row['Disciplina']}")
                     if st.button(f"✏️ Editar", key=f"btn_{row['_id_linha']}"):
-                        navegar_para_disciplina(row) # Função Nova
+                        encontrar_arquivo_e_navegar(row)
 else:
-    st.info("Nenhum projeto encontrado.")
+    st.info("Sem projetos.")
