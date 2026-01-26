@@ -8,3 +8,5 @@ pdfplumber
 ezdxf
 matplotlib
 openai
+openpyxl
+xlsxwriter
