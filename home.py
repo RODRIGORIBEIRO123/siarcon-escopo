@@ -5,74 +5,56 @@ import os
 
 st.set_page_config(page_title="Dashboard SIARCON", page_icon="📊", layout="wide")
 
-# ==================================================
-# 🔍 DIAGNÓSTICO (PARA VOCÊ COPIAR OS NOMES CERTOS)
-# ==================================================
+# --- DEBUG LATERAL (Para confirmar o nome real) ---
 with st.sidebar:
-    st.header("🔧 Debug: Arquivos Reais")
-    st.info("Copie os nomes abaixo se os links falharem:")
+    st.caption("📂 Arquivos detectados:")
     try:
-        arquivos_na_pasta = sorted(os.listdir("pages"))
-        for arq in arquivos_na_pasta:
-            if arq.endswith(".py"):
-                st.code(f"pages/{arq}", language="text")
+        # Lista o que realmente existe na pasta
+        arquivos = sorted([f for f in os.listdir("pages") if f.endswith(".py")])
+        for arq in arquivos:
+            st.code(f"pages/{arq}", language="text")
     except:
-        st.error("Não achei a pasta 'pages'")
+        st.error("Pasta 'pages' não encontrada.")
     st.divider()
 
-# ==================================================
-# 🗺️ MAPA DE NAVEGAÇÃO
-# ==================================================
-# ESQUERDA: O que está escrito na Coluna 'Disciplina' do Google Sheets/Excel
-# DIREITA: O nome EXATO do arquivo que apareceu no Debug acima
+# --- MAPA DE ARQUIVOS (APONTANDO PARA OS NOMES LIMPOS) ---
+# Esquerda: Nome da disciplina no Banco de Dados (Excel)
+# Direita: Nome do arquivo físico que você renomeou no Passo 1
 MAPA_PAGINAS = {
-    # Dutos
-    "Geral": "pages/1_❄️_Escopo_Dutos.py",
-    "Dutos": "pages/1_❄️_Escopo_Dutos.py",
+    # Dutos (pode estar salvo como Geral ou Dutos)
+    "Geral": "pages/1_Dutos.py",
+    "Dutos": "pages/1_Dutos.py",
     
-    # Hidráulica
-    "Hidráulica": "pages/2_💧_Escopo_Hidraulica.py",
-    
-    # Elétrica
-    "Elétrica": "pages/3_⚡_Escopo_Eletrica.py",
-    
-    # Automação
-    "Automação": "pages/4_🤖_Escopo_Automacao.py",
-    
-    # TAB
-    "TAB": "pages/5_💨_Escopo_TAB.py",
-    
-    # Movimentações
-    "Movimentações": "pages/6_🏗️_Escopo_Movimentacoes.py",
-    
-    # Linha de Cobre
-    "Linha de Cobre": "pages/7_🔥_Escopo_Cobre.py"
+    # Demais disciplinas
+    "Hidráulica": "pages/2_Hidraulica.py",
+    "Elétrica": "pages/3_Eletrica.py",
+    "Automação": "pages/4_Automacao.py",
+    "TAB": "pages/5_TAB.py",
+    "Movimentações": "pages/6_Movimentacoes.py",
+    "Linha de Cobre": "pages/7_Cobre.py"
 }
 
 # --- FUNÇÃO DE NAVEGAÇÃO ---
 def ir_para_edicao(row):
     disciplina = row['Disciplina']
     
-    # 1. Verifica se a disciplina está no mapa
     if disciplina in MAPA_PAGINAS:
         arquivo_destino = MAPA_PAGINAS[disciplina]
         
-        # 2. Verifica se o arquivo existe fisicamente antes de tentar abrir
+        # Verifica se o arquivo existe antes de pular
         if os.path.exists(arquivo_destino):
             st.session_state['dados_projeto'] = row.to_dict()
             st.session_state['modo_edicao'] = True
             st.switch_page(arquivo_destino)
         else:
-            st.error(f"⛔ ERRO DE ARQUIVO: O código tentou abrir '{arquivo_destino}', mas ele não existe.")
-            st.warning("👉 Olhe a barra lateral esquerda (Debug). Veja qual é o nome real do arquivo e corrija no 'MAPA_PAGINAS' dentro do Home.py")
+            st.error(f"🚨 Arquivo não encontrado: {arquivo_destino}")
+            st.info("DICA: Verifique se você renomeou o arquivo na pasta 'pages' exatamente como está no código.")
     else:
-        st.error(f"❌ Disciplina '{disciplina}' não está mapeada.")
-        st.info(f"Adicione '{disciplina}' no MAPA_PAGINAS no código.")
+        st.error(f"❌ Disciplina '{disciplina}' não encontrada no Mapa.")
 
 # --- INTERFACE ---
 st.title("📊 Dashboard de Contratos")
 
-# Carregar Dados
 df = utils_db.listar_todos_projetos()
 
 # Criar Nova Obra
@@ -82,7 +64,7 @@ with st.expander("➕ Criar Novo Pacote de Obra"):
         novo_cliente = c1.text_input("Cliente")
         nova_obra = c2.text_input("Nome da Obra")
         
-        # Opções devem bater com as chaves do MAPA_PAGINAS
+        # As opções aqui salvam o nome "chave" no banco
         opcoes_disciplinas = [
             "Dutos", "Hidráulica", "Elétrica", "Automação", 
             "TAB", "Movimentações", "Linha de Cobre"
@@ -98,7 +80,6 @@ st.divider()
 
 # Kanban
 if not df.empty:
-    # Filtros
     c_filt1, c_filt2 = st.columns(2)
     lista_clientes = sorted(list(df['Cliente'].unique())) if 'Cliente' in df.columns else []
     filtro_cliente = c_filt1.selectbox("Filtrar Cliente:", ["Todos"] + lista_clientes)
@@ -120,11 +101,10 @@ if not df.empty:
             
             for index, row in df_grupo.iterrows():
                 with st.container(border=True):
-                    # Exibe nome amigável se for o antigo "Geral"
-                    disc_show = "Dutos (Legado)" if row['Disciplina'] == "Geral" else row['Disciplina']
+                    d_nome = "Dutos (Antigo)" if row['Disciplina'] == "Geral" else row['Disciplina']
                     
                     st.markdown(f"**{row['Obra']}**")
-                    st.caption(f"{row['Cliente']} | {disc_show}")
+                    st.caption(f"{row['Cliente']} | {d_nome}")
                     
                     if row['Fornecedor']: st.text(f"🏢 {row['Fornecedor']}")
                     
