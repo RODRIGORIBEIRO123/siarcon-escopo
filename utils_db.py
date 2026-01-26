@@ -1,136 +1,131 @@
 import streamlit as st
 import pandas as pd
-import utils_db
 import os
+import json
+from datetime import datetime
 
-st.set_page_config(page_title="Painel de Projetos (Kanban)", page_icon="📊", layout="wide")
+# Nome do arquivo onde os dados serão salvos localmente
+DB_FILE = "dados_projetos.json"
+FORNECEDORES_FILE = "dados_fornecedores.json"
+ITENS_FILE = "dados_itens.json"
 
-# ==================================================
-# 🗺️ MAPA DE NAVEGAÇÃO (INFALÍVEL)
-# ==================================================
-# Conecta o nome do Banco (Esquerda) ao Arquivo Físico (Direita)
-# Baseado na sua imagem dos arquivos.
-MAPA_PAGINAS = {
-    # Dutos
-    "Dutos": "pages/1_Dutos.py",
-    "Geral": "pages/1_Dutos.py", # Legado
+# --- FUNÇÕES AUXILIARES ---
+def carregar_dados(arquivo):
+    if os.path.exists(arquivo):
+        try:
+            with open(arquivo, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except: return []
+    return []
+
+def salvar_dados(arquivo, dados):
+    with open(arquivo, "w", encoding="utf-8") as f:
+        json.dump(dados, f, ensure_ascii=False, indent=4)
+
+# --- GERENCIAMENTO DE PROJETOS ---
+def listar_todos_projetos():
+    dados = carregar_dados(DB_FILE)
+    if not dados:
+        return pd.DataFrame(columns=["_id_linha", "Cliente", "Obra", "Disciplina", "Status", "Fornecedor"])
     
-    # Hidráulica
-    "Hidráulica": "pages/2_Hidraulica.py",
-    "Hidraulica": "pages/2_Hidraulica.py",
-    
-    # Elétrica
-    "Elétrica": "pages/3_Eletrica.py",
-    "Eletrica": "pages/3_Eletrica.py",
-    
-    # Automação
-    "Automação": "pages/4_Automacao.py",
-    "Automacao": "pages/4_Automacao.py",
-    
-    # TAB
-    "TAB": "pages/5_TAB.py",
-    
-    # Movimentações
-    "Movimentações": "pages/6_Movimentacoes.py",
-    "Movimentacoes": "pages/6_Movimentacoes.py",
-    
-    # Cobre
-    "Linha de Cobre": "pages/7_Cobre.py",
-    "Cobre": "pages/7_Cobre.py"
-}
-
-# --- FUNÇÃO DE CLIQUE ---
-def ir_para_edicao(row):
-    disciplina = row['Disciplina']
-    
-    # Verifica se existe no mapa
-    if disciplina in MAPA_PAGINAS:
-        arquivo_destino = MAPA_PAGINAS[disciplina]
-        
-        # Verifica se o arquivo existe fisicamente
-        if os.path.exists(arquivo_destino):
-            st.session_state['dados_projeto'] = row.to_dict()
-            st.session_state['modo_edicao'] = True
-            st.switch_page(arquivo_destino)
-        else:
-            st.error(f"🚨 O código tentou abrir '{arquivo_destino}', mas ele não foi encontrado.")
-            st.info("Verifique se o arquivo foi renomeado ou movido.")
-    else:
-        st.error(f"❌ A disciplina '{disciplina}' não está mapeada no código.")
-
-# ==================================================
-# 🖥️ INTERFACE
-# ==================================================
-st.title("📊 Painel de Projetos (Kanban)")
-
-if st.button("🔄 Forçar Atualização"):
-    st.rerun()
-
-# Carregar Dados
-df = utils_db.listar_todos_projetos()
-
-# Criar Nova Obra
-with st.expander("➕ CADASTRO NOVA OBRA"):
-    with st.form("form_nova_obra"):
-        c1, c2 = st.columns(2)
-        novo_cliente = c1.text_input("Cliente")
-        nova_obra = c2.text_input("Nome da Obra")
-        
-        # Opções padronizadas para salvar no banco
-        opcoes_disciplinas = [
-            "Dutos", "Hidráulica", "Elétrica", "Automação", 
-            "TAB", "Movimentações", "Linha de Cobre"
-        ]
-        disciplinas_selecionadas = st.multiselect("Quais escopos farão parte?", options=opcoes_disciplinas)
-        
-        if st.form_submit_button("🚀 Criar Pacote"):
-            if utils_db.criar_pacote_obra(novo_cliente, nova_obra, disciplinas_selecionadas):
-                st.success("Criado! Atualize a página."); st.rerun()
-            else: st.error("Erro ao criar.")
-
-st.divider()
-
-# Kanban
-if not df.empty:
-    # Filtro Rápido
-    filtro_cliente = st.selectbox("Filtrar Cliente:", ["Todos"] + sorted(list(df['Cliente'].unique())))
-    if filtro_cliente != "Todos":
-        df = df[df['Cliente'] == filtro_cliente]
-
-    colunas_status = st.columns(4)
-    grupos = {
-        "⚪ Não Iniciado": ["Não Iniciado"],
-        "👷 Engenharia": ["Em Elaboração (Engenharia)", "Aguardando Obras"],
-        "🚧 Obras": ["Recebido (Suprimentos)", "Enviado para Cotação", "Em Negociação"],
-        "✅ Concluídos": ["Contratação Finalizada"]
-    }
-
-    col_index = 0
-    for grupo_nome, status_grupo in grupos.items():
-        with colunas_status[col_index]:
-            st.markdown(f"### {grupo_nome}")
-            df_grupo = df[df['Status'].isin(status_grupo)]
+    # Converte para DataFrame
+    df = pd.DataFrame(dados)
+    # Garante que as colunas principais existam para não dar erro no display
+    cols_obrigatorias = ["_id_linha", "Cliente", "Obra", "Disciplina", "Status", "Fornecedor"]
+    for col in cols_obrigatorias:
+        if col not in df.columns:
+            df[col] = ""
             
-            for index, row in df_grupo.iterrows():
-                with st.container(border=True):
-                    st.caption(f"{row['Cliente']}")
-                    st.markdown(f"**📍 {row['Obra']}**")
-                    
-                    # Ícone
-                    icon_map = {"Dutos": "❄️", "Hidráulica": "💧", "Elétrica": "⚡", "Automação": "🤖", "TAB": "💨", "Movimentações": "🏗️", "Linha de Cobre": "🔥"}
-                    icone = icon_map.get(row['Disciplina'], "📁")
-                    
-                    st.markdown(f"### {icone} {row['Disciplina']}")
-                    st.caption(f"Status: {row['Status']}")
+    return df
 
-                    c_btn1, c_btn2 = st.columns([2,1])
-                    
-                    if c_btn1.button("✏️ Editar", key=f"btn_{row['_id_linha']}", use_container_width=True):
-                        ir_para_edicao(row)
-                    
-                    if c_btn2.button("🗑️", key=f"del_{row['_id_linha']}"):
-                        if utils_db.excluir_projeto(row['_id_linha']):
-                            st.rerun()
-        col_index += 1
-else:
-    st.info("Nenhum projeto encontrado.")
+def criar_pacote_obra(cliente, obra, disciplinas):
+    dados = carregar_dados(DB_FILE)
+    
+    for disc in disciplinas:
+        novo_projeto = {
+            "_id_linha": str(datetime.now().timestamp()) + "_" + disc, # ID único
+            "Cliente": cliente,
+            "Obra": obra,
+            "Disciplina": disc,
+            "Status": "Não Iniciado",
+            "Fornecedor": "",
+            "Data Criacao": datetime.now().strftime("%Y-%m-%d")
+        }
+        dados.append(novo_projeto)
+    
+    salvar_dados(DB_FILE, dados)
+    return True
+
+def registrar_projeto(dados_projeto, id_linha=None):
+    """Atualiza ou cria um projeto completo"""
+    lista_projetos = carregar_dados(DB_FILE)
+    
+    # Se já tem ID, é atualização
+    if id_linha:
+        for i, proj in enumerate(lista_projetos):
+            if proj.get("_id_linha") == id_linha:
+                # Atualiza mantendo o ID
+                dados_atualizados = {**proj, **dados_projeto}
+                # Garante que campos chave fiquem maiúsculos para o Kanban
+                dados_atualizados["Cliente"] = dados_projeto.get("cliente", proj["Cliente"])
+                dados_atualizados["Obra"] = dados_projeto.get("obra", proj["Obra"])
+                dados_atualizados["Status"] = dados_projeto.get("status", proj["Status"])
+                dados_atualizados["Fornecedor"] = dados_projeto.get("fornecedor", proj["Fornecedor"])
+                dados_atualizados["Disciplina"] = dados_projeto.get("disciplina", proj["Disciplina"])
+                
+                lista_projetos[i] = dados_atualizados
+                salvar_dados(DB_FILE, lista_projetos)
+                return True
+    
+    return False
+
+def excluir_projeto(id_linha):
+    lista = carregar_dados(DB_FILE)
+    nova_lista = [p for p in lista if p.get("_id_linha") != id_linha]
+    salvar_dados(DB_FILE, nova_lista)
+    return True
+
+# --- GERENCIAMENTO DE APRENDIZADO (ITENS TÉCNICOS) ---
+def carregar_opcoes():
+    padrao = {
+        "tecnico_dutos": ["Dutos em chapa galvanizada", "Grelhas e Difusores"],
+        "tecnico_hidraulica": ["Tubulação de Aço Carbono", "Válvulas de Controle"],
+        "tecnico_eletrica": ["Quadros Elétricos", "Cabos de Força", "Infraestrutura (Eletrocalhas)"],
+        "tecnico_automacao": ["Controladores DDC", "Sensores de Temperatura", "Atuadores"],
+        "tecnico_tab": ["Balanceamento de Ar", "Balanceamento de Água"],
+        "tecnico_movimentacoes": ["Guindaste", "Munck", "Equipe de Remoção"],
+        "tecnico_cobre": ["Tubulação de Cobre", "Isolamento Térmico", "Solda Phoscoper"],
+        "sms": ["NR-10", "NR-35", "NR-12"],
+        "qualidade_dutos": ["Teste de Estanqueidade", "Relatório Fotográfico"],
+        "qualidade_cobre": ["Teste de Pressão (N2)", "Vácuo < 500 microns"]
+    }
+    salvos = carregar_dados(ITENS_FILE)
+    if not salvos: return padrao
+    # Mescla o que salvou com o padrão para garantir chaves
+    return {**padrao, **salvos}
+
+def aprender_novo_item(categoria, novo_item):
+    opcoes = carregar_opcoes()
+    if categoria not in opcoes:
+        opcoes[categoria] = []
+    
+    if novo_item not in opcoes[categoria]:
+        opcoes[categoria].append(novo_item)
+        salvar_dados(ITENS_FILE, opcoes)
+        return True
+    return False # Já existia
+
+# --- GERENCIAMENTO DE FORNECEDORES ---
+def listar_fornecedores():
+    return carregar_dados(FORNECEDORES_FILE)
+
+def cadastrar_fornecedor_db(nome, cnpj):
+    fornecedores = listar_fornecedores()
+    # Verifica duplicidade
+    for f in fornecedores:
+        if f['Fornecedor'].upper() == nome.upper() or f['CNPJ'] == cnpj:
+            return "Existe"
+    
+    fornecedores.append({"Fornecedor": nome, "CNPJ": cnpj})
+    salvar_dados(FORNECEDORES_FILE, fornecedores)
+    return True
