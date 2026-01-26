@@ -92,7 +92,7 @@ def gerar_docx(dados):
         else: row[2].text = "X"; row[2].paragraphs[0].alignment = 1
 
     document.add_heading('5. SMS', 1)
-    docs = ["Ficha de registro", "ASO", "Ficha EPI", "Ordem de Serviço", "Certificados Treinamento", "NR-06"]
+    docs = ["Ficha de registro", "ASO", "Ficha EPI", "Ordem de Serviço", "Certificados Treinamento", "NR-06", "NR-33 (Espaço Confinado)"]
     for d in docs: document.add_paragraph(d, style='List Bullet')
     for d in dados.get('nrs_selecionadas', []): document.add_paragraph(d, style='List Bullet')
 
@@ -177,7 +177,6 @@ with tab2:
 
 with tab3:
     escolhas = {}
-    # MATRIZ ORIGINAL DE HIDRÁULICA
     itens_m = [
         "Materiais de tubulação e conexões", "Materiais de isolamento térmico", "Insumos de soldagem", 
         "Consumíveis (Discos, eletrodos, brocas, etc)", "Materiais dos cavaletes", "Materiais dos drenos", 
@@ -193,20 +192,24 @@ with tab3:
         st.divider()
 
 with tab4:
-    nrs = st.multiselect("SMS Adicional:", sorted(st.session_state['opcoes_db'].get('sms', [])))
+    opcoes_nrs = sorted(st.session_state['opcoes_db'].get('sms', []))
+    nrs = st.multiselect("SMS Adicional:", opcoes_nrs)
     c_d1, c_d2 = st.columns(2)
     d_ini = c_d1.date_input("Início"); d_int = c_d2.number_input("Dias Integração", 5)
     usar_fim = st.checkbox("Data Fim?", True)
     d_fim = st.date_input("Fim", date.today()+timedelta(days=30)) if usar_fim else None
 
 with tab5:
-    val = st.text_input("Valor Total", dados_edicao.get('Valor', '')); pgto = st.text_area("Pagamento"); info = st.text_input("Info"); obs = st.text_area("Obs")
+    val = st.text_input("Valor Total (Ex: 25000.00)", dados_edicao.get('Valor', '')); pgto = st.text_area("Pagamento"); info = st.text_input("Info"); obs = st.text_area("Obs")
     st.divider()
-    status = st.selectbox("Status", ["Em Elaboração (Engenharia)", "Aguardando Obras", "Recebido (Suprimentos)", "Enviado para Cotação", "Em Negociação", "Contratação Finalizada"], index=0)
+    status_atual_db = dados_edicao.get('Status')
+    status_selecionado = st.selectbox("Status", ["Em Elaboração (Engenharia)", "Aguardando Obras", "Recebido (Suprimentos)", "Enviado para Cotação", "Em Negociação", "Contratação Finalizada"], index=0)
 
 st.markdown("---")
-if status == "Contratação Finalizada" and 'modo_edicao' in st.session_state:
-    st.error("🔒 Finalizado."); st.download_button("📥 Baixar", gerar_docx(dados_edicao).getvalue(), f"Escopo_{forn}.docx")
+# LÓGICA CORRIGIDA:
+if status_atual_db == "Contratação Finalizada" and 'modo_edicao' in st.session_state:
+    st.error("🔒 Finalizado no Banco de Dados.")
+    st.download_button("📥 Baixar DOCX Final", gerar_docx(dados_edicao).getvalue(), f"Escopo_{forn}.docx")
 else:
     if st.button("💾 SALVAR / ATUALIZAR", type="primary"):
         dados = {
@@ -217,9 +220,10 @@ else:
             'matriz': escolhas, 'nrs_selecionadas': nrs,
             'data_inicio': d_ini, 'dias_integracao': d_int, 'data_fim': d_fim,
             'obs_gerais': obs, 'valor_total': val, 'condicao_pgto': pgto, 'info_comercial': info,
-            'status': status, 'disciplina': 'Hidráulica',
+            'status': status_selecionado, 'disciplina': 'Hidráulica',
             'nomes_anexos': [f.name for f in anexos] if anexos else []
         }
         docx = gerar_docx(dados); nome_a = f"Escopo_{forn.replace(' ', '_')}.docx"
         utils_db.registrar_projeto(dados, id_linha_edicao)
-        st.success("✅ Salvo!"); st.download_button("📥 Baixar DOCX", docx.getvalue(), nome_a)
+        st.success("✅ Salvo! Agora você pode baixar.")
+        st.download_button("📥 Baixar DOCX", docx.getvalue(), nome_a)
