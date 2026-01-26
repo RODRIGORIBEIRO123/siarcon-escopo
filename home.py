@@ -2,55 +2,83 @@ import streamlit as st
 import pandas as pd
 import utils_db
 import os
+import unicodedata
 
 st.set_page_config(page_title="Dashboard SIARCON", page_icon="📊", layout="wide")
 
-# =========================================================
-# 🗺️ MAPA DEFINITIVO DE NAVEGAÇÃO
-# =========================================================
-# A Esquerda: O nome da Disciplina que está salva no Banco de Dados
-# A Direita: O caminho EXATO do arquivo que você padronizou
-MAPA_PAGINAS = {
-    # Caso Dutos (antigo Geral e novo Dutos)
-    "Geral": "pages/1_Dutos.py",
-    "Dutos": "pages/1_Dutos.py",
-    
-    # Demais casos (Nomes do Banco -> Arquivos sem acento)
-    "Hidráulica": "pages/2_Hidraulica.py",
-    "Elétrica": "pages/3_Eletrica.py",
-    "Automação": "pages/4_Automacao.py",
-    "TAB": "pages/5_TAB.py",
-    "Movimentações": "pages/6_Movimentacoes.py",
-    "Linha de Cobre": "pages/7_Cobre.py"
-}
+# ==================================================
+# 🧠 NAVEGADOR INTELIGENTE (Auto-Detector)
+# ==================================================
+def normalizar_texto(texto):
+    """Remove acentos e deixa minúsculo para comparação"""
+    if not isinstance(texto, str): return ""
+    return unicodedata.normalize('NFKD', texto).encode('ASCII', 'ignore').decode('ASCII').lower()
 
-# --- FUNÇÃO DE NAVEGAÇÃO ---
+def encontrar_arquivo_destino(disciplina_db):
+    """
+    Procura na pasta 'pages' qual arquivo corresponde à disciplina,
+    independente de ter números ou emojis no nome.
+    """
+    # 1. Define a palavra-chave que deve existir no nome do arquivo
+    mapa_palavras_chave = {
+        "Dutos": "dutos",
+        "Geral": "dutos", # Legado
+        "Hidráulica": "hidraulica",
+        "Elétrica": "eletrica",
+        "Automação": "automacao",
+        "TAB": "tab",
+        "Movimentações": "movimentacoes",
+        "Linha de Cobre": "cobre"
+    }
+    
+    palavra_chave = mapa_palavras_chave.get(disciplina_db)
+    
+    if not palavra_chave:
+        return None, f"Disciplina '{disciplina_db}' não tem palavra-chave definida."
+
+    try:
+        # 2. Varre a pasta pages
+        arquivos_na_pasta = os.listdir("pages")
+        
+        for arquivo in arquivos_na_pasta:
+            nome_normalizado = normalizar_texto(arquivo)
+            # Se a palavra chave (ex: "dutos") estiver no nome do arquivo (ex: "1_dutos.py")
+            if palavra_chave in nome_normalizado and arquivo.endswith(".py"):
+                return f"pages/{arquivo}", None # Sucesso! Retorna o caminho
+                
+        return None, f"Não achei nenhum arquivo contendo '{palavra_chave}' na pasta pages."
+        
+    except Exception as e:
+        return None, f"Erro ao ler pasta pages: {e}"
+
+# --- FUNÇÃO DE CLIQUE DO BOTÃO ---
 def ir_para_edicao(row):
     disciplina = row['Disciplina']
     
-    # 1. Verifica se a disciplina existe no mapa
-    if disciplina in MAPA_PAGINAS:
-        arquivo_destino = MAPA_PAGINAS[disciplina]
-        
-        # 2. Salva os dados na memória (Sessão)
+    # Usa a inteligência para achar o arquivo
+    caminho_arquivo, erro = encontrar_arquivo_destino(disciplina)
+    
+    if caminho_arquivo:
         st.session_state['dados_projeto'] = row.to_dict()
         st.session_state['modo_edicao'] = True
-        
-        # 3. Tenta pular para a página
-        try:
-            st.switch_page(arquivo_destino)
-        except Exception as e:
-            # Se der erro, mostra uma mensagem clara
-            st.error(f"❌ Erro ao abrir a página: {arquivo_destino}")
-            st.warning("Verifique se o nome do arquivo na pasta 'pages' é EXATAMENTE igual ao nome acima (letras maiúsculas/minúsculas importam!).")
-            st.code(f"Esperado: {arquivo_destino}", language="text")
+        st.switch_page(caminho_arquivo)
     else:
-        st.error(f"❌ Disciplina '{disciplina}' não está mapeada no código.")
+        st.error(f"❌ Erro de Navegação: {erro}")
+        st.info("Verifique se os arquivos na pasta 'pages' contêm os nomes: dutos, hidraulica, eletrica, automacao, tab, movimentacoes, cobre.")
 
-# --- INTERFACE ---
+# ==================================================
+# 🖥️ INTERFACE
+# ==================================================
 st.title("📊 Dashboard de Contratos")
 
-# Carregar Dados
+# Diagnóstico Rápido na Barra Lateral (Para garantir)
+with st.sidebar:
+    st.caption("📂 Arquivos que o sistema vê:")
+    try:
+        for f in sorted(os.listdir("pages")):
+            if f.endswith(".py"): st.code(f, language="text")
+    except: st.error("Pasta pages não encontrada")
+
 df = utils_db.listar_todos_projetos()
 
 # Criar Nova Obra
@@ -60,7 +88,6 @@ with st.expander("➕ Criar Novo Pacote de Obra"):
         novo_cliente = c1.text_input("Cliente")
         nova_obra = c2.text_input("Nome da Obra")
         
-        # Nomes que serão salvos no banco (com acentos)
         opcoes_disciplinas = [
             "Dutos", "Hidráulica", "Elétrica", "Automação", 
             "TAB", "Movimentações", "Linha de Cobre"
@@ -80,8 +107,7 @@ if not df.empty:
     lista_clientes = sorted(list(df['Cliente'].unique())) if 'Cliente' in df.columns else []
     filtro_cliente = c_filt1.selectbox("Filtrar Cliente:", ["Todos"] + lista_clientes)
     
-    if filtro_cliente != "Todos": 
-        df = df[df['Cliente'] == filtro_cliente]
+    if filtro_cliente != "Todos": df = df[df['Cliente'] == filtro_cliente]
 
     colunas_status = st.columns(3)
     grupos = {
@@ -97,15 +123,12 @@ if not df.empty:
             
             for index, row in df_grupo.iterrows():
                 with st.container(border=True):
-                    # Exibe nome amigável
                     d_nome = "Dutos (Antigo)" if row['Disciplina'] == "Geral" else row['Disciplina']
                     
                     st.markdown(f"**{row['Obra']}**")
                     st.caption(f"{row['Cliente']} | {d_nome}")
-                    
                     if row['Fornecedor']: st.text(f"🏢 {row['Fornecedor']}")
                     
-                    # Botão de Edição
                     if st.button(f"✏️ Editar", key=f"btn_{row['_id_linha']}"):
                         ir_para_edicao(row)
 else:
