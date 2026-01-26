@@ -5,27 +5,31 @@ import os
 
 st.set_page_config(page_title="Dashboard SIARCON", page_icon="📊", layout="wide")
 
-# --- DEBUG LATERAL (Para confirmar o nome real) ---
-with st.sidebar:
-    st.caption("📂 Arquivos detectados:")
-    try:
-        # Lista o que realmente existe na pasta
-        arquivos = sorted([f for f in os.listdir("pages") if f.endswith(".py")])
-        for arq in arquivos:
-            st.code(f"pages/{arq}", language="text")
-    except:
-        st.error("Pasta 'pages' não encontrada.")
-    st.divider()
+# ==================================================
+# 🕵️‍♂️ ÁREA DE DIAGNÓSTICO (TEMPORÁRIA)
+# ==================================================
+st.warning("🕵️‍♂️ MODO DE DIAGNÓSTICO ATIVADO")
+st.write("O sistema encontrou estes arquivos na pasta 'pages':")
 
-# --- MAPA DE ARQUIVOS (APONTANDO PARA OS NOMES LIMPOS) ---
-# Esquerda: Nome da disciplina no Banco de Dados (Excel)
-# Direita: Nome do arquivo físico que você renomeou no Passo 1
+arquivos_reais = []
+try:
+    arquivos_reais = sorted([f for f in os.listdir("pages") if f.endswith(".py")])
+    st.code(arquivos_reais)
+except Exception as e:
+    st.error(f"Erro ao ler pasta pages: {e}")
+
+st.divider()
+# ==================================================
+
+# --- MAPA DE ARQUIVOS (TENTATIVA PADRÃO) ---
+# Tentei adivinhar que seus arquivos estão como '1_Dutos.py', etc.
+# Se a lista azul acima mostrar algo diferente, vamos ajustar AQUI.
 MAPA_PAGINAS = {
-    # Dutos (pode estar salvo como Geral ou Dutos)
+    # Dutos
     "Geral": "pages/1_Dutos.py",
     "Dutos": "pages/1_Dutos.py",
     
-    # Demais disciplinas
+    # Demais (Nomes no Banco -> Nome do Arquivo)
     "Hidráulica": "pages/2_Hidraulica.py",
     "Elétrica": "pages/3_Eletrica.py",
     "Automação": "pages/4_Automacao.py",
@@ -41,16 +45,18 @@ def ir_para_edicao(row):
     if disciplina in MAPA_PAGINAS:
         arquivo_destino = MAPA_PAGINAS[disciplina]
         
-        # Verifica se o arquivo existe antes de pular
+        # Verifica se existe
         if os.path.exists(arquivo_destino):
             st.session_state['dados_projeto'] = row.to_dict()
             st.session_state['modo_edicao'] = True
             st.switch_page(arquivo_destino)
         else:
-            st.error(f"🚨 Arquivo não encontrado: {arquivo_destino}")
-            st.info("DICA: Verifique se você renomeou o arquivo na pasta 'pages' exatamente como está no código.")
+            # ERRO DETALHADO
+            st.error(f"🚨 O sistema tentou abrir: '{arquivo_destino}'")
+            st.error("Mas esse arquivo NÃO existe.")
+            st.info(f"Compare o nome acima com a lista azul no topo da página.")
     else:
-        st.error(f"❌ Disciplina '{disciplina}' não encontrada no Mapa.")
+        st.error(f"❌ A disciplina '{disciplina}' não está no MAPA_PAGINAS.")
 
 # --- INTERFACE ---
 st.title("📊 Dashboard de Contratos")
@@ -64,7 +70,6 @@ with st.expander("➕ Criar Novo Pacote de Obra"):
         novo_cliente = c1.text_input("Cliente")
         nova_obra = c2.text_input("Nome da Obra")
         
-        # As opções aqui salvam o nome "chave" no banco
         opcoes_disciplinas = [
             "Dutos", "Hidráulica", "Elétrica", "Automação", 
             "TAB", "Movimentações", "Linha de Cobre"
@@ -84,8 +89,7 @@ if not df.empty:
     lista_clientes = sorted(list(df['Cliente'].unique())) if 'Cliente' in df.columns else []
     filtro_cliente = c_filt1.selectbox("Filtrar Cliente:", ["Todos"] + lista_clientes)
     
-    if filtro_cliente != "Todos": 
-        df = df[df['Cliente'] == filtro_cliente]
+    if filtro_cliente != "Todos": df = df[df['Cliente'] == filtro_cliente]
 
     colunas_status = st.columns(3)
     grupos = {
