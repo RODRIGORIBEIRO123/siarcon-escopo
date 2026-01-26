@@ -1,180 +1,136 @@
 import streamlit as st
-import gspread
-from google.oauth2.service_account import Credentials
 import pandas as pd
-from datetime import datetime
+import utils_db
+import os
 
-# ==========================================
-# 1. CONEXÃO
-# ==========================================
-def conectar_google_sheets():
-    try:
-        scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-        creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
-        client = gspread.authorize(creds)
-        return client.open("DB_SIARCON")
-    except Exception as e:
-        st.error(f"Erro de conexão: {e}")
-        return None
+st.set_page_config(page_title="Painel de Projetos (Kanban)", page_icon="📊", layout="wide")
 
-# ==========================================
-# 2. CONFIGURAÇÕES & FORNECEDORES
-# ==========================================
-def carregar_opcoes():
-    try:
-        sh = conectar_google_sheets()
-        if not sh: return {}
-        ws = sh.worksheet("Config")
-        data = ws.get_all_records()
-        df = pd.DataFrame(data)
-        
-        def get_list(cat): return df[df["Categoria"] == cat]["Item"].tolist()
-        
-        return {
-            "tecnico": get_list("tecnico"),
-            "qualidade": get_list("qualidade"),
-            "tecnico_hidraulica": get_list("tecnico_hidraulica"),
-            "qualidade_hidraulica": get_list("qualidade_hidraulica"),
-            "tecnico_eletrica": get_list("tecnico_eletrica"),
-            "qualidade_eletrica": get_list("qualidade_eletrica"),
-            "tecnico_automacao": get_list("tecnico_automacao"),
-            "qualidade_automacao": get_list("qualidade_automacao"),
-            "tecnico_tab": get_list("tecnico_tab"),
-            "qualidade_tab": get_list("qualidade_tab"),
-            "tecnico_movimentacao": get_list("tecnico_movimentacao"),
-            "qualidade_movimentacao": get_list("qualidade_movimentacao"),
-            "tecnico_cobre": get_list("tecnico_cobre"),
-            "qualidade_cobre": get_list("qualidade_cobre"),
-            "sms": get_list("sms")
-        }
-    except: return {}
+# ==================================================
+# 🗺️ MAPA DE NAVEGAÇÃO (INFALÍVEL)
+# ==================================================
+# Conecta o nome do Banco (Esquerda) ao Arquivo Físico (Direita)
+# Baseado na sua imagem dos arquivos.
+MAPA_PAGINAS = {
+    # Dutos
+    "Dutos": "pages/1_Dutos.py",
+    "Geral": "pages/1_Dutos.py", # Legado
+    
+    # Hidráulica
+    "Hidráulica": "pages/2_Hidraulica.py",
+    "Hidraulica": "pages/2_Hidraulica.py",
+    
+    # Elétrica
+    "Elétrica": "pages/3_Eletrica.py",
+    "Eletrica": "pages/3_Eletrica.py",
+    
+    # Automação
+    "Automação": "pages/4_Automacao.py",
+    "Automacao": "pages/4_Automacao.py",
+    
+    # TAB
+    "TAB": "pages/5_TAB.py",
+    
+    # Movimentações
+    "Movimentações": "pages/6_Movimentacoes.py",
+    "Movimentacoes": "pages/6_Movimentacoes.py",
+    
+    # Cobre
+    "Linha de Cobre": "pages/7_Cobre.py",
+    "Cobre": "pages/7_Cobre.py"
+}
 
-def aprender_novo_item(categoria, novo_item):
-    try:
-        sh = conectar_google_sheets()
-        if not sh: return False
-        ws = sh.worksheet("Config")
-        ws.append_row([categoria, novo_item])
-        return True
-    except: return False
-
-# --- GESTÃO DE FORNECEDORES ---
-def listar_fornecedores():
-    try:
-        sh = conectar_google_sheets()
-        if not sh: return []
-        ws = sh.worksheet("Fornecedores")
-        # Retorna lista de dicionários [{'Fornecedor': 'Nome', 'CNPJ': '000...'}]
-        return ws.get_all_records()
-    except: return []
-
-def cadastrar_fornecedor_db(nome, cnpj):
-    try:
-        sh = conectar_google_sheets()
-        if not sh: return False
-        ws = sh.worksheet("Fornecedores")
-        # Verifica duplicidade simples pelo nome
-        cell = ws.find(nome)
-        if cell: return "Existe"
+# --- FUNÇÃO DE CLIQUE ---
+def ir_para_edicao(row):
+    disciplina = row['Disciplina']
+    
+    # Verifica se existe no mapa
+    if disciplina in MAPA_PAGINAS:
+        arquivo_destino = MAPA_PAGINAS[disciplina]
         
-        ws.append_row([nome, cnpj])
-        return True
-    except: return False
-
-# ==========================================
-# 3. GESTÃO DE PROJETOS
-# ==========================================
-def listar_todos_projetos():
-    try:
-        sh = conectar_google_sheets()
-        if not sh: return pd.DataFrame()
-        ws = sh.worksheet("Projetos")
-        rows = ws.get_all_values()
-        if len(rows) < 2: return pd.DataFrame()
-        
-        colunas_padrao = ["Data", "Cliente", "Obra", "Fornecedor", "Responsavel", "Valor", "Status", "Resp_Obras", "Disciplina", "CNPJ"]
-        
-        dados_tratados = []
-        for i, row in enumerate(rows[1:]):
-            if len(row) < 3: continue
-            if not str(row[1]).strip() and not str(row[2]).strip(): continue
-            
-            linha_normalizada = row + [""] * (len(colunas_padrao) - len(row))
-            linha_final = linha_normalizada[:len(colunas_padrao)]
-            dados_com_id = linha_final + [i + 2] 
-            dados_tratados.append(dados_com_id)
-            
-        cols_df = colunas_padrao + ["_id_linha"]
-        df = pd.DataFrame(dados_tratados, columns=cols_df)
-        return df
-    except Exception as e:
-        st.error(f"Erro ao ler lista: {e}")
-        return pd.DataFrame()
-
-# ==========================================
-# 4. CRIAR PACOTE
-# ==========================================
-def criar_pacote_obra(cliente, obra, lista_disciplinas):
-    try:
-        sh = conectar_google_sheets()
-        if not sh: return False
-        ws = sh.worksheet("Projetos")
-        col_a = ws.col_values(1); proxima_linha = len(col_a) + 1
-        
-        novas_linhas = []
-        data_hoje = datetime.now().strftime("%d/%m/%Y %H:%M")
-        
-        for disciplina in lista_disciplinas:
-            # Inclui coluna vazia pro CNPJ no final (índice 9)
-            linha = [str(data_hoje), str(cliente), str(obra), "", "", "", "Não Iniciado", "", str(disciplina), ""]
-            novas_linhas.append(linha)
-        
-        linha_final = proxima_linha + len(novas_linhas) - 1
-        range_name = f"A{proxima_linha}:J{linha_final}" # A até J agora
-        ws.update(range_name=range_name, values=novas_linhas)
-        return True
-    except Exception as e:
-        st.error(f"Erro ao criar obra: {e}")
-        return False
-
-# ==========================================
-# 5. SALVAR/REGISTRAR
-# ==========================================
-def registrar_projeto(dados, id_linha=None):
-    try:
-        sh = conectar_google_sheets()
-        if not sh: return
-        ws = sh.worksheet("Projetos")
-        
-        linha = [
-            datetime.now().strftime("%d/%m/%Y %H:%M"),
-            dados['cliente'], dados['obra'], dados['fornecedor'],
-            dados['responsavel'], dados['valor_total'],
-            dados.get('status', 'Em Elaboração (Engenharia)'),
-            dados.get('resp_obras', ''),
-            dados.get('disciplina', ''),
-            dados.get('cnpj_fornecedor', '') # Novo Campo
-        ]
-        
-        if id_linha:
-            range_celulas = f"A{id_linha}:J{id_linha}" # Até J
-            ws.update(range_name=range_celulas, values=[linha])
+        # Verifica se o arquivo existe fisicamente
+        if os.path.exists(arquivo_destino):
+            st.session_state['dados_projeto'] = row.to_dict()
+            st.session_state['modo_edicao'] = True
+            st.switch_page(arquivo_destino)
         else:
-            col_a = ws.col_values(1); proxima_linha = len(col_a) + 1
-            range_celulas = f"A{proxima_linha}:J{proxima_linha}"
-            ws.update(range_name=range_celulas, values=[linha])
-            
-    except Exception as e:
-        st.error(f"Erro ao salvar: {e}")
+            st.error(f"🚨 O código tentou abrir '{arquivo_destino}', mas ele não foi encontrado.")
+            st.info("Verifique se o arquivo foi renomeado ou movido.")
+    else:
+        st.error(f"❌ A disciplina '{disciplina}' não está mapeada no código.")
 
-# ==========================================
-# 6. EXCLUIR
-# ==========================================
-def excluir_projeto(id_linha):
-    try:
-        sh = conectar_google_sheets()
-        if not sh: return False
-        ws = sh.worksheet("Projetos")
-        ws.delete_rows(id_linha)
-        return True
-    except: return False
+# ==================================================
+# 🖥️ INTERFACE
+# ==================================================
+st.title("📊 Painel de Projetos (Kanban)")
+
+if st.button("🔄 Forçar Atualização"):
+    st.rerun()
+
+# Carregar Dados
+df = utils_db.listar_todos_projetos()
+
+# Criar Nova Obra
+with st.expander("➕ CADASTRO NOVA OBRA"):
+    with st.form("form_nova_obra"):
+        c1, c2 = st.columns(2)
+        novo_cliente = c1.text_input("Cliente")
+        nova_obra = c2.text_input("Nome da Obra")
+        
+        # Opções padronizadas para salvar no banco
+        opcoes_disciplinas = [
+            "Dutos", "Hidráulica", "Elétrica", "Automação", 
+            "TAB", "Movimentações", "Linha de Cobre"
+        ]
+        disciplinas_selecionadas = st.multiselect("Quais escopos farão parte?", options=opcoes_disciplinas)
+        
+        if st.form_submit_button("🚀 Criar Pacote"):
+            if utils_db.criar_pacote_obra(novo_cliente, nova_obra, disciplinas_selecionadas):
+                st.success("Criado! Atualize a página."); st.rerun()
+            else: st.error("Erro ao criar.")
+
+st.divider()
+
+# Kanban
+if not df.empty:
+    # Filtro Rápido
+    filtro_cliente = st.selectbox("Filtrar Cliente:", ["Todos"] + sorted(list(df['Cliente'].unique())))
+    if filtro_cliente != "Todos":
+        df = df[df['Cliente'] == filtro_cliente]
+
+    colunas_status = st.columns(4)
+    grupos = {
+        "⚪ Não Iniciado": ["Não Iniciado"],
+        "👷 Engenharia": ["Em Elaboração (Engenharia)", "Aguardando Obras"],
+        "🚧 Obras": ["Recebido (Suprimentos)", "Enviado para Cotação", "Em Negociação"],
+        "✅ Concluídos": ["Contratação Finalizada"]
+    }
+
+    col_index = 0
+    for grupo_nome, status_grupo in grupos.items():
+        with colunas_status[col_index]:
+            st.markdown(f"### {grupo_nome}")
+            df_grupo = df[df['Status'].isin(status_grupo)]
+            
+            for index, row in df_grupo.iterrows():
+                with st.container(border=True):
+                    st.caption(f"{row['Cliente']}")
+                    st.markdown(f"**📍 {row['Obra']}**")
+                    
+                    # Ícone
+                    icon_map = {"Dutos": "❄️", "Hidráulica": "💧", "Elétrica": "⚡", "Automação": "🤖", "TAB": "💨", "Movimentações": "🏗️", "Linha de Cobre": "🔥"}
+                    icone = icon_map.get(row['Disciplina'], "📁")
+                    
+                    st.markdown(f"### {icone} {row['Disciplina']}")
+                    st.caption(f"Status: {row['Status']}")
+
+                    c_btn1, c_btn2 = st.columns([2,1])
+                    
+                    if c_btn1.button("✏️ Editar", key=f"btn_{row['_id_linha']}", use_container_width=True):
+                        ir_para_edicao(row)
+                    
+                    if c_btn2.button("🗑️", key=f"del_{row['_id_linha']}"):
+                        if utils_db.excluir_projeto(row['_id_linha']):
+                            st.rerun()
+        col_index += 1
+else:
+    st.info("Nenhum projeto encontrado.")
