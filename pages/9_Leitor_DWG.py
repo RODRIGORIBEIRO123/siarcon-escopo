@@ -10,19 +10,17 @@ import io
 import re
 
 # Configuração da Página
-st.set_page_config(page_title="Siarcon - Leitor NBR 16401 (V11)", page_icon="🛡️", layout="wide")
+st.set_page_config(page_title="Siarcon - Leitor Pro (Sem Unidades)", page_icon="🏗️", layout="wide")
 
 # ==================================================
-# 🔧 FUNÇÕES DE SEGURANÇA (CORREÇÃO DE BUGS)
+# 🔧 FUNÇÕES DE SEGURANÇA
 # ==================================================
 def safe_float(valor):
-    """Converte qualquer coisa para float. Se falhar ou for None, retorna 0.0"""
+    """Converte texto para float, assumindo 0.0 se der erro."""
     try:
-        if valor is None:
-            return 0.0
-        # Remove caracteres não numéricos comuns (ex: 'm', 'kg') exceto ponto
-        limpo = str(valor).replace(',', '.').lower().strip()
-        # Extrai apenas números e ponto
+        if valor is None: return 0.0
+        # Troca vírgula por ponto e remove letras
+        limpo = str(valor).replace(',', '.').strip()
         nums = re.findall(r"[-+]?\d*\.\d+|\d+", limpo)
         if nums:
             return float(nums[0])
@@ -54,7 +52,7 @@ with st.sidebar:
         "Estratégia de Leitura:",
         ("Filtrar Cortes (Evitar Duplicatas)", "Ler Tudo (Planta Única)"),
         index=0,
-        help="Use 'Filtrar' para ignorar textos que parecem estar em cortes/detalhes."
+        help="Use 'Filtrar' para evitar que a IA some o mesmo duto mostrado em cortes."
     )
 
     classe_pressao = st.selectbox(
@@ -95,6 +93,7 @@ def definir_bitola_nbr(maior_lado_mm, classe_txt):
         return 18
 
 def calcular_peso_chapa(bitola):
+    # kg/m² aproximado para aço galvanizado Z275
     pesos = {26: 4.00, 24: 5.60, 22: 6.80, 20: 8.40, 18: 10.50, 16: 12.90}
     return pesos.get(int(safe_float(bitola)), 6.0)
 
@@ -143,11 +142,12 @@ def gerar_excel_completo(df_dutos, df_equip, resumo_meta):
     return output
 
 # ==================================================
-# 🔧 LIMPEZA DE TEXTO (FILTRO DE ALUCINAÇÃO)
+# 🔧 LIMPEZA (SEM FILTRAR NÚMEROS SOLTOS)
 # ==================================================
 def limpar_texto_cad(lista_textos, modo_filtrar):
     texto_limpo = []
     
+    # Lista de coisas que NÃO SÃO números de projeto (Lixo de CAD)
     proibidos = [
         "LAYER", "VIEWPORT", "STANDARD", "ISO", "BYLAYER", 
         "COTAS", "MODEL", "LAYOUT", "PRANCHA", "FOLHA", 
@@ -156,76 +156,76 @@ def limpar_texto_cad(lista_textos, modo_filtrar):
         "NOME DO ARQUIVO", "PATH", "USER", "PLOT"
     ]
     
-    padrao_numero_solto = re.compile(r'^\d+$') 
-
     for item in lista_textos:
         t = str(item).strip()
         t_upper = t.upper()
         
-        if len(t) < 2: continue
+        # Filtros Básicos
+        if len(t) < 1: continue
         if any(p in t_upper for p in proibidos): continue
         
-        # Filtro Rigoroso: Números Soltos
-        # Se for um número solto (ex: "300") SEM contexto de unidade ou dimensão, IGNORAR.
-        # Só aceita se tiver 'x', 'm', 'cm', 'L=', 'C=' ou for texto.
-        eh_numero = padrao_numero_solto.match(t)
-        tem_indicador = any(c in t_upper for c in ['X', 'M', 'L=', 'C=', 'DUTO', 'REDE', 'TR', 'CAP', 'BOLSA'])
+        # AQUI MUDOU: Não deletamos mais números soltos.
+        # Aceitamos tudo que não seja "proibido", a IA que se vire para interpretar.
         
-        if eh_numero and not tem_indicador:
-            continue 
-
         texto_limpo.append(t)
         
+    # Remove duplicatas se o modo de filtro estiver ativo
     if "Filtrar" in modo_filtrar:
         lista_final = list(dict.fromkeys(texto_limpo))
     else:
-        lista_final = texto_limpo[:5000]
+        lista_final = texto_limpo[:5000] # Limite de segurança
 
     return " | ".join(lista_final)
 
 # ==================================================
-# 🧠 CÉREBRO DA IA (PROMPT BLINDADO)
+# 🧠 CÉREBRO DA IA (INFERÊNCIA POR GRANDEZA)
 # ==================================================
 def processar_ia(texto, tipo_leitura):
     if not api_key: return None
 
     instrucao_cortes = ""
     if "Filtrar" in tipo_leitura:
-        instrucao_cortes = "ATENÇÃO: O desenho tem Cortes e Vistas. IGNORE medidas repetidas nestas áreas. Use apenas a Planta Baixa."
+        instrucao_cortes = "O desenho tem Cortes. IGNORE textos de medidas repetidos. Use apenas a Planta Baixa."
 
     prompt = f"""
-    Você é um Engenheiro de HVAC Sênior. Siga a NBR 16401.
+    Você é um Engenheiro de HVAC Sênior (NBR 16401).
     Analise o texto cru (separado por ' | ').
     {instrucao_cortes}
 
-    REGRAS CRÍTICAS DE LEITURA (ZERO ALUCINAÇÃO):
+    CONTEXTO: O PROJETO NÃO INDICA UNIDADES DE MEDIDA. VOCÊ DEVE INFERIR PELO VALOR.
+
+    REGRAS DE OURO (INFERÊNCIA POR GRANDEZA):
     
-    1. DIMENSÕES: Identifique "Largura x Altura" (ex: 300x200).
-    
-    2. COMPRIMENTO (O MAIS IMPORTANTE):
-       - Você SÓ PODE extrair o comprimento se encontrar um número com UNIDADE EXPLÍCITA ("m", "mts", "cm") ou prefixo ("L=", "C=").
-       - EXEMPLO CORRETO: "300x200 | L=3.5" -> Comprimento = 3.5m.
-       - EXEMPLO CORRETO: "Duto 30x20 | 5m" -> Comprimento = 5.0m.
-       - EXEMPLO ERRADO: "Duto 3 | 300x200". O "3" é TAG. Comprimento = 0 (Não invente!).
-       - Se houver números soltos (ex: "3000") sem "L=" ou "m", assuma que é cota de nível ou tag e IGNORE.
-    
-    3. EQUIPAMENTOS:
-       - Liste Fancoil, Split, Cassete, VRF, Exaustor, Caixas de Ventilação.
+    1. DIMENSÕES DE DUTO (Largura x Altura):
+       - Padrão: "300x200", "50x30".
+       - Assuma Milímetros (mm).
+
+    2. COMPRIMENTO DO TRECHO (O Número Solto):
+       - Você vai encontrar números soltos perto das dimensões (ex: "300x200 | 3000" ou "300x200 | 3").
+       - REGRA DO MILÍMETRO (Se valor > 50): Ex: "3000", "1500", "540". Assuma que é MM e CONVERTA PARA METROS (3000mm = 3m).
+       - REGRA DO METRO (Se valor <= 50 e > 0): Ex: "1.5", "3", "5". Assuma que é METROS.
+       - CUIDADO COM TAGS: Inteiros muito pequenos (1, 2, 3) podem ser "Número do Duto".
+         - Se ver "Duto 1 | 300x200", o comprimento é desconhecido (não use 1).
+         - Se ver "300x200 | 3.0", o comprimento é 3m.
+         - Na dúvida entre Tag e Comprimento, prefira números com casas decimais ou valores grandes (mm).
+
+    3. IGNORE COTAS DE NÍVEL:
+       - Valores como "2600", "2800" (Pé direito padrão) soltos, sem relação direta com o duto, devem ser ignorados.
 
     SAÍDA JSON:
     {{
         "dutos": [
             {{
+                "dimensao": "300x200", 
                 "largura_mm": 300, 
                 "altura_mm": 200, 
-                "comprimento_m": 3.5,
-                "nota": "L=3.5 identificado"
+                "comprimento_m": 3.0,
+                "nota": "Lido como 3000mm ou 3m"
             }}
         ],
         "equipamentos": [
-            {{ "item": "Split Cassete 36k", "quantidade": 2 }}
-        ],
-        "log_erro": "Liste aqui se ignorou números confusos."
+            {{ "item": "Fancoil", "quantidade": 2 }}
+        ]
     }}
     """
 
@@ -234,7 +234,7 @@ def processar_ia(texto, tipo_leitura):
             model="gpt-4o",
             messages=[
                 {"role": "system", "content": prompt},
-                {"role": "user", "content": f"Analise este texto cru:\n\n{texto[:50000]}"} 
+                {"role": "user", "content": f"Levantamento Bruto:\n\n{texto[:50000]}"} 
             ],
             temperature=0.0,
             response_format={"type": "json_object"}
@@ -246,8 +246,8 @@ def processar_ia(texto, tipo_leitura):
 # ==================================================
 # 🖥️ INTERFACE PRINCIPAL
 # ==================================================
-st.title("🛡️ Leitor Técnico NBR 16401 (V11)")
-st.markdown("Extração blindada contra erros de leitura de texto solto.")
+st.title("🏗️ Leitor Pro V12 (Sem Unidades)")
+st.markdown("Interpretação automática de **Metros vs Milímetros** baseada na grandeza do número.")
 
 arquivo = st.file_uploader("Upload DXF", type=["dxf"])
 
@@ -265,41 +265,41 @@ if arquivo:
             msp = doc.modelspace()
             
             raw_text = []
-            with st.spinner("Processando geometrias..."):
+            with st.spinner("Extraindo textos..."):
                 for entity in msp.query('TEXT MTEXT'):
                     if entity.dxf.text: raw_text.append(entity.dxf.text)
             
+            # Limpeza mais permissiva (deixa passar números soltos)
             texto_proc = limpar_texto_cad(raw_text, tipo_leitura)
             
-            st.info(f"Elementos de texto analisados: {len(raw_text)}")
+            st.info(f"Dados extraídos: {len(raw_text)} blocos.")
             
-            if st.button("🚀 Calcular (Modo Seguro)", type="primary"):
+            if st.button("🚀 Calcular (Inferência de Unidades)", type="primary"):
                 if not api_key:
                     st.error("Configure a API Key.")
                 else:
-                    with st.spinner("Analisando com filtro de coerência..."):
+                    with st.spinner("Analisando grandezas (mm vs m)..."):
                         dados = processar_ia(texto_proc, tipo_leitura)
                         
                         if "erro" in dados:
                             st.error(f"Erro IA: {dados['erro']}")
                         else:
-                            # 1. PROCESSAMENTO DUTOS
+                            # 1. PROCESSAMENTO
                             lista_dutos = dados.get("dutos", [])
                             tot_kg = 0
                             tot_m2 = 0
                             res_dutos = []
                             
                             for d in lista_dutos:
-                                # AQUI ESTAVA O ERRO DE COMPARACAO - AGORA USAMOS SAFE_FLOAT
                                 w = safe_float(d.get('largura_mm'))
                                 h = safe_float(d.get('altura_mm'))
                                 l = safe_float(d.get('comprimento_m'))
                                 
-                                # Correção automática: Se comprimento vier em mm (ex: 3000), vira 3m
-                                if l > 50: # Dificilmente um trecho único tem mais de 50m
-                                    l = l / 1000
-                                    d['nota'] += " (Conv. mm->m)"
-                                
+                                # Trava de Segurança Final
+                                if l > 150: # Se depois de tudo a IA achou que tem um duto de 200m, provavelmente leu cota de nível errado
+                                    l = 0
+                                    d['nota'] += " [IGNORADO: Valor Absurdo]"
+
                                 if w > 0 and h > 0 and l > 0:
                                     maior = max(w, h)
                                     gauge = definir_bitola_nbr(maior, classe_pressao)
@@ -319,43 +319,39 @@ if arquivo:
                                         "Obs": d.get("nota", "")
                                     })
 
-                            # 2. PROCESSAMENTO EQUIPAMENTOS
+                            # 2. EQUIPAMENTOS
                             lista_equip = dados.get("equipamentos", [])
                             res_equip = pd.DataFrame(lista_equip) if lista_equip else pd.DataFrame()
                             qtd_equip = sum([safe_float(e.get('quantidade')) for e in lista_equip])
 
-                            # --- LAYOUT CARDS (RESTAURADO) ---
+                            # --- RESULTADOS ---
                             st.divider()
                             c1, c2, c3 = st.columns(3)
                             c1.metric("📦 Peso Total (Aço)", f"{tot_kg:,.1f} kg")
                             c2.metric("🧣 Área Isolamento", f"{tot_m2:,.1f} m²")
                             c3.metric("⚙️ Equipamentos", f"{int(qtd_equip)} un")
                             
-                            if dados.get("log_erro"):
-                                st.warning(f"Log de Filtragem: {dados.get('log_erro')}")
-
-                            # --- VISUALIZAÇÃO ---
-                            tab_d, tab_e = st.tabs(["📝 Memorial de Cálculo", "🏗️ Equipamentos"])
+                            # Abas
+                            tab_d, tab_e = st.tabs(["📝 Memorial Dutos", "🏗️ Equipamentos"])
                             
                             with tab_d:
                                 if res_dutos:
                                     st.dataframe(pd.DataFrame(res_dutos), use_container_width=True)
                                 else:
-                                    st.warning("Nenhum duto com comprimento explícito ('L=' ou 'm') foi encontrado.")
+                                    st.warning("Nenhum duto identificado.")
                             
                             with tab_e:
                                 if not res_equip.empty:
                                     st.dataframe(res_equip, use_container_width=True)
 
-                            # --- DOWNLOAD ---
+                            # Download
                             meta = {
                                 "Norma": "NBR 16401",
                                 "Peso Total (kg)": tot_kg,
-                                "Área (m²)": tot_m2,
                                 "Perda": f"{int(perda_corte*100)}%"
                             }
                             xlsx = gerar_excel_completo(pd.DataFrame(res_dutos), res_equip, meta)
-                            st.download_button("📥 Baixar Excel", xlsx, "Levantamento_V11.xlsx")
+                            st.download_button("📥 Baixar Excel", xlsx, "Levantamento_V12.xlsx")
 
     except Exception as e:
         st.error(f"Erro Crítico: {e}")
