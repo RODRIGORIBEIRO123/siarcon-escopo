@@ -1,125 +1,151 @@
 import streamlit as st
 import ezdxf
 from ezdxf import recover
-from ezdxf.addons.drawing import RenderContext, Frontend
-from ezdxf.addons.drawing.matplotlib import MatplotlibBackend
-import matplotlib.pyplot as plt
 import pandas as pd
 import os
 import tempfile
+import openai
 
-st.set_page_config(page_title="Leitor de Projetos (DXF)", page_icon="📐", layout="wide")
+# Configuração da Página
+st.set_page_config(page_title="Leitor CAD com IA", page_icon="🧠", layout="wide")
 
-st.title("📐 Leitor de Projetos de Engenharia")
-st.markdown("Visualizador e extrator de dados para arquivos **.DXF**.")
+# ==================================================
+# 🔑 CONFIGURAÇÃO DA IA (BARRA LATERAL)
+# ==================================================
+with st.sidebar:
+    st.header("🧠 Inteligência Artificial")
+    api_key = st.text_input("Insira sua API Key (OpenAI):", type="password", help="Necessário para organizar a bagunça do CAD.")
+    
+    if api_key:
+        openai.api_key = api_key
+        st.success("IA Conectada!")
+    else:
+        st.warning("Sem a chave, faremos apenas a leitura básica (bagunçada).")
 
-# --- ÁREA DE UPLOAD ---
-# Aceita apenas DXF para evitar erros no servidor online
-arquivo_cad = st.file_uploader("Arraste seu arquivo .DXF aqui", type=["dxf"])
+# ==================================================
+# 🧠 CÉREBRO DA IA
+# ==================================================
+def processar_texto_com_ia(texto_sujo):
+    """Envia a 'sopa de letrinhas' do CAD para o GPT-4 organizar."""
+    if not api_key:
+        return "⚠️ Erro: API Key não configurada."
 
-# Função para salvar temp (o ezdxf precisa ler do disco)
+    prompt_sistema = """
+    Você é um Engenheiro Sênior Especialista em Orçamentos e Projetos (HVAC, Elétrica, Hidráulica).
+    Sua missão é analisar um texto desorganizado extraído de um arquivo CAD (DXF) e estruturá-lo.
+    
+    O texto contém muito 'lixo' (cotas, layers, números soltos). IGNORE o lixo.
+    Foque em encontrar:
+    1. ESCOPO: Do que se trata o projeto? (Dutos, Elétrica, etc).
+    2. CLIENTE/OBRA: Se houver menção em carimbos.
+    3. LISTA DE MATERIAIS: Extraia tudo que parece especificação técnica (Ex: 'Tubo Cobre 1/2"', 'Chapa #26', 'Disjuntor 50A').
+    4. NOTAS TÉCNICAS: Avisos importantes (Ex: 'Solda foscoper', 'Isolamento 25mm').
+
+    Saída OBRIGATÓRIA em Markdown limpo. Seja direto. Se não achar algo, diga 'Não detectado'.
+    """
+
+    try:
+        response = openai.chat.completions.create(
+            model="gpt-4o", # O modelo mais inteligente disponível
+            messages=[
+                {"role": "system", "content": prompt_sistema},
+                {"role": "user", "content": f"Analise este texto cru do CAD:\n\n{texto_sujo[:15000]}"} # Limite de caracteres para não estourar tokens
+            ],
+            temperature=0.2 # Baixa criatividade (queremos precisão)
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        return f"Erro na IA: {e}"
+
+# ==================================================
+# 🔧 FUNÇÕES DE CAD
+# ==================================================
 def salvar_temp(arquivo):
     sulfixo = ".dxf"
     with tempfile.NamedTemporaryFile(delete=False, suffix=sulfixo) as tmp:
         tmp.write(arquivo.getbuffer())
         return tmp.name
 
+def limpar_texto_cad(lista_textos):
+    """Remove lixo óbvio (números sozinhos, textos de 1 letra) antes de mandar pra IA"""
+    texto_limpo = []
+    for item in lista_textos:
+        t = str(item).strip()
+        # Remove números puros (cotas) ex: "300", "5.4"
+        if t.replace('.', '', 1).isdigit():
+            continue
+        # Remove textos muito curtos (nomes de eixos A, B, C)
+        if len(t) < 3:
+            continue
+        texto_limpo.append(t)
+    return "\n".join(set(texto_limpo)) # Remove duplicatas
+
+# ==================================================
+# 🖥️ INTERFACE PRINCIPAL
+# ==================================================
+st.title("🧠 Leitor de Projetos CAD (IA Powered)")
+st.markdown("Extração de dados de **.DXF** utilizando GPT-4 para estruturar as informações.")
+
+arquivo_cad = st.file_uploader("Arraste seu arquivo .DXF aqui", type=["dxf"])
+
 if arquivo_cad:
     st.divider()
     path_temp = salvar_temp(arquivo_cad)
 
     try:
-        doc = None
-        # Tenta ler com recuperação de erros (comum em arquivos CAD antigos)
+        # Tenta ler o DXF
         try:
             doc = ezdxf.readfile(path_temp)
-        except Exception:
-            try:
-                doc, auditor = recover.readfile(path_temp)
-                if auditor.has_errors:
-                    st.warning("O arquivo continha alguns erros, mas consegui recuperar.")
-            except Exception as e:
-                st.error(f"Erro fatal ao ler DXF: {e}")
-                st.stop()
+        except:
+            doc, auditor = recover.readfile(path_temp)
 
         if doc:
             msp = doc.modelspace()
             
-            # Abas para organizar a informação
-            tab_vis, tab_texto, tab_layers = st.tabs(["👁️ Planta Baixa (Visual)", "📝 Textos & Cotas", "📚 Camadas (Layers)"])
-
-            # 1. VISUALIZAÇÃO GRÁFICA
-            with tab_vis:
-                st.caption("Renderização da planta baixa (pode levar alguns segundos em projetos grandes)")
-                with st.spinner("Desenhando vetores..."):
-                    try:
-                        # Configuração do Matplotlib para desenhar o CAD
-                        fig = plt.figure(figsize=(10, 6), dpi=150)
-                        ax = fig.add_axes([0, 0, 1, 1])
-                        
-                        # Fundo escuro (estilo AutoCAD) ou claro? Vamos de claro para o relatório.
-                        ctx = RenderContext(doc)
-                        # Removemos o fundo preto padrão para facilitar leitura web
-                        out = MatplotlibBackend(ax)
-                        
-                        Frontend(ctx, out).draw_layout(msp, finalize=True)
-                        st.pyplot(fig)
-                    except Exception as e:
-                        st.error(f"Não consegui desenhar a planta: {e}")
-                        st.info("Dica: Isso acontece se o arquivo tiver blocos 3D muito complexos.")
-
-            # 2. EXTRAÇÃO DE TEXTO
-            with tab_texto:
-                st.subheader("Dados Extraídos (Notas, Legendas, Materiais)")
-                
-                textos_encontrados = []
-                # Procura por TEXT e MTEXT (Texto Múltiplo)
+            # 1. EXTRAÇÃO DO TEXTO BRUTO
+            textos_crus = []
+            with st.spinner("Extraindo texto bruto do desenho..."):
                 for entity in msp.query('TEXT MTEXT'):
-                    conteudo = entity.dxf.text
-                    layer = entity.dxf.layer
-                    if conteudo and str(conteudo).strip():
-                        textos_encontrados.append({"Texto": conteudo, "Layer": layer})
-                
-                if textos_encontrados:
-                    df_texto = pd.DataFrame(textos_encontrados)
-                    st.dataframe(df_texto, use_container_width=True)
-                    
-                    # Filtro de Busca Inteligente
-                    st.markdown("##### 🔎 Mineração de Dados")
-                    busca = st.text_input("Buscar palavra-chave (ex: 'Cobre', 'Aço', 'Especificação')")
-                    if busca:
-                        resultado = df_texto[df_texto['Texto'].str.contains(busca, case=False, na=False)]
-                        st.write(f"Encontrei {len(resultado)} ocorrências:")
-                        st.dataframe(resultado)
-                else:
-                    st.warning("Nenhum texto legível encontrado neste desenho.")
+                    if entity.dxf.text:
+                        textos_crus.append(entity.dxf.text)
+            
+            # 2. LIMPEZA INICIAL
+            texto_compilado = limpar_texto_cad(textos_crus)
+            
+            col_esq, col_dir = st.columns(2)
 
-            # 3. LEITURA DE LAYERS (DISCIPLINAS)
-            with tab_layers:
-                st.subheader("Estrutura do Arquivo")
-                layers = [layer.dxf.name for layer in doc.layers]
+            # LADO ESQUERDO: TEXTO EXTRAÍDO (DEBUG)
+            with col_esq:
+                st.subheader("📝 Texto Extraído (Bruto)")
+                st.caption(f"Encontrei {len(textos_crus)} objetos de texto. Após limpeza: {len(texto_compilado.splitlines())} linhas.")
+                st.text_area("Prévia do conteúdo:", texto_compilado, height=400)
+
+            # LADO DIREITO: ANÁLISE DA IA
+            with col_dir:
+                st.subheader("🤖 Análise da IA (Estruturada)")
                 
-                # Análise simples de disciplina
-                disciplinas_detectadas = []
-                if any("ELE" in l.upper() or "ELÉ" in l.upper() for l in layers): disciplinas_detectadas.append("⚡ Elétrica")
-                if any("HID" in l.upper() or "ÁGUA" in l.upper() for l in layers): disciplinas_detectadas.append("💧 Hidráulica")
-                if any("AR" in l.upper() or "MEC" in l.upper() or "DUTO" in l.upper() for l in layers): disciplinas_detectadas.append("❄️ Ar Condicionado/Mecânica")
-                
-                if disciplinas_detectadas:
-                    st.success(f"Parece ser um projeto de: {', '.join(disciplinas_detectadas)}")
-                
-                st.code(layers)
+                if api_key:
+                    if st.button("🚀 Processar com IA", type="primary"):
+                        if not texto_compilado:
+                            st.warning("O arquivo parece não ter textos legíveis (pode ser um bloco explodido ou imagem).")
+                        else:
+                            with st.spinner("A IA está lendo o projeto e organizando os dados..."):
+                                relatorio = processar_texto_com_ia(texto_compilado)
+                                st.markdown(relatorio)
+                                
+                                # Botão para baixar o relatório
+                                st.download_button("📥 Baixar Relatório", relatorio, "relatorio_cad.md")
+                else:
+                    st.info("👈 Insira sua API Key na barra lateral para ativar a Inteligência Artificial.")
+                    st.warning("Sem a IA, você só consegue ver o texto bruto ao lado.")
 
     except Exception as e:
-        st.error(f"Erro desconhecido: {e}")
+        st.error(f"Erro ao ler arquivo: {e}")
     
     finally:
-        if os.path.exists(path_temp):
-            os.remove(path_temp)
+        if os.path.exists(path_temp): os.remove(path_temp)
 
 else:
-    # Tela Inicial (Vazia)
-    c1, c2, c3 = st.columns(3)
-    with c1: st.info("💡 **Dica 1:**\nNo AutoCAD, use 'Salvar Como' > **DXF 2010**.")
-    with c2: st.info("💡 **Dica 2:**\nO DXF é lido nativamente pelo sistema, garantindo 100% de precisão nos textos.")
-    with c3: st.info("💡 **Dica 3:**\nSe o desenho não aparecer, verifique se está salvo na aba 'Model' e não no 'Layout'.")
+    c1, c2 = st.columns(2)
+    with c1: st.info("💡 **Como funciona:** O Python extrai todo texto solto do desenho.")
+    with c2: st.info("💡 **Onde a IA entra:** Ela pega esse texto solto e descobre o que é Material, o que é Cliente e o que é Lixo.")
