@@ -53,7 +53,6 @@ def gerar_docx(dados):
 
     document.add_paragraph("\n")
     document.add_heading('Escopo de fornecimento - Instalações Elétricas', 0).alignment = 1
-    
     revisao_txt = dados.get('revisao', 'R-00')
     document.add_paragraph(f"Data: {date.today().strftime('%d/%m/%Y')} | Rev: {revisao_txt}").alignment = 2
 
@@ -92,7 +91,8 @@ def gerar_docx(dados):
         else: row[2].text = "X"; row[2].paragraphs[0].alignment = 1
 
     document.add_heading('5. SMS', 1)
-    docs = ["Ficha de registro", "ASO", "NR-10 (Segurança Eletricidade)", "Ficha EPI", "Ordem de Serviço", "Certificados Treinamento", "NR-06"]
+    # Docs Fixos
+    docs = ["Ficha de registro", "ASO", "Ficha EPI", "Ordem de Serviço", "Certificados Treinamento"]
     for d in docs: document.add_paragraph(d, style='List Bullet')
     for d in dados.get('nrs_selecionadas', []): document.add_paragraph(d, style='List Bullet')
 
@@ -113,7 +113,6 @@ def gerar_docx(dados):
         p_val = document.add_paragraph(); p_val.add_run("Valor Global: ").bold = True
         val_fmt = formatar_moeda_brl(dados.get('valor_total', ''))
         p_val.add_run(f"{val_fmt} (Fixo e irreajustável)")
-        
         p_pgto = document.add_paragraph(); p_pgto.add_run("Condição de Pagamento: ").bold = True
         p_pgto.add_run(dados.get('condicao_pgto', ''))
         if dados.get('info_comercial'): document.add_paragraph(dados['info_comercial'])
@@ -147,7 +146,6 @@ with tab1:
         revisao = st.text_input("Revisão", "R-00")
         if "input_proj_ref" not in st.session_state: st.session_state["input_proj_ref"] = dados_edicao.get('projetos_ref', '')
         proj_ref = st.text_input("Projetos Ref.", key="input_proj_ref")
-    
     resumo = st.text_area("Resumo")
     anexos = st.file_uploader("Anexos", accept_multiple_files=True, key="uploader_anexos", on_change=atualizar_anexos)
 
@@ -155,19 +153,16 @@ with tab2:
     st.subheader("Técnico")
     key_tec = "multi_tec_eletrica"
     if key_tec not in st.session_state: st.session_state[key_tec] = dados_edicao.get('itens_tecnicos', [])
-    
     lista_tec = sorted(st.session_state['opcoes_db'].get('tecnico_eletrica', []))
     itens_tec = st.multiselect("Itens Técnicos:", options=lista_tec, key=key_tec)
     
     c_add, c_free = st.columns(2)
     c_add.text_input("Novo Item T.", key="n_tec"); c_add.button("Salvar T.", on_click=adicionar_item_callback, args=("tecnico_eletrica", "n_tec"))
     tec_livre = c_free.text_area("Livre T.")
-    
     st.divider()
     st.subheader("Qualidade")
     key_qual = "multi_qual_eletrica"
     if key_qual not in st.session_state: st.session_state[key_qual] = dados_edicao.get('itens_qualidade', [])
-    
     lista_qual = sorted(st.session_state['opcoes_db'].get('qualidade_eletrica', []))
     itens_qual = st.multiselect("Itens Qualidade:", options=lista_qual, key=key_qual)
     
@@ -177,11 +172,8 @@ with tab2:
 
 with tab3:
     escolhas = {}
-    itens_m = ["Materiais de infraestrutura (eletrocalhas, eletrodutos, etc)", "Cabeamento", 
-        "Consumíveis (Fita isolante, brocas, discos de corte)", "Plataformas elevatórias e/ou andaimes", 
-        "Escadas tipo \"A\"", "Alimentação, viagem, hospedagem", "Epis", "Uniformes"]
-    nome_m = forn.upper()
-    st.info(f"Matriz: {nome_m}")
+    itens_m = ["Materiais de infraestrutura (eletrocalhas, eletrodutos, etc)", "Cabeamento", "Consumíveis (Fita isolante, brocas, discos de corte)", "Plataformas elevatórias e/ou andaimes", "Escadas tipo \"A\"", "Alimentação, viagem, hospedagem", "Epis", "Uniformes"]
+    nome_m = forn.upper(); st.info(f"Matriz: {nome_m}")
     for i in itens_m:
         c1, c2 = st.columns([3,2])
         c1.write(f"**{i}**")
@@ -189,10 +181,20 @@ with tab3:
         st.divider()
 
 with tab4:
-    opcoes_nrs = sorted(st.session_state['opcoes_db'].get('sms', []))
-    nrs = st.multiselect("SMS Adicional:", opcoes_nrs)
+    lista_nrs_completa = [
+        "NR-06 (Equipamento de Proteção Individual - EPI)",
+        "NR-10 (Segurança em Instalações e Serviços em Eletricidade)",
+        "NR-11 (Transporte, Movimentação, Armazenagem e Manuseio de Materiais)",
+        "NR-12 (Segurança no Trabalho em Máquinas e Equipamentos)",
+        "NR-18 (Condições e Meio Ambiente de Trabalho na Indústria da Construção)",
+        "NR-33 (Segurança e Saúde nos Trabalhos em Espaços Confinados)",
+        "NR-35 (Trabalho em Altura)"
+    ]
+    opcoes_nrs = sorted(list(set(lista_nrs_completa + st.session_state['opcoes_db'].get('sms', []))))
+    nrs = st.multiselect("Selecione as NRs Aplicáveis (Opcional):", options=opcoes_nrs)
+    
     c_d1, c_d2 = st.columns(2)
-    d_ini = c_d1.date_input("Início"); d_int = c_d2.number_input("Dias Integração", 5)
+    d_ini = c_d1.date_input("Início"); d_int = c_d2.number_input("Dias Integração", min_value=1, value=5)
     usar_fim = st.checkbox("Data Fim?", True)
     d_fim = st.date_input("Fim", date.today()+timedelta(days=30)) if usar_fim else None
 
@@ -203,7 +205,6 @@ with tab5:
     status_selecionado = st.selectbox("Status", ["Em Elaboração (Engenharia)", "Aguardando Obras", "Recebido (Suprimentos)", "Enviado para Cotação", "Em Negociação", "Contratação Finalizada"], index=0)
 
 st.markdown("---")
-# LÓGICA CORRIGIDA:
 if status_atual_db == "Contratação Finalizada" and 'modo_edicao' in st.session_state:
     st.error("🔒 Finalizado no Banco de Dados.")
     st.download_button("📥 Baixar DOCX Final", gerar_docx(dados_edicao).getvalue(), f"Escopo_{forn}.docx")
