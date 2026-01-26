@@ -47,7 +47,6 @@ def gerar_docx(dados):
     try: style = document.styles['Normal']; font = style.font; font.name = 'Calibri'; font.size = Pt(11)
     except: pass
     
-    # Cabeçalho
     section = document.sections[0]; header = section.header
     for p in header.paragraphs: p._element.getparent().remove(p._element)
     p = header.add_paragraph(); p.text = "Departamento de Operações SIARCON"; p.alignment = 1; p.style.font.bold = True; p.style.font.size = Pt(14)
@@ -59,16 +58,14 @@ def gerar_docx(dados):
     document.add_paragraph(f"Data: {date.today().strftime('%d/%m/%Y')} | Rev: {revisao_txt}").alignment = 2
 
     document.add_heading('1. OBJETIVO', 1)
+    # Tabela forçada com 7 linhas
     table = document.add_table(rows=7, cols=2); 
     try: table.style = 'Table Grid'
     except: pass
     infos = [
-        ("Cliente:", dados.get('cliente', '')), 
-        ("Obra:", dados.get('obra', '')), 
-        ("Ref:", dados.get('projetos_ref', '')), 
-        ("Fornecedor:", dados.get('fornecedor', '')), 
-        ("Resp. Eng:", dados.get('responsavel', '')), 
-        ("Resp. Obras:", dados.get('resp_obras', '')),
+        ("Cliente:", dados.get('cliente', '')), ("Obra:", dados.get('obra', '')), 
+        ("Ref:", dados.get('projetos_ref', '')), ("Fornecedor:", dados.get('fornecedor', '')), 
+        ("Resp. Eng:", dados.get('responsavel', '')), ("Resp. Obras:", dados.get('resp_obras', '')),
         ("Resp. Suprimentos:", dados.get('resp_suprimentos', ''))
     ]
     for i, (k, v) in enumerate(infos): 
@@ -96,8 +93,10 @@ def gerar_docx(dados):
         else: row[2].text = "X"; row[2].paragraphs[0].alignment = 1
 
     document.add_heading('5. SMS', 1)
-    docs = ["Ficha de registro", "ASO", "Ficha EPI", "Ordem de Serviço", "Certificados Treinamento", "NR-06"]
+    # Docs Padrão de Dutos
+    docs = ["Ficha de registro", "ASO", "Ficha EPI", "Ordem de Serviço", "Certificados Treinamento", "NR-06 (Equipamento Proteção Individual)", "NR-35 (Trabalho em Altura)"]
     for d in docs: document.add_paragraph(d, style='List Bullet')
+    # Docs Extras Selecionados
     for d in dados.get('nrs_selecionadas', []): document.add_paragraph(d, style='List Bullet')
 
     document.add_heading('6. CRONOGRAMA', 1)
@@ -112,9 +111,9 @@ def gerar_docx(dados):
         document.add_paragraph(dados['obs_gerais'])
         num_secao += 1 
 
+    # Condição de Exibição do Valor
     if dados.get('status') == "Contratação Finalizada":
         document.add_heading(f'{num_secao}. COMERCIAL', 1)
-        
         p_val = document.add_paragraph(); p_val.add_run("Valor Global: ").bold = True
         val_fmt = formatar_moeda_brl(dados.get('valor_total', ''))
         p_val.add_run(f"{val_fmt} (Fixo e irreajustável)")
@@ -183,7 +182,6 @@ with tab2:
 
 with tab3:
     escolhas = {}
-    # MATRIZ ORIGINAL DE DUTOS
     itens_m = ["Materiais de dutos", "Materiais de difusão", "Consumíveis", "Plataformas/Andaimes", "Ferramentas manuais", "Escadas tipo A", "Alimentação/Viagem", "EPIs", "Uniformes"]
     nome_m = forn.upper()
     st.info(f"Matriz: {nome_m}")
@@ -194,20 +192,28 @@ with tab3:
         st.divider()
 
 with tab4:
-    nrs = st.multiselect("SMS Adicional:", sorted(st.session_state['opcoes_db'].get('sms', [])))
+    # Mostra TODAS as NRs para seleção extra
+    opcoes_nrs = sorted(st.session_state['opcoes_db'].get('sms', []))
+    nrs = st.multiselect("SMS Adicional:", opcoes_nrs)
     c_d1, c_d2 = st.columns(2)
     d_ini = c_d1.date_input("Início"); d_int = c_d2.number_input("Dias Integração", 5)
     usar_fim = st.checkbox("Data Fim?", True)
     d_fim = st.date_input("Fim", date.today()+timedelta(days=30)) if usar_fim else None
 
 with tab5:
-    val = st.text_input("Valor Total", dados_edicao.get('Valor', '')); pgto = st.text_area("Pagamento"); info = st.text_input("Info"); obs = st.text_area("Obs")
+    val = st.text_input("Valor Total (Ex: 25000.00)", dados_edicao.get('Valor', '')); pgto = st.text_area("Pagamento"); info = st.text_input("Info"); obs = st.text_area("Obs")
     st.divider()
-    status = st.selectbox("Status", ["Em Elaboração (Engenharia)", "Aguardando Obras", "Recebido (Suprimentos)", "Enviado para Cotação", "Em Negociação", "Contratação Finalizada"], index=0)
+    status_atual_db = dados_edicao.get('Status') # Status real no banco
+    status_selecionado = st.selectbox("Status", ["Em Elaboração (Engenharia)", "Aguardando Obras", "Recebido (Suprimentos)", "Enviado para Cotação", "Em Negociação", "Contratação Finalizada"], index=0)
 
 st.markdown("---")
-if status == "Contratação Finalizada" and 'modo_edicao' in st.session_state:
-    st.error("🔒 Finalizado."); st.download_button("📥 Baixar", gerar_docx(dados_edicao).getvalue(), f"Escopo_{forn}.docx")
+
+# LOGICA DE TRAVAMENTO CORRIGIDA
+# Só mostra travado se o status NO BANCO (db) for finalizado.
+# Se o usuário acabou de mudar no selectbox para finalizado, ainda permite salvar.
+if status_atual_db == "Contratação Finalizada" and 'modo_edicao' in st.session_state:
+    st.error("🔒 Finalizado no Banco de Dados.")
+    st.download_button("📥 Baixar DOCX Final", gerar_docx(dados_edicao).getvalue(), f"Escopo_{forn}.docx")
 else:
     if st.button("💾 SALVAR / ATUALIZAR", type="primary"):
         dados = {
@@ -218,9 +224,10 @@ else:
             'matriz': escolhas, 'nrs_selecionadas': nrs,
             'data_inicio': d_ini, 'dias_integracao': d_int, 'data_fim': d_fim,
             'obs_gerais': obs, 'valor_total': val, 'condicao_pgto': pgto, 'info_comercial': info,
-            'status': status, 'disciplina': 'Dutos',
+            'status': status_selecionado, 'disciplina': 'Dutos',
             'nomes_anexos': [f.name for f in anexos] if anexos else []
         }
         docx = gerar_docx(dados); nome_a = f"Escopo_{forn.replace(' ', '_')}.docx"
         utils_db.registrar_projeto(dados, id_linha_edicao)
-        st.success("✅ Salvo!"); st.download_button("📥 Baixar DOCX", docx.getvalue(), nome_a)
+        st.success("✅ Salvo! Agora você pode baixar.")
+        st.download_button("📥 Baixar DOCX", docx.getvalue(), nome_a)
