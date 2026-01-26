@@ -10,3 +10,4 @@ matplotlib
 openai
 openpyxl
 xlsxwriter
+networkx
