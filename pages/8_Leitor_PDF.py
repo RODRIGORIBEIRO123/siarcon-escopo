@@ -145,4 +145,7 @@ if arquivo:
                 st.text_area("Tudo que consegui ler:", texto_geral, height=400)
 
         except Exception as e:
-            st.error(f"Erro crítico
+            st.error(f"Erro crítico: {e}")
+
+else:
+    st.info("Aguarda upload...")
