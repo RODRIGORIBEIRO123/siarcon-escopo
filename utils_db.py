@@ -16,8 +16,8 @@ def _conectar_gsheets():
         # Carrega as credenciais como dicionário
         creds_dict = dict(st.secrets["gcp_service_account"])
 
-        # --- CORREÇÃO AUTOMÁTICA DA CHAVE (PULO DO GATO) ---
-        # Substitui os '\\n' literais (texto) por quebras de linha reais '\n'
+        # --- CORREÇÃO AUTOMÁTICA DA CHAVE ---
+        # Garante que as quebras de linha sejam reais
         if "private_key" in creds_dict:
             creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
 
@@ -31,9 +31,9 @@ def _conectar_gsheets():
     except Exception as e:
         err_msg = str(e)
         if "Invalid JWT" in err_msg:
-             st.error("🚨 Erro na Chave Privada (JWT). O código tentou corrigir, mas verifique se a 'private_key' nos Secrets está completa.")
+             st.error("🚨 Erro na Chave Privada (JWT). A chave nos Secrets está incompleta ou mal formatada. Verifique se ela começa com '-----BEGIN PRIVATE KEY-----'.")
         elif "SpreadsheetNotFound" in err_msg:
-             st.error("🚨 Planilha 'DB_SIARCON' não encontrada! Verifique se você compartilhou ela com o email da conta de serviço (client_email).")
+             st.error("🚨 Planilha 'DB_SIARCON' não encontrada! Verifique se você compartilhou ela com o email da conta de serviço.")
         else:
             st.error(f"Erro de Conexão: {e}")
         return None
@@ -51,7 +51,7 @@ def _ler_aba_como_df(nome_aba):
     except gspread.WorksheetNotFound:
         return pd.DataFrame()
     except Exception as e:
-        print(f"Erro ao ler aba {nome_aba}: {e}")
+        # print(f"Erro ao ler aba {nome_aba}: {e}") # Debug silencioso
         return pd.DataFrame()
 
 # ==================================================
@@ -180,7 +180,7 @@ def registrar_projeto(dados, id_linha=None):
             from datetime import datetime
             dados['_id'] = datetime.now().strftime("%Y%m%d%H%M%S")
 
-        # Prepara a linha na ordem das colunas
+        # Converte tudo para string para salvar no sheets
         row_data = []
         for h in headers:
             val = dados.get(h, "")
