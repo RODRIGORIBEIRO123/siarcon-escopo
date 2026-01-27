@@ -41,7 +41,7 @@ def _conectar_gsheets():
 
         creds_dict = dict(st.secrets["gcp_service_account"])
 
-        # Correção da chave privada (para evitar erro de quebra de linha)
+        # Correção da chave privada
         if "private_key" in creds_dict:
             chave = creds_dict["private_key"]
             if "\n" not in chave:
@@ -65,9 +65,9 @@ def _ler_aba_como_df(nome_aba):
     if not sh: return pd.DataFrame()
 
     try:
-        # Tenta achar a aba, com fallbacks caso o nome mude
         try: ws = sh.worksheet(nome_aba)
         except: 
+            # Fallback se a aba 'Dados' estiver com nome padrão
             if nome_aba == "Dados": 
                 try: ws = sh.worksheet("Página1")
                 except: return pd.DataFrame()
@@ -79,14 +79,13 @@ def _ler_aba_como_df(nome_aba):
         return pd.DataFrame()
 
 # ==================================================
-# 3. FUNÇÕES DE LEITURA (CARREGAMENTO)
+# 3. FUNÇÕES DE LEITURA
 # ==================================================
 def carregar_opcoes():
     """Carrega as listas para os Selectbox."""
     df = _ler_aba_como_df("Dados")
     opcoes = {'tecnico': [], 'qualidade': [], 'sms': []}
     
-    # Preenche SMS com padrão para nunca ficar vazio
     opcoes['sms'] = NRS_PADRAO.copy()
 
     if not df.empty and 'Categoria' in df.columns and 'Item' in df.columns:
@@ -98,7 +97,6 @@ def carregar_opcoes():
         
         opcoes['tecnico'] = tec_db
         opcoes['qualidade'] = qual_db
-        # Junta as NRs do banco com as padrão, sem duplicar
         opcoes['sms'] = sorted(list(set(opcoes['sms'] + sms_db)))
         
     return opcoes
@@ -109,13 +107,12 @@ def listar_fornecedores():
     return df[['Fornecedor', 'CNPJ']].dropna(subset=['Fornecedor']).drop_duplicates().to_dict('records')
 
 # ==================================================
-# 4. FUNÇÕES DE ESCRITA (SALVAR)
+# 4. FUNÇÕES DE ESCRITA
 # ==================================================
 def aprender_novo_item(categoria, novo_item):
     sh = _conectar_gsheets()
     if not sh: return False
     try:
-        # Garante que a aba existe
         try: ws = sh.worksheet("Dados")
         except: ws = sh.add_worksheet("Dados", 100, 10)
         
@@ -130,7 +127,6 @@ def cadastrar_fornecedor_db(nome, cnpj):
         try: ws = sh.worksheet("Dados")
         except: ws = sh.add_worksheet("Dados", 100, 10)
         
-        # Check duplicidade simples
         try:
             col_forn = ws.col_values(3) # Assume coluna C = Fornecedor
             if nome in col_forn: return "Existe"
@@ -167,11 +163,8 @@ def registrar_projeto(dados):
         return True
     except: return False
 
-# ==================================================
-# 5. FUNÇÕES DE DASHBOARD
-# ==================================================
 def listar_todos_projetos():
-    """Retorna DataFrame dos projetos (resolve erro do Dashboard)."""
+    """Retorna DataFrame dos projetos para o Dashboard."""
     df = _ler_aba_como_df("Projetos")
     if df.empty: return pd.DataFrame(columns=['_id', 'status', 'disciplina', 'cliente', 'obra', 'fornecedor', 'valor_total'])
 
@@ -181,18 +174,3 @@ def listar_todos_projetos():
             
     if '_id' in df.columns: df['_id'] = df['_id'].astype(str)
     return df
-
-def atualizar_status_projeto(id_projeto, novo_status):
-    sh = _conectar_gsheets()
-    if not sh: return False
-    try:
-        ws = sh.worksheet("Projetos")
-        cell = ws.find(str(id_projeto))
-        if cell:
-            headers = ws.row_values(1)
-            if 'status' in headers:
-                col_index = headers.index('status') + 1
-                ws.update_cell(cell.row, col_index, novo_status)
-                return True
-    except: pass
-    return False
