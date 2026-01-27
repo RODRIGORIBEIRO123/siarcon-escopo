@@ -3,34 +3,39 @@ import pandas as pd
 import gspread
 
 # ==================================================
-# 1. CONEXÃO COM GOOGLE SHEETS (NUVEM)
+# 1. CONEXÃO BLINDADA COM GOOGLE SHEETS
 # ==================================================
 def _conectar_gsheets():
-    """Conecta ao Google Sheets usando as credenciais do st.secrets."""
+    """Conecta ao Google Sheets com correção automática de chave."""
     try:
-        # Verifica se as credenciais existem
+        # Verifica se os secrets existem
         if "gcp_service_account" not in st.secrets:
-            # Tenta procurar apenas como "gcp" ou "google_sheets" caso o nome mude
-            st.error("🚨 Credenciais não encontradas! Verifique se 'gcp_service_account' está no st.secrets.")
+            st.error("🚨 Secrets 'gcp_service_account' não encontrados!")
             return None
 
-        # Converte o objeto secrets para dicionário Python padrão
-        # Isso é necessário porque o gspread espera um dict puro
+        # Carrega as credenciais como dicionário
         creds_dict = dict(st.secrets["gcp_service_account"])
-        
-        # Conecta usando a biblioteca gspread (usa google-auth internamente)
+
+        # --- CORREÇÃO AUTOMÁTICA DA CHAVE (PULO DO GATO) ---
+        # Substitui os '\\n' literais (texto) por quebras de linha reais '\n'
+        if "private_key" in creds_dict:
+            creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+
+        # Conecta usando gspread
         gc = gspread.service_account_from_dict(creds_dict)
         
         # Abre a planilha pelo nome exato
         sh = gc.open("DB_SIARCON") 
         return sh
+        
     except Exception as e:
-        # Se der erro de planilha não encontrada, tenta criar ou avisa
-        if "SpreadsheetNotFound" in str(e):
-             st.error("🚨 Planilha 'DB_SIARCON' não encontrada no Google Drive da conta de serviço!")
-             st.info("Dica: Compartilhe a planilha 'DB_SIARCON' com o email da conta de serviço (client_email nos secrets).")
+        err_msg = str(e)
+        if "Invalid JWT" in err_msg:
+             st.error("🚨 Erro na Chave Privada (JWT). O código tentou corrigir, mas verifique se a 'private_key' nos Secrets está completa.")
+        elif "SpreadsheetNotFound" in err_msg:
+             st.error("🚨 Planilha 'DB_SIARCON' não encontrada! Verifique se você compartilhou ela com o email da conta de serviço (client_email).")
         else:
-            st.error(f"Erro de Conexão com Google Sheets: {e}")
+            st.error(f"Erro de Conexão: {e}")
         return None
 
 def _ler_aba_como_df(nome_aba):
@@ -44,49 +49,46 @@ def _ler_aba_como_df(nome_aba):
         df = pd.DataFrame(dados)
         return df
     except gspread.WorksheetNotFound:
-        # Se a aba não existir, retorna vazio
         return pd.DataFrame()
     except Exception as e:
         print(f"Erro ao ler aba {nome_aba}: {e}")
         return pd.DataFrame()
 
 # ==================================================
-# 2. FUNÇÕES DO DASHBOARD (PAINEL DE PROJETOS)
+# 2. FUNÇÕES DO DASHBOARD (KANBAN)
 # ==================================================
 def listar_todos_projetos():
-    """Retorna todos os projetos para o Dashboard (Kanban)."""
+    """Retorna todos os projetos para o Dashboard."""
     df = _ler_aba_como_df("Projetos")
     
     if df.empty:
         return pd.DataFrame()
 
-    # Garante que as colunas essenciais existem
+    # Garante colunas essenciais
     cols_obrigatorias = ['_id', 'status', 'disciplina', 'cliente', 'obra', 'fornecedor', 'valor_total']
     for col in cols_obrigatorias:
         if col not in df.columns:
             df[col] = ""
             
-    # Converte _id para string para evitar erros de comparação
+    # Converte ID para string
     if '_id' in df.columns:
         df['_id'] = df['_id'].astype(str)
         
     return df
 
 def atualizar_status_projeto(id_projeto, novo_status):
-    """Atualiza o status de um projeto na nuvem."""
+    """Atualiza o status na nuvem."""
     sh = _conectar_gsheets()
     if not sh: return False
 
     try:
         ws = sh.worksheet("Projetos")
-        # Busca a célula que contém o ID
         cell = ws.find(str(id_projeto))
         if cell:
-            # Acha a coluna 'status' (assume que está na linha 1)
+            # Procura a coluna 'status' no cabeçalho (linha 1)
             headers = ws.row_values(1)
             if 'status' in headers:
                 col_index = headers.index('status') + 1
-                # Atualiza
                 ws.update_cell(cell.row, col_index, novo_status)
                 return True
     except Exception as e:
@@ -94,7 +96,7 @@ def atualizar_status_projeto(id_projeto, novo_status):
     return False
 
 # ==================================================
-# 3. FUNÇÕES DOS GERADORES (DUTOS, HIDRÁULICA...)
+# 3. FUNÇÕES DOS GERADORES (DUTOS, ETC.)
 # ==================================================
 def carregar_opcoes():
     """Carrega Técnico, Qualidade e SMS da aba 'Dados'."""
@@ -104,32 +106,30 @@ def carregar_opcoes():
     if df.empty: return opcoes
 
     if 'Categoria' in df.columns and 'Item' in df.columns:
-        # Normaliza para minúsculo para bater com sua planilha ('tecnico', 'sms')
+        # Normaliza categoria para minúsculo (para bater com sua planilha 'tecnico', 'sms')
         df['Categoria'] = df['Categoria'].astype(str).str.lower().str.strip()
         
         opcoes['tecnico'] = sorted(df[df['Categoria'] == 'tecnico']['Item'].unique().tolist())
-        # 'qualidade' ou 'qualidade_hidraulica', pega tudo que contém 'qualidade'
         opcoes['qualidade'] = sorted(df[df['Categoria'].str.contains('qualidade')]['Item'].unique().tolist())
         opcoes['sms'] = sorted(df[df['Categoria'] == 'sms']['Item'].unique().tolist())
         
     return opcoes
 
 def listar_fornecedores():
-    """Lista fornecedores da aba 'Dados'."""
+    """Lista fornecedores únicos."""
     df = _ler_aba_como_df("Dados")
     if df.empty or 'Fornecedor' not in df.columns: return []
 
-    # Retorna lista de dicionários únicos
     return df[['Fornecedor', 'CNPJ']].dropna(subset=['Fornecedor']).drop_duplicates().to_dict('records')
 
 def aprender_novo_item(categoria, novo_item):
-    """Salva novo item na aba 'Dados'."""
+    """Adiciona novo item na aba 'Dados'."""
     sh = _conectar_gsheets()
     if not sh: return False
     
     try:
         ws = sh.worksheet("Dados")
-        # Adiciona linha no final: [Categoria, Item, Fornecedor, CNPJ]
+        # [Categoria, Item, Fornecedor, CNPJ]
         ws.append_row([categoria.lower(), novo_item, "", ""])
         return True
     except Exception as e:
@@ -137,20 +137,21 @@ def aprender_novo_item(categoria, novo_item):
         return False
 
 def cadastrar_fornecedor_db(nome, cnpj):
-    """Salva novo fornecedor na aba 'Dados'."""
+    """Adiciona novo fornecedor na aba 'Dados'."""
     sh = _conectar_gsheets()
     if not sh: return False
     
     try:
         ws = sh.worksheet("Dados")
-        # Verifica se já existe (leitura rápida)
+        # Verifica duplicidade rápida via pandas
         records = ws.get_all_records()
         df = pd.DataFrame(records)
+        
         if not df.empty and 'Fornecedor' in df.columns:
             if nome in df['Fornecedor'].values:
                 return "Existe"
         
-        # Adiciona linha: [Categoria, Item, Fornecedor, CNPJ]
+        # [Categoria, Item, Fornecedor, CNPJ] -> Fornecedor nas colunas C e D
         ws.append_row(["", "", nome, cnpj])
         return True
     except Exception as e:
@@ -158,12 +159,11 @@ def cadastrar_fornecedor_db(nome, cnpj):
         return False
 
 def registrar_projeto(dados, id_linha=None):
-    """Salva o escopo na aba 'Projetos'."""
+    """Salva o projeto na aba 'Projetos'."""
     sh = _conectar_gsheets()
     if not sh: return False
 
     try:
-        # Tenta pegar a aba Projetos, se não existir, cria
         try:
             ws = sh.worksheet("Projetos")
         except:
@@ -180,7 +180,7 @@ def registrar_projeto(dados, id_linha=None):
             from datetime import datetime
             dados['_id'] = datetime.now().strftime("%Y%m%d%H%M%S")
 
-        # Converte tudo para string para salvar no sheets
+        # Prepara a linha na ordem das colunas
         row_data = []
         for h in headers:
             val = dados.get(h, "")
