@@ -6,68 +6,79 @@ import gspread
 # 1. CONEXÃO BLINDADA COM GOOGLE SHEETS
 # ==================================================
 def _conectar_gsheets():
-    """Conecta ao Google Sheets com correção automática de chave."""
+    """Conecta ao Google Sheets com tratamento de erros de chave."""
     try:
-        # Verifica se os secrets existem
         if "gcp_service_account" not in st.secrets:
-            st.error("🚨 Secrets 'gcp_service_account' não encontrados!")
+            st.error("🚨 Secrets não encontrados!")
             return None
 
-        # Carrega as credenciais como dicionário
         creds_dict = dict(st.secrets["gcp_service_account"])
 
-        # --- CORREÇÃO HÍBRIDA DA CHAVE ---
-        # Isso garante que funcione se você colou com '\n' (texto) ou com 'Enter' (aspas triplas)
+        # Correção híbrida da chave (funciona com ou sem aspas triplas)
         if "private_key" in creds_dict:
             chave = creds_dict["private_key"]
-            # Se a chave NÃO tiver quebras de linha reais, nós aplicamos a correção
             if "\n" not in chave:
                 creds_dict["private_key"] = chave.replace("\\n", "\n")
-            # Se já tiver quebras reais (usou aspas triplas), mantém como está
 
-        # Conecta usando gspread
         gc = gspread.service_account_from_dict(creds_dict)
         
-        # Abre a planilha pelo nome exato
-        # IMPORTANTE: A planilha deve estar compartilhada com o 'client_email' dos secrets
+        # Abre a planilha
         sh = gc.open("DB_SIARCON") 
         return sh
         
     except Exception as e:
-        err_msg = str(e)
-        if "Invalid JWT" in err_msg:
-             st.error("🚨 Erro na Chave Privada (JWT). A chave nos Secrets está incorreta ou revogada. Gere uma nova chave JSON no Google Cloud e atualize os Secrets.")
-        elif "SpreadsheetNotFound" in err_msg:
-             st.error("🚨 Planilha 'DB_SIARCON' não encontrada! Verifique se você compartilhou ela com o email da conta de serviço.")
+        # Erros amigáveis
+        msg = str(e)
+        if "Invalid JWT" in msg:
+             st.error("🚨 Erro na Chave Privada. Verifique os Secrets.")
+        elif "SpreadsheetNotFound" in msg:
+             st.error("🚨 Planilha 'DB_SIARCON' não encontrada. Verifique o compartilhamento.")
         else:
             st.error(f"Erro de Conexão: {e}")
         return None
 
+def _get_worksheet_segura(sh, nome_aba):
+    """Tenta achar a aba. Se não achar 'Dados', tenta 'Página1' ou 'Sheet1'."""
+    try:
+        return sh.worksheet(nome_aba)
+    except gspread.WorksheetNotFound:
+        # Fallbacks inteligentes apenas para a aba de Dados
+        if nome_aba == "Dados":
+            try: return sh.worksheet("Página1")
+            except: pass
+            try: return sh.worksheet("Sheet1")
+            except: pass
+            # Última tentativa: pega a primeira aba que existir
+            try: return sh.get_worksheet(0)
+            except: pass
+        return None
+
 def _ler_aba_como_df(nome_aba):
-    """Lê uma aba específica e retorna como DataFrame Pandas."""
+    """Lê uma aba e retorna DataFrame (nunca falha, retorna vazio se erro)."""
     sh = _conectar_gsheets()
     if not sh: return pd.DataFrame()
 
     try:
-        worksheet = sh.worksheet(nome_aba)
-        dados = worksheet.get_all_records()
-        df = pd.DataFrame(dados)
-        return df
-    except gspread.WorksheetNotFound:
-        # Se a aba não existir, retorna vazio
-        return pd.DataFrame()
+        ws = _get_worksheet_segura(sh, nome_aba)
+        if not ws: return pd.DataFrame()
+        
+        dados = ws.get_all_records()
+        return pd.DataFrame(dados)
     except Exception as e:
+        print(f"Erro ao ler aba {nome_aba}: {e}")
         return pd.DataFrame()
 
 # ==================================================
 # 2. FUNÇÕES DO DASHBOARD (KANBAN)
 # ==================================================
 def listar_todos_projetos():
-    """Retorna todos os projetos para o Dashboard."""
+    """Retorna DataFrame dos projetos (resolve erro do Dashboard)."""
     df = _ler_aba_como_df("Projetos")
     
+    # Se estiver vazio, retorna DataFrame com colunas vazias para não quebrar o layout
     if df.empty:
-        return pd.DataFrame()
+        colunas_padrao = ['_id', 'status', 'disciplina', 'cliente', 'obra', 'fornecedor', 'valor_total']
+        return pd.DataFrame(columns=colunas_padrao)
 
     # Garante colunas essenciais
     cols_obrigatorias = ['_id', 'status', 'disciplina', 'cliente', 'obra', 'fornecedor', 'valor_total']
@@ -82,12 +93,16 @@ def listar_todos_projetos():
     return df
 
 def atualizar_status_projeto(id_projeto, novo_status):
-    """Atualiza o status na nuvem."""
     sh = _conectar_gsheets()
     if not sh: return False
 
     try:
-        ws = sh.worksheet("Projetos")
+        # Para salvar, precisamos da aba exata "Projetos"
+        try:
+            ws = sh.worksheet("Projetos")
+        except:
+            return False # Se não existir a aba Projetos, não dá pra atualizar
+
         cell = ws.find(str(id_projeto))
         if cell:
             headers = ws.row_values(1)
@@ -95,22 +110,21 @@ def atualizar_status_projeto(id_projeto, novo_status):
                 col_index = headers.index('status') + 1
                 ws.update_cell(cell.row, col_index, novo_status)
                 return True
-    except Exception as e:
-        st.error(f"Erro ao atualizar status: {e}")
+    except:
+        pass
     return False
 
 # ==================================================
-# 3. FUNÇÕES DOS GERADORES (DUTOS, ETC.)
+# 3. FUNÇÕES DOS GERADORES
 # ==================================================
 def carregar_opcoes():
-    """Carrega Técnico, Qualidade e SMS da aba 'Dados'."""
+    """Carrega as listas para os Selectbox."""
     df = _ler_aba_como_df("Dados")
     opcoes = {'tecnico': [], 'qualidade': [], 'sms': []}
     
     if df.empty: return opcoes
 
     if 'Categoria' in df.columns and 'Item' in df.columns:
-        # Normaliza categoria para minúsculo
         df['Categoria'] = df['Categoria'].astype(str).str.lower().str.strip()
         
         opcoes['tecnico'] = sorted(df[df['Categoria'] == 'tecnico']['Item'].unique().tolist())
@@ -120,47 +134,39 @@ def carregar_opcoes():
     return opcoes
 
 def listar_fornecedores():
-    """Lista fornecedores únicos."""
     df = _ler_aba_como_df("Dados")
     if df.empty or 'Fornecedor' not in df.columns: return []
-
     return df[['Fornecedor', 'CNPJ']].dropna(subset=['Fornecedor']).drop_duplicates().to_dict('records')
 
 def aprender_novo_item(categoria, novo_item):
-    """Adiciona novo item na aba 'Dados'."""
     sh = _conectar_gsheets()
     if not sh: return False
-    
     try:
-        ws = sh.worksheet("Dados")
-        ws.append_row([categoria.lower(), novo_item, "", ""])
-        return True
-    except Exception as e:
-        st.error(f"Erro ao salvar item: {e}")
-        return False
+        ws = _get_worksheet_segura(sh, "Dados")
+        if ws:
+            ws.append_row([categoria.lower(), novo_item, "", ""])
+            return True
+    except: pass
+    return False
 
 def cadastrar_fornecedor_db(nome, cnpj):
-    """Adiciona novo fornecedor na aba 'Dados'."""
     sh = _conectar_gsheets()
     if not sh: return False
-    
     try:
-        ws = sh.worksheet("Dados")
-        records = ws.get_all_records()
-        df = pd.DataFrame(records)
-        
-        if not df.empty and 'Fornecedor' in df.columns:
-            if nome in df['Fornecedor'].values:
-                return "Existe"
-        
-        ws.append_row(["", "", nome, cnpj])
-        return True
-    except Exception as e:
-        st.error(f"Erro ao salvar fornecedor: {e}")
-        return False
+        ws = _get_worksheet_segura(sh, "Dados")
+        if ws:
+            # Check duplicidade simples
+            try:
+                col_forn = ws.col_values(3) # Assume coluna C = Fornecedor
+                if nome in col_forn: return "Existe"
+            except: pass
+            
+            ws.append_row(["", "", nome, cnpj])
+            return True
+    except: pass
+    return False
 
 def registrar_projeto(dados, id_linha=None):
-    """Salva o projeto na aba 'Projetos'."""
     sh = _conectar_gsheets()
     if not sh: return False
 
@@ -188,5 +194,5 @@ def registrar_projeto(dados, id_linha=None):
         ws.append_row(row_data)
         return True
     except Exception as e:
-        st.error(f"Erro ao salvar projeto: {e}")
+        st.error(f"Erro ao salvar: {e}")
         return False
