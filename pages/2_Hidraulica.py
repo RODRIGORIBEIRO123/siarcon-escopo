@@ -6,15 +6,21 @@ from datetime import date
 import utils_db
 
 # ============================================================================
-# 🚨 ATENÇÃO: MUDE ESTAS DUAS VARIÁVEIS PARA CADA ARQUIVO!
+# 🚨 CONFIGURAÇÃO ESPECÍFICA DESTA DISCIPLINA
+# (Nos outros arquivos, você só vai mudar este bloco aqui!)
 # ============================================================================
 DISCIPLINA_ATUAL = "Hidraulica"
-ITENS_MATRIZ = ["Tubulações", "Válvulas", "Bombas", "Suportes", "Isolamento", "Pintura", "Comissionamento"]
+
+ITENS_MATRIZ = [
+    "Tubulações e Conexões", "Válvulas e Registros", "Bombas e Equipamentos",
+    "Suportes e Fixações", "Isolamento Térmico", "Pintura e Identificação",
+    "Andaimes/Plataformas", "Comissionamento", "ART/RRT"
+]
 # ============================================================================
 
 st.set_page_config(page_title=f"Escopo {DISCIPLINA_ATUAL}", page_icon="📝", layout="wide")
 
-# --- CARGA DE DADOS ---
+# --- CARGA DE DADOS (CACHE) ---
 if 'opcoes_db' not in st.session_state or st.sidebar.button("🔄 Recarregar Dados"):
     with st.spinner("Sincronizando com Banco de Dados..."):
         st.session_state['opcoes_db'] = utils_db.carregar_opcoes()
@@ -165,7 +171,7 @@ if col_b1.button("☁️ APENAS SALVAR (Banco de Dados)"):
     if not cliente or not obra: st.error("Preencha Cliente e Obra.")
     else:
         if utils_db.registrar_projeto(dados_projeto):
-            st.success("✅ Salvo na nuvem!"); st.toast("Salvo!")
+            st.success("✅ Salvo no banco!"); st.toast("Salvo!")
         else: st.error("Erro ao salvar.")
 
 if col_b2.button("💾 SALVAR E GERAR ARQUIVO (Download)", type="primary"):
