@@ -4,94 +4,107 @@ import os
 from datetime import datetime
 
 # ==================================================
-# 1. NÚCLEO DO BANCO DE DADOS (CRIA SE NÃO EXISTIR)
+# 1. NÚCLEO: ENCONTRAR OU CRIAR O ARQUIVO
 # ==================================================
 def _get_caminho_banco():
-    """Retorna o caminho do arquivo. Se não existir, define onde criar."""
+    """Retorna o caminho absoluto do DB_SIARCON.xlsx."""
     nome_arquivo = "DB_SIARCON.xlsx"
-    # Tenta achar na raiz ou em pastas comuns
-    pastas_busca = [".", "dados", "..", "../dados"]
-    
     diretorio_base = os.path.dirname(os.path.abspath(__file__))
+    
+    # Lista de locais para procurar
+    locais = [
+        os.path.join(diretorio_base, nome_arquivo),           # Raiz do app
+        os.path.join(diretorio_base, "dados", nome_arquivo),  # Pasta dados
+        os.path.join(diretorio_base, "..", nome_arquivo)      # Pasta pai
+    ]
 
-    # 1. Tenta encontrar arquivo existente
-    for pasta in pastas_busca:
-        caminho_teste = os.path.join(diretorio_base, pasta, nome_arquivo)
-        if os.path.exists(caminho_teste):
-            return caminho_teste
+    # 1. Tenta achar arquivo existente
+    for caminho in locais:
+        if os.path.exists(caminho):
+            return caminho
             
-    # 2. Se não achou, define o caminho padrão para criar (na raiz do app)
-    # Tenta salvar na raiz onde está o utils_db.py
+    # 2. Se não achar, define o caminho padrão na Raiz para criar
     return os.path.join(diretorio_base, nome_arquivo)
 
-def _inicializar_banco_se_necessario():
-    """Cria o Excel com as abas certas se ele não existir."""
+def _garantir_banco_existe():
+    """Se o arquivo não existir, CRIA ele com as abas certas."""
     caminho = _get_caminho_banco()
     
     if not os.path.exists(caminho):
-        # Cria DataFrames vazios com as colunas necessárias
-        df_dados = pd.DataFrame(columns=['Categoria', 'Item', 'Fornecedor', 'CNPJ'])
-        df_projetos = pd.DataFrame(columns=[
-            '_id', 'status', 'disciplina', 'cliente', 'obra', 'fornecedor', 
-            'valor_total', 'data_inicio', 'revisao'
-        ])
-        
-        # Salva o arquivo novo
+        print(f"⚠️ Banco de dados não encontrado. Criando novo em: {caminho}")
         try:
+            # Cria DataFrames vazios com as colunas obrigatórias
+            df_dados = pd.DataFrame(columns=['Categoria', 'Item', 'Fornecedor', 'CNPJ'])
+            df_projetos = pd.DataFrame(columns=[
+                '_id', 'status', 'disciplina', 'cliente', 'obra', 
+                'fornecedor', 'valor_total', 'revisao', 'data_inicio'
+            ])
+            
+            # Salva o arquivo físico usando xlsxwriter (mais estável para criar)
             with pd.ExcelWriter(caminho, engine='xlsxwriter') as writer:
                 df_dados.to_excel(writer, sheet_name='Dados', index=False)
                 df_projetos.to_excel(writer, sheet_name='Projetos', index=False)
-            print(f"✅ Banco de dados criado em: {caminho}")
+                
         except Exception as e:
-            st.error(f"Erro ao criar banco de dados: {e}")
+            st.error(f"Erro fatal ao criar banco de dados: {e}")
             return None
             
     return caminho
 
 # ==================================================
-# 2. FUNÇÕES PARA O DASHBOARD (KANBAN)
+# 2. FUNÇÕES DO DASHBOARD (CORRIGIDAS)
 # ==================================================
 def listar_todos_projetos():
-    """Lê a aba 'Projetos' e retorna lista de dicionários."""
-    caminho = _inicializar_banco_se_necessario()
-    if not caminho: return []
+    """
+    Retorna um DataFrame com todos os projetos.
+    CORREÇÃO: Retorna DataFrame, não lista (para funcionar com df.empty).
+    """
+    caminho = _garantir_banco_existe()
+    if not caminho: 
+        return pd.DataFrame() # Retorna DF vazio para não quebrar o dashboard
 
     try:
+        # Lê a aba Projetos
         df = pd.read_excel(caminho, sheet_name="Projetos")
-        # Garante que colunas essenciais existem
-        cols_check = ['_id', 'status', 'disciplina', 'cliente', 'obra', 'fornecedor']
-        for col in cols_check:
-            if col not in df.columns: df[col] = ""
-            
-        return df.to_dict('records')
+        
+        # Garante que as colunas existem (evita KeyError)
+        colunas_obrigatorias = ['_id', 'status', 'disciplina', 'cliente', 'obra', 'fornecedor', 'valor_total']
+        for col in colunas_obrigatorias:
+            if col not in df.columns:
+                df[col] = "" # Cria coluna vazia se faltar
+                
+        return df # <--- AGORA RETORNA DATAFRAME
+        
     except Exception as e:
-        st.error(f"Erro ao ler Projetos: {e}")
-        return []
+        print(f"Erro ao ler Projetos: {e}")
+        return pd.DataFrame()
 
 def atualizar_status_projeto(id_projeto, novo_status):
-    """Atualiza o status no Kanban."""
-    caminho = _inicializar_banco_se_necessario()
+    """Atualiza o status de um projeto no Excel."""
+    caminho = _garantir_banco_existe()
     if not caminho: return False
 
     try:
         df = pd.read_excel(caminho, sheet_name="Projetos")
+        # Localiza e atualiza
         mask = df['_id'].astype(str) == str(id_projeto)
-        
         if mask.any():
             df.loc[mask, 'status'] = novo_status
+            
+            # Salva preservando a aba Dados
             with pd.ExcelWriter(caminho, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
                 df.to_excel(writer, sheet_name="Projetos", index=False)
             return True
-    except:
-        pass
+    except Exception as e:
+        st.error(f"Erro ao atualizar status: {e}")
     return False
 
 # ==================================================
-# 3. FUNÇÕES PARA OS FORMULÁRIOS (ESC. DUTOS, HIDRÁULICA...)
+# 3. FUNÇÕES DOS GERADORES (ESC. DUTOS, ETC)
 # ==================================================
 def carregar_opcoes():
-    """Carrega itens técnicos/qualidade/SMS."""
-    caminho = _inicializar_banco_se_necessario()
+    """Carrega listas de opções (Técnico, SMS) para os selectbox."""
+    caminho = _garantir_banco_existe()
     opcoes = {'tecnico': [], 'qualidade': [], 'sms': []}
     
     if not caminho: return opcoes
@@ -103,13 +116,12 @@ def carregar_opcoes():
             opcoes['qualidade'] = df[df['Categoria'] == 'Qualidade']['Item'].dropna().unique().tolist()
             opcoes['sms'] = df[df['Categoria'] == 'SMS']['Item'].dropna().unique().tolist()
     except:
-        pass # Se der erro, retorna listas vazias mas não trava
-        
+        pass
     return opcoes
 
 def listar_fornecedores():
-    """Lista fornecedores cadastrados."""
-    caminho = _inicializar_banco_se_necessario()
+    """Retorna lista de dicionários com fornecedores."""
+    caminho = _garantir_banco_existe()
     if not caminho: return []
 
     try:
@@ -122,7 +134,7 @@ def listar_fornecedores():
 
 def aprender_novo_item(categoria, novo_item):
     """Salva novo item técnico no banco."""
-    caminho = _inicializar_banco_se_necessario()
+    caminho = _garantir_banco_existe()
     if not caminho: return False
     
     try:
@@ -137,8 +149,8 @@ def aprender_novo_item(categoria, novo_item):
         return False
 
 def cadastrar_fornecedor_db(nome, cnpj):
-    """Salva novo fornecedor."""
-    caminho = _inicializar_banco_se_necessario()
+    """Cadastra novo fornecedor."""
+    caminho = _garantir_banco_existe()
     if not caminho: return False
     
     try:
@@ -158,7 +170,7 @@ def cadastrar_fornecedor_db(nome, cnpj):
 
 def registrar_projeto(dados, id_linha=None):
     """Salva o escopo na aba Projetos."""
-    caminho = _inicializar_banco_se_necessario()
+    caminho = _garantir_banco_existe()
     if not caminho: return False
 
     try:
@@ -167,17 +179,17 @@ def registrar_projeto(dados, id_linha=None):
         except:
             df_atual = pd.DataFrame()
 
-        # Limpa dados para salvar (converte listas/datas para string)
+        # Prepara dados (converte tudo para string para evitar erro de objeto)
         dados_salvar = dados.copy()
         for k, v in dados_salvar.items():
             if isinstance(v, (list, dict)): dados_salvar[k] = str(v)
             if isinstance(v, datetime): dados_salvar[k] = v.strftime("%Y-%m-%d")
 
-        # Gera ID se não tiver
+        # Gera ID único se for novo
         if '_id' not in dados_salvar or not dados_salvar['_id']:
             dados_salvar['_id'] = datetime.now().strftime("%Y%m%d%H%M%S")
 
-        # Adiciona nova linha (append)
+        # Adiciona nova linha
         novo_registro = pd.DataFrame([dados_salvar])
         df_final = pd.concat([df_atual, novo_registro], ignore_index=True)
 
