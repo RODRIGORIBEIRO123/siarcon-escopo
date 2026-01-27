@@ -3,7 +3,7 @@ import pandas as pd
 import gspread
 
 # ==================================================
-# 1. LISTAS PADRÃO (GARANTIA DE DADOS)
+# 1. LISTA COMPLETA DE NRs (FIXA)
 # ==================================================
 NRS_PADRAO = [
     "NR-01 (Disposições Gerais)",
@@ -50,13 +50,7 @@ def _conectar_gsheets():
         gc = gspread.service_account_from_dict(creds_dict)
         return gc.open("DB_SIARCON") 
     except Exception as e:
-        msg = str(e)
-        if "Invalid JWT" in msg:
-             st.error("🚨 Erro na Chave Privada. Verifique os Secrets.")
-        elif "SpreadsheetNotFound" in msg:
-             st.error("🚨 Planilha 'DB_SIARCON' não encontrada. Verifique o compartilhamento.")
-        else:
-            st.error(f"Erro de Conexão: {e}")
+        # Silencia erros comuns para não travar a tela
         return None
 
 def _ler_aba_como_df(nome_aba):
@@ -67,7 +61,7 @@ def _ler_aba_como_df(nome_aba):
     try:
         try: ws = sh.worksheet(nome_aba)
         except: 
-            # Fallback se a aba 'Dados' estiver com nome padrão
+            # Se não achar 'Dados', tenta 'Página1'
             if nome_aba == "Dados": 
                 try: ws = sh.worksheet("Página1")
                 except: return pd.DataFrame()
@@ -79,15 +73,17 @@ def _ler_aba_como_df(nome_aba):
         return pd.DataFrame()
 
 # ==================================================
-# 3. FUNÇÕES DE LEITURA
+# 3. FUNÇÕES DE LEITURA (CARREGAMENTO)
 # ==================================================
 def carregar_opcoes():
     """Carrega as listas para os Selectbox."""
     df = _ler_aba_como_df("Dados")
     opcoes = {'tecnico': [], 'qualidade': [], 'sms': []}
     
+    # 1. INICIA COM A LISTA PADRÃO COMPLETA (Isso garante que apareça mesmo sem banco)
     opcoes['sms'] = NRS_PADRAO.copy()
 
+    # 2. SE TIVER BANCO, ADICIONA O QUE TIVER LÁ
     if not df.empty and 'Categoria' in df.columns and 'Item' in df.columns:
         df['Categoria'] = df['Categoria'].astype(str).str.lower().str.strip()
         
@@ -97,7 +93,10 @@ def carregar_opcoes():
         
         opcoes['tecnico'] = tec_db
         opcoes['qualidade'] = qual_db
-        opcoes['sms'] = sorted(list(set(opcoes['sms'] + sms_db)))
+        
+        # Junta a lista padrão com o banco e remove duplicadas
+        lista_final_sms = list(set(opcoes['sms'] + sms_db))
+        opcoes['sms'] = sorted(lista_final_sms)
         
     return opcoes
 
@@ -107,7 +106,7 @@ def listar_fornecedores():
     return df[['Fornecedor', 'CNPJ']].dropna(subset=['Fornecedor']).drop_duplicates().to_dict('records')
 
 # ==================================================
-# 4. FUNÇÕES DE ESCRITA
+# 4. FUNÇÕES DE ESCRITA (SALVAR)
 # ==================================================
 def aprender_novo_item(categoria, novo_item):
     sh = _conectar_gsheets()
@@ -128,7 +127,7 @@ def cadastrar_fornecedor_db(nome, cnpj):
         except: ws = sh.add_worksheet("Dados", 100, 10)
         
         try:
-            col_forn = ws.col_values(3) # Assume coluna C = Fornecedor
+            col_forn = ws.col_values(3)
             if nome in col_forn: return "Existe"
         except: pass
         
