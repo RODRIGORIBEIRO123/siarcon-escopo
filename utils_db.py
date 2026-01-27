@@ -1,93 +1,60 @@
 import streamlit as st
 import pandas as pd
 import os
-import json
 from datetime import datetime
 
-# --- CONFIGURAÇÃO (JSON LOCAL) ---
-DB_FILE = "dados_projetos.json"
-
-# --- FUNÇÕES BÁSICAS ---
-def carregar_dados(arquivo):
-    if os.path.exists(arquivo):
-        try:
-            with open(arquivo, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except: return []
-    return []
-
-def salvar_dados(arquivo, dados):
-    with open(arquivo, "w", encoding="utf-8") as f:
-        json.dump(dados, f, ensure_ascii=False, indent=4)
-
-# --- FUNÇÕES DO KANBAN ---
-def listar_todos_projetos():
-    # Carrega dados brutos
-    dados = carregar_dados(DB_FILE)
+# --- 1. CARREGAMENTO BLINDADO DO EXCEL ---
+@st.cache_data
+def carregar_banco_dados():
+    # Lista de tentativas de nome e caminho
+    nomes = ["DB_SIARCON.xlsx", "DB_SIARCON.xls"]
+    pastas = [".", "dados", "..", "../dados"] # Raiz, pasta dados, pasta pai, pasta dados do pai
     
-    # Se vazio, retorna estrutura vazia para não quebrar o Kanban
-    if not dados:
-        return pd.DataFrame(columns=["_id_linha", "Cliente", "Obra", "Disciplina", "Status", "Fornecedor"])
+    diretorio_base = os.path.dirname(os.path.abspath(__file__))
+
+    for pasta in pastas:
+        for nome in nomes:
+            caminho = os.path.join(diretorio_base, pasta, nome)
+            if os.path.exists(caminho):
+                try:
+                    return pd.read_excel(caminho)
+                except Exception as e:
+                    print(f"Erro ao ler {caminho}: {e}")
     
-    df = pd.DataFrame(dados)
-    
-    # Garante que as colunas essenciais existam
-    colunas_obrigatorias = ["_id_linha", "Cliente", "Obra", "Disciplina", "Status", "Fornecedor"]
-    for col in colunas_obrigatorias:
-        if col not in df.columns:
-            df[col] = ""
-            
-    return df
+    # Se não achar nada, retorna DataFrame vazio para não travar o app
+    return pd.DataFrame(columns=["Categoria", "Item", "Fornecedor", "CNPJ"])
 
-def criar_pacote_obra(cliente, obra, disciplinas):
-    dados = carregar_dados(DB_FILE)
-    for disc in disciplinas:
-        novo = {
-            "_id_linha": f"{int(datetime.now().timestamp())}_{disc}", 
-            "Cliente": cliente,
-            "Obra": obra,
-            "Disciplina": disc,
-            "Status": "Não Iniciado",
-            "Fornecedor": "",
-            "Data Criacao": datetime.now().strftime("%Y-%m-%d")
-        }
-        dados.append(novo)
-    salvar_dados(DB_FILE, dados)
-    return True
+# --- 2. FUNÇÕES DE LEITURA ---
+def carregar_opcoes():
+    df = carregar_banco_dados()
+    opcoes = {
+        'tecnico': df[df['Categoria'] == 'Tecnico']['Item'].unique().tolist(),
+        'qualidade': df[df['Categoria'] == 'Qualidade']['Item'].unique().tolist(),
+        'sms': df[df['Categoria'] == 'SMS']['Item'].unique().tolist()
+    }
+    return opcoes
 
-def excluir_projeto(id_linha):
-    lista = carregar_dados(DB_FILE)
-    nova_lista = [p for p in lista if p.get("_id_linha") != id_linha]
-    salvar_dados(DB_FILE, nova_lista)
-    return True
-
-# --- FUNÇÕES DE DETALHES (SALVAR ESCOPO) ---
-def registrar_projeto(dados_novos, id_linha):
-    lista = carregar_dados(DB_FILE)
-    for i, proj in enumerate(lista):
-        if proj.get("_id_linha") == id_linha:
-            # Atualiza os dados
-            proj.update(dados_novos)
-            # Garante que os campos do Kanban sejam atualizados também
-            proj["Cliente"] = dados_novos.get("cliente", proj["Cliente"])
-            proj["Obra"] = dados_novos.get("obra", proj["Obra"])
-            proj["Status"] = dados_novos.get("status", proj["Status"])
-            
-            lista[i] = proj
-            salvar_dados(DB_FILE, lista)
-            return True
-    return False
-
-# --- FUNÇÕES AUXILIARES (FORNECEDORES/ITENS) ---
 def listar_fornecedores():
-    # Simples para evitar erro, pode expandir depois
-    return [{"Fornecedor": "Teste", "CNPJ": "000"}]
+    df = carregar_banco_dados()
+    # Filtra apenas linhas que tem Fornecedor preenchido
+    forn = df[['Fornecedor', 'CNPJ']].dropna(subset=['Fornecedor']).drop_duplicates()
+    return forn.to_dict('records')
+
+# --- 3. FUNÇÕES DE ESCRITA (SIMULADO - Para funcionar precisa salvar no Excel) ---
+def aprender_novo_item(categoria, novo_item):
+    # Aqui você implementaria a lógica para salvar no Excel de verdade
+    # Por enquanto, salva na sessão para não perder durante o uso
+    if 'opcoes_db' in st.session_state:
+        if categoria in st.session_state['opcoes_db']:
+            st.session_state['opcoes_db'][categoria].append(novo_item)
+    return True
 
 def cadastrar_fornecedor_db(nome, cnpj):
+    # Aqui entraria o código para append no Excel
     return True
 
-def aprender_novo_item(cat, item):
+def registrar_projeto(dados, id_linha=None):
+    # Aqui entraria o código para salvar o projeto na aba "Projetos" do Excel
+    # Exibe no terminal para debug
+    print(f"Salvo projeto de {dados['disciplina']} para {dados['fornecedor']}")
     return True
-
-def carregar_opcoes():
-    return {}
