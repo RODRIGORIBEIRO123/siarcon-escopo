@@ -1,203 +1,193 @@
 import streamlit as st
 import pandas as pd
-import os
-from datetime import datetime
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 
 # ==================================================
-# 1. LOCALIZADOR DE ARQUIVO
+# 1. CONEXÃO COM GOOGLE SHEETS (NUVEM)
 # ==================================================
-def _get_caminho_banco():
-    """Procura o arquivo DB_SIARCON.xlsx na pasta atual, na dados ou na raiz."""
-    nome_arquivo = "DB_SIARCON.xlsx"
-    # Locais possíveis onde o arquivo pode estar
-    diretorio_base = os.path.dirname(os.path.abspath(__file__))
-    
-    locais = [
-        os.path.join(diretorio_base, nome_arquivo),           # Pasta atual
-        os.path.join(diretorio_base, "dados", nome_arquivo),  # Pasta dados
-        os.path.join(diretorio_base, "..", nome_arquivo),     # Pasta pai (raiz)
-        os.path.join(diretorio_base, "..", "dados", nome_arquivo) # Pasta dados na raiz
-    ]
+def _conectar_gsheets():
+    """Conecta ao Google Sheets usando as credenciais do st.secrets."""
+    try:
+        # Verifica se as credenciais existem
+        if "gcp_service_account" not in st.secrets:
+            st.error("🚨 Credenciais do Google (gcp_service_account) não encontradas nos Secrets!")
+            return None
 
-    for caminho in locais:
-        if os.path.exists(caminho):
-            return caminho
-            
-    # Se não achar, retorna o caminho padrão na raiz para tentar criar/salvar
-    return os.path.join(diretorio_base, "..", nome_arquivo)
+        # Configura a autenticação
+        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+        creds_dict = dict(st.secrets["gcp_service_account"])
+        
+        # Conecta
+        gc = gspread.service_account_from_dict(creds_dict)
+        
+        # Abre a planilha pelo nome exato da imagem
+        sh = gc.open("DB_SIARCON") 
+        return sh
+    except Exception as e:
+        st.error(f"Erro de Conexão com Google Sheets: {e}")
+        return None
 
-# ==================================================
-# 2. FUNÇÃO DO DASHBOARD (CORRIGIDA)
-# ==================================================
-def listar_todos_projetos():
-    """
-    Retorna um DATAFRAME (Tabela) para o Dashboard.
-    Isso corrige o erro: 'AttributeError: ... has no attribute empty'
-    """
-    caminho = _get_caminho_banco()
-    
-    if not os.path.exists(caminho):
-        return pd.DataFrame() # Retorna tabela vazia se não tiver arquivo
+def _ler_aba_como_df(nome_aba):
+    """Lê uma aba específica e retorna como DataFrame Pandas."""
+    sh = _conectar_gsheets()
+    if not sh: return pd.DataFrame()
 
     try:
-        df = pd.read_excel(caminho, sheet_name="Projetos")
-        
-        # Garante que as colunas existem para não dar erro de chave
-        cols_obrigatorias = ['_id', 'status', 'disciplina', 'cliente', 'obra', 'fornecedor', 'valor_total']
-        for col in cols_obrigatorias:
-            if col not in df.columns:
-                df[col] = "" 
-        
-        return df # <--- IMPORTANTE: Retorna DataFrame, não lista/dict
+        worksheet = sh.worksheet(nome_aba)
+        dados = worksheet.get_all_records()
+        df = pd.DataFrame(dados)
+        return df
+    except gspread.WorksheetNotFound:
+        # Se a aba não existir, cria ela vazia para não quebrar o app
+        return pd.DataFrame()
     except Exception as e:
-        # Se a aba Projetos não existir, retorna vazio
+        print(f"Erro ao ler aba {nome_aba}: {e}")
         return pd.DataFrame()
 
+# ==================================================
+# 2. FUNÇÕES DO DASHBOARD (PAINEL DE PROJETOS)
+# ==================================================
+def listar_todos_projetos():
+    """Retorna todos os projetos para o Dashboard (Kanban)."""
+    df = _ler_aba_como_df("Projetos")
+    
+    if df.empty:
+        return pd.DataFrame()
+
+    # Garante que as colunas essenciais existem
+    cols_obrigatorias = ['_id', 'status', 'disciplina', 'cliente', 'obra', 'fornecedor', 'valor_total']
+    for col in cols_obrigatorias:
+        if col not in df.columns:
+            df[col] = ""
+            
+    # Converte _id para string para evitar erros de comparação
+    if '_id' in df.columns:
+        df['_id'] = df['_id'].astype(str)
+        
+    return df
+
 def atualizar_status_projeto(id_projeto, novo_status):
-    caminho = _get_caminho_banco()
-    if not os.path.exists(caminho): return False
+    """Atualiza o status de um projeto na nuvem."""
+    sh = _conectar_gsheets()
+    if not sh: return False
 
     try:
-        df = pd.read_excel(caminho, sheet_name="Projetos")
-        # Converte ID para string para garantir comparação correta
-        df['_id'] = df['_id'].astype(str)
-        mask = df['_id'] == str(id_projeto)
-        
-        if mask.any():
-            df.loc[mask, 'status'] = novo_status
-            with pd.ExcelWriter(caminho, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
-                df.to_excel(writer, sheet_name="Projetos", index=False)
+        ws = sh.worksheet("Projetos")
+        # Busca a célula que contém o ID
+        cell = ws.find(str(id_projeto))
+        if cell:
+            # Acha a coluna 'status' (assume que está no cabeçalho)
+            headers = ws.row_values(1)
+            col_index = headers.index('status') + 1
+            # Atualiza
+            ws.update_cell(cell.row, col_index, novo_status)
             return True
-    except:
-        pass
+    except Exception as e:
+        st.error(f"Erro ao atualizar status: {e}")
     return False
 
 # ==================================================
-# 3. FUNÇÕES DOS GERADORES (CORRIGIDAS PARA MINÚSCULO)
+# 3. FUNÇÕES DOS GERADORES (DUTOS, HIDRÁULICA...)
 # ==================================================
 def carregar_opcoes():
-    """Carrega as opções da aba Dados."""
-    caminho = _get_caminho_banco()
+    """Carrega Técnico, Qualidade e SMS da aba 'Dados'."""
+    df = _ler_aba_como_df("Dados")
     opcoes = {'tecnico': [], 'qualidade': [], 'sms': []}
     
-    if not os.path.exists(caminho): return opcoes
+    if df.empty: return opcoes
 
-    try:
-        df = pd.read_excel(caminho, sheet_name="Dados")
+    if 'Categoria' in df.columns and 'Item' in df.columns:
+        # Normaliza para minúsculo para bater com sua planilha ('tecnico', 'sms')
+        df['Categoria'] = df['Categoria'].astype(str).str.lower().str.strip()
         
-        if 'Categoria' in df.columns and 'Item' in df.columns:
-            # Normaliza para minúsculo para garantir que encontre 'tecnico' ou 'Tecnico'
-            df['Categoria'] = df['Categoria'].astype(str).str.lower().str.strip()
-            
-            # Filtra baseado na sua planilha (que usa 'tecnico' minúsculo)
-            opcoes['tecnico'] = sorted(df[df['Categoria'] == 'tecnico']['Item'].dropna().unique().tolist())
-            opcoes['qualidade'] = sorted(df[df['Categoria'].str.contains('qualidade')]['Item'].dropna().unique().tolist())
-            opcoes['sms'] = sorted(df[df['Categoria'] == 'sms']['Item'].dropna().unique().tolist())
-            
-    except Exception as e:
-        print(f"Erro ao ler opções: {e}")
-        pass
+        opcoes['tecnico'] = sorted(df[df['Categoria'] == 'tecnico']['Item'].unique().tolist())
+        # 'qualidade' ou 'qualidade_hidraulica', pega tudo que contém 'qualidade'
+        opcoes['qualidade'] = sorted(df[df['Categoria'].str.contains('qualidade')]['Item'].unique().tolist())
+        opcoes['sms'] = sorted(df[df['Categoria'] == 'sms']['Item'].unique().tolist())
         
     return opcoes
 
 def listar_fornecedores():
-    caminho = _get_caminho_banco()
-    if not os.path.exists(caminho): return []
+    """Lista fornecedores da aba 'Dados'."""
+    df = _ler_aba_como_df("Dados")
+    if df.empty or 'Fornecedor' not in df.columns: return []
 
-    try:
-        df = pd.read_excel(caminho, sheet_name="Dados")
-        if 'Fornecedor' in df.columns:
-            return df[['Fornecedor', 'CNPJ']].dropna(subset=['Fornecedor']).drop_duplicates().to_dict('records')
-    except:
-        pass
-    return []
+    # Retorna lista de dicionários únicos
+    return df[['Fornecedor', 'CNPJ']].dropna(subset=['Fornecedor']).drop_duplicates().to_dict('records')
 
 def aprender_novo_item(categoria, novo_item):
-    caminho = _get_caminho_banco()
+    """Salva novo item na aba 'Dados'."""
+    sh = _conectar_gsheets()
+    if not sh: return False
     
     try:
-        # Se arquivo não existe, cria
-        if not os.path.exists(caminho):
-            df = pd.DataFrame(columns=['Categoria', 'Item'])
-        else:
-            df = pd.read_excel(caminho, sheet_name="Dados")
-            
-        # Adiciona item (força categoria minúscula para padronizar)
-        novo = pd.DataFrame([{'Categoria': categoria.lower(), 'Item': novo_item}])
-        df_final = pd.concat([df, novo], ignore_index=True)
-        
-        # Salva
-        if os.path.exists(caminho):
-            with pd.ExcelWriter(caminho, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
-                df_final.to_excel(writer, sheet_name="Dados", index=False)
-        else:
-            with pd.ExcelWriter(caminho, engine='xlsxwriter') as writer:
-                df_final.to_excel(writer, sheet_name="Dados", index=False)
-                # Cria aba projetos vazia para não dar erro depois
-                pd.DataFrame(columns=['_id']).to_excel(writer, sheet_name="Projetos", index=False)
-                
+        ws = sh.worksheet("Dados")
+        # Adiciona linha no final: [Categoria, Item, Fornecedor, CNPJ]
+        ws.append_row([categoria.lower(), novo_item, "", ""])
         return True
-    except:
+    except Exception as e:
+        st.error(f"Erro ao salvar item: {e}")
         return False
 
 def cadastrar_fornecedor_db(nome, cnpj):
-    caminho = _get_caminho_banco()
+    """Salva novo fornecedor na aba 'Dados'."""
+    sh = _conectar_gsheets()
+    if not sh: return False
     
     try:
-        if os.path.exists(caminho):
-            df = pd.read_excel(caminho, sheet_name="Dados")
-            if 'Fornecedor' in df.columns and not df[df['Fornecedor'] == nome].empty:
+        ws = sh.worksheet("Dados")
+        # Verifica se já existe (leitura rápida)
+        records = ws.get_all_records()
+        df = pd.DataFrame(records)
+        if not df.empty and 'Fornecedor' in df.columns:
+            if nome in df['Fornecedor'].values:
                 return "Existe"
-        else:
-            df = pd.DataFrame(columns=['Fornecedor', 'CNPJ'])
-
-        novo = pd.DataFrame([{'Fornecedor': nome, 'CNPJ': cnpj}])
-        df_final = pd.concat([df, novo], ignore_index=True)
         
-        if os.path.exists(caminho):
-            with pd.ExcelWriter(caminho, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
-                df_final.to_excel(writer, sheet_name="Dados", index=False)
-        else:
-             with pd.ExcelWriter(caminho, engine='xlsxwriter') as writer:
-                df_final.to_excel(writer, sheet_name="Dados", index=False)
-                pd.DataFrame(columns=['_id']).to_excel(writer, sheet_name="Projetos", index=False)
+        # Adiciona linha: [Categoria, Item, Fornecedor, CNPJ]
+        # Deixa Categoria/Item vazios para fornecedores
+        ws.append_row(["", "", nome, cnpj])
         return True
-    except:
+    except Exception as e:
+        st.error(f"Erro ao salvar fornecedor: {e}")
         return False
 
 def registrar_projeto(dados, id_linha=None):
-    caminho = _get_caminho_banco()
-    
+    """Salva o escopo na aba 'Projetos'."""
+    sh = _conectar_gsheets()
+    if not sh: return False
+
     try:
-        if os.path.exists(caminho):
-            try:
-                df_atual = pd.read_excel(caminho, sheet_name="Projetos")
-            except:
-                df_atual = pd.DataFrame()
-        else:
-            df_atual = pd.DataFrame()
+        # Tenta pegar a aba Projetos, se não existir, cria
+        try:
+            ws = sh.worksheet("Projetos")
+        except:
+            ws = sh.add_worksheet(title="Projetos", rows="100", cols="20")
+            # Cria cabeçalho se for nova
+            ws.append_row(['_id', 'status', 'disciplina', 'cliente', 'obra', 'fornecedor', 'valor_total', 'revisao', 'data_inicio'])
 
-        dados_salvar = dados.copy()
-        for k, v in dados_salvar.items():
-            if isinstance(v, (list, dict)): dados_salvar[k] = str(v)
-            if isinstance(v, datetime): dados_salvar[k] = v.strftime("%Y-%m-%d")
-
-        if '_id' not in dados_salvar or not dados_salvar['_id']:
-            dados_salvar['_id'] = datetime.now().strftime("%Y%m%d%H%M%S")
-
-        novo_registro = pd.DataFrame([dados_salvar])
-        df_final = pd.concat([df_atual, novo_registro], ignore_index=True)
-
-        if os.path.exists(caminho):
-            with pd.ExcelWriter(caminho, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
-                df_final.to_excel(writer, sheet_name="Projetos", index=False)
-        else:
-            with pd.ExcelWriter(caminho, engine='xlsxwriter') as writer:
-                # Garante que a aba Dados exista também
-                pd.DataFrame(columns=['Categoria', 'Item']).to_excel(writer, sheet_name="Dados", index=False)
-                df_final.to_excel(writer, sheet_name="Projetos", index=False)
+        # Prepara dados
+        # Transforma dicionário em lista ordenada conforme cabeçalho (simplificado aqui para append direto de dict se as colunas baterem)
+        # O jeito mais seguro no gspread é append_row com lista. Vamos pegar o cabeçalho atual.
         
+        headers = ws.row_values(1)
+        if not headers:
+            headers = ['_id', 'status', 'disciplina', 'cliente', 'obra', 'fornecedor', 'valor_total']
+            ws.append_row(headers)
+
+        # Garante ID
+        if '_id' not in dados or not dados['_id']:
+            from datetime import datetime
+            dados['_id'] = datetime.now().strftime("%Y%m%d%H%M%S")
+
+        # Converte tudo para string
+        row_data = []
+        for h in headers:
+            val = dados.get(h, "")
+            row_data.append(str(val))
+            
+        ws.append_row(row_data)
         return True
     except Exception as e:
-        st.error(f"Erro ao salvar: {e}")
+        st.error(f"Erro ao salvar projeto: {e}")
         return False
