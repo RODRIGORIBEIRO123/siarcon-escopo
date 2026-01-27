@@ -233,9 +233,15 @@ with tab5:
 
 st.markdown("---")
 if status_atual_db == "Contratação Finalizada" and 'modo_edicao' in st.session_state:
-    st.error("🔒 Finalizado."); st.download_button("📥 Baixar", gerar_docx(dados_edicao).getvalue(), f"Escopo_{forn}.docx")
+    st.error("🔒 Finalizado.")
+    # Define o nome do arquivo aqui também para o download em modo visualização
+    nome_arquivo = f"Escopo_Dutos_{forn.replace(' ', '_')}_{date.today()}.docx"
+    st.download_button("📥 Baixar", gerar_docx(dados_edicao).getvalue(), nome_arquivo)
 else:
     if st.button("💾 SALVAR / ATUALIZAR", type="primary"):
+        # Prepara o nome dos anexos corretamente
+        lista_anexos_nomes = [f.name for f in anexos] if anexos else []
+        
         dados = {
             'cliente': cliente, 'obra': obra, 'fornecedor': forn, 'cnpj_fornecedor': cnpj_forn,
             'responsavel': resp_eng, 'resp_obras': resp_obr, 'resp_suprimentos': resp_sup,
@@ -245,8 +251,19 @@ else:
             'matriz': escolhas, 'nrs_selecionadas': nrs,
             'data_inicio': d_ini, 'dias_integracao': d_int, 'data_fim': d_fim,
             'obs_gerais': obs, 'valor_total': val, 'condicao_pgto': pgto, 'info_comercial': info,
-            'status': status, 'disciplina': 'Dutos',
-            'nomes_anexos': [f.name for f in anexos] if anexos else []
+            'status': status, 
+            'disciplina': 'Dutos', # <--- IMPORTANTE: Isso define onde salvar no DB
+            'nomes_anexos': lista_anexos_nomes
         }
-        docx = gerar_docx(dados); utils_db.registrar_projeto(dados, id_linha_edicao)
-        st.success("✅ Salvo!"); st.download_button("📥 Baixar DOCX", docx.getvalue(), nome_a)
+        
+        # Gera o documento
+        docx = gerar_docx(dados)
+        
+        # Salva no banco
+        utils_db.registrar_projeto(dados, id_linha_edicao)
+        
+        # Define o nome do arquivo para download
+        nome_arquivo_final = f"Escopo_Dutos_{forn.replace(' ', '_')}_{date.today()}.docx"
+        
+        st.success("✅ Salvo com sucesso!")
+        st.download_button("📥 Baixar DOCX", docx.getvalue(), nome_arquivo_final)
