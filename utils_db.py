@@ -3,7 +3,7 @@ import pandas as pd
 import gspread
 
 # ==================================================
-# 1. LISTA COMPLETA DE NRs (FIXA)
+# 1. LISTA PADRÃO COMPLETA (FIXA NO CÓDIGO)
 # ==================================================
 NRS_PADRAO = [
     "NR-01 (Disposições Gerais)",
@@ -33,15 +33,12 @@ NRS_PADRAO = [
 # 2. CONEXÃO COM GOOGLE SHEETS
 # ==================================================
 def _conectar_gsheets():
-    """Conecta ao Google Sheets com tratamento de erros de chave."""
     try:
         if "gcp_service_account" not in st.secrets:
             st.error("🚨 Secrets não encontrados!")
             return None
 
         creds_dict = dict(st.secrets["gcp_service_account"])
-
-        # Correção da chave privada
         if "private_key" in creds_dict:
             chave = creds_dict["private_key"]
             if "\n" not in chave:
@@ -49,41 +46,32 @@ def _conectar_gsheets():
 
         gc = gspread.service_account_from_dict(creds_dict)
         return gc.open("DB_SIARCON") 
-    except Exception as e:
-        # Silencia erros comuns para não travar a tela
+    except Exception:
         return None
 
 def _ler_aba_como_df(nome_aba):
-    """Lê uma aba e retorna DataFrame (nunca falha, retorna vazio se erro)."""
     sh = _conectar_gsheets()
     if not sh: return pd.DataFrame()
-
     try:
         try: ws = sh.worksheet(nome_aba)
         except: 
-            # Se não achar 'Dados', tenta 'Página1'
             if nome_aba == "Dados": 
                 try: ws = sh.worksheet("Página1")
                 except: return pd.DataFrame()
             else: return pd.DataFrame()
-        
-        dados = ws.get_all_records()
-        return pd.DataFrame(dados)
-    except:
-        return pd.DataFrame()
+        return pd.DataFrame(ws.get_all_records())
+    except: return pd.DataFrame()
 
 # ==================================================
-# 3. FUNÇÕES DE LEITURA (CARREGAMENTO)
+# 3. FUNÇÕES DE LEITURA (GARANTINDO NRS)
 # ==================================================
 def carregar_opcoes():
-    """Carrega as listas para os Selectbox."""
     df = _ler_aba_como_df("Dados")
     opcoes = {'tecnico': [], 'qualidade': [], 'sms': []}
     
-    # 1. INICIA COM A LISTA PADRÃO COMPLETA (Isso garante que apareça mesmo sem banco)
-    opcoes['sms'] = NRS_PADRAO.copy()
+    # 1. Carrega NRs Padrão PRIMEIRO
+    lista_nrs = NRS_PADRAO.copy()
 
-    # 2. SE TIVER BANCO, ADICIONA O QUE TIVER LÁ
     if not df.empty and 'Categoria' in df.columns and 'Item' in df.columns:
         df['Categoria'] = df['Categoria'].astype(str).str.lower().str.strip()
         
@@ -94,9 +82,11 @@ def carregar_opcoes():
         opcoes['tecnico'] = tec_db
         opcoes['qualidade'] = qual_db
         
-        # Junta a lista padrão com o banco e remove duplicadas
-        lista_final_sms = list(set(opcoes['sms'] + sms_db))
-        opcoes['sms'] = sorted(lista_final_sms)
+        # 2. Junta lista padrão com o banco e remove duplicadas
+        lista_nrs.extend(sms_db)
+    
+    # Remove duplicatas e ordena
+    opcoes['sms'] = sorted(list(set(lista_nrs)))
         
     return opcoes
 
@@ -106,7 +96,7 @@ def listar_fornecedores():
     return df[['Fornecedor', 'CNPJ']].dropna(subset=['Fornecedor']).drop_duplicates().to_dict('records')
 
 # ==================================================
-# 4. FUNÇÕES DE ESCRITA (SALVAR)
+# 4. FUNÇÕES DE ESCRITA
 # ==================================================
 def aprender_novo_item(categoria, novo_item):
     sh = _conectar_gsheets()
@@ -114,7 +104,6 @@ def aprender_novo_item(categoria, novo_item):
     try:
         try: ws = sh.worksheet("Dados")
         except: ws = sh.add_worksheet("Dados", 100, 10)
-        
         ws.append_row([categoria.lower(), novo_item, "", ""])
         return True
     except: return False
@@ -125,12 +114,10 @@ def cadastrar_fornecedor_db(nome, cnpj):
     try:
         try: ws = sh.worksheet("Dados")
         except: ws = sh.add_worksheet("Dados", 100, 10)
-        
         try:
             col_forn = ws.col_values(3)
             if nome in col_forn: return "Existe"
         except: pass
-        
         ws.append_row(["", "", nome, cnpj])
         return True
     except: return False
@@ -138,13 +125,12 @@ def cadastrar_fornecedor_db(nome, cnpj):
 def registrar_projeto(dados):
     sh = _conectar_gsheets()
     if not sh: return False
-
     try:
         try: ws = sh.worksheet("Projetos")
         except: 
             ws = sh.add_worksheet("Projetos", 100, 20)
-            ws.append_row(['_id', 'status', 'disciplina', 'cliente', 'obra', 'fornecedor', 'valor_total', 'revisao', 'data_inicio'])
-
+            ws.append_row(['_id', 'status', 'disciplina', 'cliente', 'obra', 'fornecedor', 'valor_total'])
+        
         headers = ws.row_values(1)
         if not headers:
             headers = ['_id', 'status', 'disciplina', 'cliente', 'obra', 'fornecedor', 'valor_total']
@@ -157,19 +143,15 @@ def registrar_projeto(dados):
         row_data = []
         for h in headers:
             row_data.append(str(dados.get(h, "")))
-            
         ws.append_row(row_data)
         return True
     except: return False
 
 def listar_todos_projetos():
-    """Retorna DataFrame dos projetos para o Dashboard."""
     df = _ler_aba_como_df("Projetos")
     if df.empty: return pd.DataFrame(columns=['_id', 'status', 'disciplina', 'cliente', 'obra', 'fornecedor', 'valor_total'])
-
-    cols_obrigatorias = ['_id', 'status', 'disciplina', 'cliente', 'obra', 'fornecedor', 'valor_total']
-    for col in cols_obrigatorias:
-        if col not in df.columns: df[col] = ""
-            
+    cols = ['_id', 'status', 'disciplina', 'cliente', 'obra', 'fornecedor', 'valor_total']
+    for c in cols: 
+        if c not in df.columns: df[c] = ""
     if '_id' in df.columns: df['_id'] = df['_id'].astype(str)
     return df
