@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import gspread
-from oauth2client.service_account import ServiceAccountCredentials
 
 # ==================================================
 # 1. CONEXÃO COM GOOGLE SHEETS (NUVEM)
@@ -11,21 +10,27 @@ def _conectar_gsheets():
     try:
         # Verifica se as credenciais existem
         if "gcp_service_account" not in st.secrets:
-            st.error("🚨 Credenciais do Google (gcp_service_account) não encontradas nos Secrets!")
+            # Tenta procurar apenas como "gcp" ou "google_sheets" caso o nome mude
+            st.error("🚨 Credenciais não encontradas! Verifique se 'gcp_service_account' está no st.secrets.")
             return None
 
-        # Configura a autenticação
-        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+        # Converte o objeto secrets para dicionário Python padrão
+        # Isso é necessário porque o gspread espera um dict puro
         creds_dict = dict(st.secrets["gcp_service_account"])
         
-        # Conecta
+        # Conecta usando a biblioteca gspread (usa google-auth internamente)
         gc = gspread.service_account_from_dict(creds_dict)
         
-        # Abre a planilha pelo nome exato da imagem
+        # Abre a planilha pelo nome exato
         sh = gc.open("DB_SIARCON") 
         return sh
     except Exception as e:
-        st.error(f"Erro de Conexão com Google Sheets: {e}")
+        # Se der erro de planilha não encontrada, tenta criar ou avisa
+        if "SpreadsheetNotFound" in str(e):
+             st.error("🚨 Planilha 'DB_SIARCON' não encontrada no Google Drive da conta de serviço!")
+             st.info("Dica: Compartilhe a planilha 'DB_SIARCON' com o email da conta de serviço (client_email nos secrets).")
+        else:
+            st.error(f"Erro de Conexão com Google Sheets: {e}")
         return None
 
 def _ler_aba_como_df(nome_aba):
@@ -39,7 +44,7 @@ def _ler_aba_como_df(nome_aba):
         df = pd.DataFrame(dados)
         return df
     except gspread.WorksheetNotFound:
-        # Se a aba não existir, cria ela vazia para não quebrar o app
+        # Se a aba não existir, retorna vazio
         return pd.DataFrame()
     except Exception as e:
         print(f"Erro ao ler aba {nome_aba}: {e}")
@@ -77,12 +82,13 @@ def atualizar_status_projeto(id_projeto, novo_status):
         # Busca a célula que contém o ID
         cell = ws.find(str(id_projeto))
         if cell:
-            # Acha a coluna 'status' (assume que está no cabeçalho)
+            # Acha a coluna 'status' (assume que está na linha 1)
             headers = ws.row_values(1)
-            col_index = headers.index('status') + 1
-            # Atualiza
-            ws.update_cell(cell.row, col_index, novo_status)
-            return True
+            if 'status' in headers:
+                col_index = headers.index('status') + 1
+                # Atualiza
+                ws.update_cell(cell.row, col_index, novo_status)
+                return True
     except Exception as e:
         st.error(f"Erro ao atualizar status: {e}")
     return False
@@ -145,7 +151,6 @@ def cadastrar_fornecedor_db(nome, cnpj):
                 return "Existe"
         
         # Adiciona linha: [Categoria, Item, Fornecedor, CNPJ]
-        # Deixa Categoria/Item vazios para fornecedores
         ws.append_row(["", "", nome, cnpj])
         return True
     except Exception as e:
@@ -163,13 +168,8 @@ def registrar_projeto(dados, id_linha=None):
             ws = sh.worksheet("Projetos")
         except:
             ws = sh.add_worksheet(title="Projetos", rows="100", cols="20")
-            # Cria cabeçalho se for nova
             ws.append_row(['_id', 'status', 'disciplina', 'cliente', 'obra', 'fornecedor', 'valor_total', 'revisao', 'data_inicio'])
 
-        # Prepara dados
-        # Transforma dicionário em lista ordenada conforme cabeçalho (simplificado aqui para append direto de dict se as colunas baterem)
-        # O jeito mais seguro no gspread é append_row com lista. Vamos pegar o cabeçalho atual.
-        
         headers = ws.row_values(1)
         if not headers:
             headers = ['_id', 'status', 'disciplina', 'cliente', 'obra', 'fornecedor', 'valor_total']
@@ -180,7 +180,7 @@ def registrar_projeto(dados, id_linha=None):
             from datetime import datetime
             dados['_id'] = datetime.now().strftime("%Y%m%d%H%M%S")
 
-        # Converte tudo para string
+        # Converte tudo para string para salvar no sheets
         row_data = []
         for h in headers:
             val = dados.get(h, "")
