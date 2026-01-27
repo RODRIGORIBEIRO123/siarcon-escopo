@@ -16,22 +16,27 @@ def _conectar_gsheets():
         # Carrega as credenciais como dicionário
         creds_dict = dict(st.secrets["gcp_service_account"])
 
-        # --- CORREÇÃO AUTOMÁTICA DA CHAVE ---
-        # Garante que as quebras de linha sejam reais
+        # --- CORREÇÃO HÍBRIDA DA CHAVE ---
+        # Isso garante que funcione se você colou com '\n' (texto) ou com 'Enter' (aspas triplas)
         if "private_key" in creds_dict:
-            creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+            chave = creds_dict["private_key"]
+            # Se a chave NÃO tiver quebras de linha reais, nós aplicamos a correção
+            if "\n" not in chave:
+                creds_dict["private_key"] = chave.replace("\\n", "\n")
+            # Se já tiver quebras reais (usou aspas triplas), mantém como está
 
         # Conecta usando gspread
         gc = gspread.service_account_from_dict(creds_dict)
         
         # Abre a planilha pelo nome exato
+        # IMPORTANTE: A planilha deve estar compartilhada com o 'client_email' dos secrets
         sh = gc.open("DB_SIARCON") 
         return sh
         
     except Exception as e:
         err_msg = str(e)
         if "Invalid JWT" in err_msg:
-             st.error("🚨 Erro na Chave Privada (JWT). A chave nos Secrets está incompleta ou mal formatada. Verifique se ela começa com '-----BEGIN PRIVATE KEY-----'.")
+             st.error("🚨 Erro na Chave Privada (JWT). A chave nos Secrets está incorreta ou revogada. Gere uma nova chave JSON no Google Cloud e atualize os Secrets.")
         elif "SpreadsheetNotFound" in err_msg:
              st.error("🚨 Planilha 'DB_SIARCON' não encontrada! Verifique se você compartilhou ela com o email da conta de serviço.")
         else:
@@ -49,9 +54,9 @@ def _ler_aba_como_df(nome_aba):
         df = pd.DataFrame(dados)
         return df
     except gspread.WorksheetNotFound:
+        # Se a aba não existir, retorna vazio
         return pd.DataFrame()
     except Exception as e:
-        # print(f"Erro ao ler aba {nome_aba}: {e}") # Debug silencioso
         return pd.DataFrame()
 
 # ==================================================
@@ -85,7 +90,6 @@ def atualizar_status_projeto(id_projeto, novo_status):
         ws = sh.worksheet("Projetos")
         cell = ws.find(str(id_projeto))
         if cell:
-            # Procura a coluna 'status' no cabeçalho (linha 1)
             headers = ws.row_values(1)
             if 'status' in headers:
                 col_index = headers.index('status') + 1
@@ -106,7 +110,7 @@ def carregar_opcoes():
     if df.empty: return opcoes
 
     if 'Categoria' in df.columns and 'Item' in df.columns:
-        # Normaliza categoria para minúsculo (para bater com sua planilha 'tecnico', 'sms')
+        # Normaliza categoria para minúsculo
         df['Categoria'] = df['Categoria'].astype(str).str.lower().str.strip()
         
         opcoes['tecnico'] = sorted(df[df['Categoria'] == 'tecnico']['Item'].unique().tolist())
@@ -129,7 +133,6 @@ def aprender_novo_item(categoria, novo_item):
     
     try:
         ws = sh.worksheet("Dados")
-        # [Categoria, Item, Fornecedor, CNPJ]
         ws.append_row([categoria.lower(), novo_item, "", ""])
         return True
     except Exception as e:
@@ -143,7 +146,6 @@ def cadastrar_fornecedor_db(nome, cnpj):
     
     try:
         ws = sh.worksheet("Dados")
-        # Verifica duplicidade rápida via pandas
         records = ws.get_all_records()
         df = pd.DataFrame(records)
         
@@ -151,7 +153,6 @@ def cadastrar_fornecedor_db(nome, cnpj):
             if nome in df['Fornecedor'].values:
                 return "Existe"
         
-        # [Categoria, Item, Fornecedor, CNPJ] -> Fornecedor nas colunas C e D
         ws.append_row(["", "", nome, cnpj])
         return True
     except Exception as e:
@@ -175,12 +176,10 @@ def registrar_projeto(dados, id_linha=None):
             headers = ['_id', 'status', 'disciplina', 'cliente', 'obra', 'fornecedor', 'valor_total']
             ws.append_row(headers)
 
-        # Garante ID
         if '_id' not in dados or not dados['_id']:
             from datetime import datetime
             dados['_id'] = datetime.now().strftime("%Y%m%d%H%M%S")
 
-        # Converte tudo para string para salvar no sheets
         row_data = []
         for h in headers:
             val = dados.get(h, "")
