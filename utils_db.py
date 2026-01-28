@@ -44,29 +44,22 @@ def _ler_aba_como_df(nome_aba):
     except: return pd.DataFrame()
 
 # ==================================================
-# 3. LEITURA INTELIGENTE (CORREÇÃO AQUI)
+# 3. LEITURA INTELIGENTE
 # ==================================================
 def carregar_opcoes():
     df = _ler_aba_como_df("Dados")
-    opcoes = {'sms': NRS_PADRAO.copy()} # Começa com NRs padrão
+    opcoes = {'sms': NRS_PADRAO.copy()} 
 
     if not df.empty and 'Categoria' in df.columns and 'Item' in df.columns:
-        # Normaliza para minúsculo
         df['Categoria'] = df['Categoria'].astype(str).str.lower().str.strip()
-        
-        # AGORA ELE CRIA LISTAS SEPARADAS PARA CADA CATEGORIA QUE ACHAR
-        # Ex: vai criar opcoes['tecnico_dutos'], opcoes['tecnico_hidraulica'] automaticamente
         categorias_encontradas = df['Categoria'].unique()
         
         for cat in categorias_encontradas:
             itens = sorted(df[df['Categoria'] == cat]['Item'].unique().tolist())
-            
-            # Se for SMS, junta com o padrão
             if cat == 'sms':
                 opcoes['sms'] = sorted(list(set(opcoes['sms'] + itens)))
             else:
-                opcoes[cat] = itens
-                
+                opcoes[cat] = itens     
     return opcoes
 
 def listar_fornecedores():
@@ -75,7 +68,42 @@ def listar_fornecedores():
     return df[['Fornecedor', 'CNPJ']].dropna(subset=['Fornecedor']).drop_duplicates().to_dict('records')
 
 # ==================================================
-# 4. ESCRITA
+# 4. FUNÇÕES DO DASHBOARD (QUE FALTAVAM)
+# ==================================================
+def listar_todos_projetos():
+    """Retorna DataFrame dos projetos para o Dashboard."""
+    df = _ler_aba_como_df("Projetos")
+    
+    # Se estiver vazio, cria estrutura para não dar erro
+    if df.empty: 
+        return pd.DataFrame(columns=['_id', 'status', 'disciplina', 'cliente', 'obra', 'fornecedor', 'valor_total'])
+
+    # Garante colunas essenciais
+    cols_obrigatorias = ['_id', 'status', 'disciplina', 'cliente', 'obra', 'fornecedor', 'valor_total']
+    for col in cols_obrigatorias:
+        if col not in df.columns: df[col] = ""
+            
+    # Converte ID para string
+    if '_id' in df.columns: df['_id'] = df['_id'].astype(str)
+    return df
+
+def atualizar_status_projeto(id_projeto, novo_status):
+    sh = _conectar_gsheets()
+    if not sh: return False
+    try:
+        ws = sh.worksheet("Projetos")
+        cell = ws.find(str(id_projeto))
+        if cell:
+            headers = ws.row_values(1)
+            if 'status' in headers:
+                col_index = headers.index('status') + 1
+                ws.update_cell(cell.row, col_index, novo_status)
+                return True
+    except: pass
+    return False
+
+# ==================================================
+# 5. ESCRITA
 # ==================================================
 def aprender_novo_item(categoria, novo_item):
     sh = _conectar_gsheets()
@@ -83,7 +111,6 @@ def aprender_novo_item(categoria, novo_item):
     try:
         try: ws = sh.worksheet("Dados")
         except: ws = sh.add_worksheet("Dados", 100, 10)
-        # Salva a categoria exata (ex: 'tecnico_hidraulica')
         ws.append_row([categoria.lower(), novo_item, "", ""])
         return True
     except: return False
