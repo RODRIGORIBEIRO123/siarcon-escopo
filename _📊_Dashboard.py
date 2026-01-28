@@ -9,52 +9,23 @@ import time
 st.set_page_config(page_title="SIARCON", page_icon="📊", layout="wide")
 
 # ============================================================================
-# 🍪 GERENCIADOR DE COOKIES (COM PROTEÇÃO CONTRA ERROS)
-# ============================================================================
-try:
-    import extra_streamlit_components as stx
-    
-    # Cache resource evita que o componente seja recriado a cada clique (corrige o erro "Oh no")
-    @st.cache_resource(experimental_allow_widgets=True)
-    def get_manager():
-        return stx.CookieManager(key="cookie_manager_main")
-
-    cookie_manager = get_manager()
-    COOKIE_ENABLED = True
-except ImportError:
-    st.error("⚠️ Biblioteca 'extra-streamlit-components' não instalada.")
-    st.info("No terminal, rode: pip install extra-streamlit-components")
-    COOKIE_ENABLED = False
-    cookie_manager = None
-
-cookie_nome = "siarcon_auth_token_v1"
-
-# ============================================================================
-# 🔐 LÓGICA DE LOGIN E SEGURANÇA
+# 🔐 LÓGICA DE LOGIN (VERSÃO ESTÁVEL - SEM COOKIES)
 # ============================================================================
 if 'logado' not in st.session_state:
     st.session_state['logado'] = False
+if 'usuario_atual' not in st.session_state:
+    st.session_state['usuario_atual'] = ""
 
-# 1. TENTA LOGIN AUTOMÁTICO (SE COOKIES ESTIVEREM ATIVOS)
-if COOKIE_ENABLED and not st.session_state['logado']:
-    try:
-        # Pega o cookie (pode demorar milisegundos, por isso o try)
-        cookie_usuario = cookie_manager.get(cookie=cookie_nome)
-        if cookie_usuario:
-            st.session_state['logado'] = True
-            st.session_state['usuario_atual'] = cookie_usuario
-    except:
-        pass # Se der erro na leitura, apenas segue para o login manual
-
-# 2. SE NÃO ESTIVER LOGADO, MOSTRA TELA DE LOGIN
+# SE NÃO ESTIVER LOGADO, MOSTRA TELA DE LOGIN
 if not st.session_state['logado']:
-    # Oculta sidebar
+    # Oculta sidebar na tela de login
     st.markdown("""<style>[data-testid="stSidebar"] {display: none;}</style>""", unsafe_allow_html=True)
 
     c_vazio1, c_login, c_vazio2 = st.columns([1, 1, 1])
     
     with c_login:
         st.markdown("<br><br>", unsafe_allow_html=True)
+        # Tenta carregar o logo
         if os.path.exists("Siarcon.png"):
             st.image("Siarcon.png", width=200)
         elif os.path.exists("siarcon.png"):
@@ -63,15 +34,10 @@ if not st.session_state['logado']:
             st.header("🏢 SIARCON")
             
         st.markdown("### 🔒 Acesso Restrito")
-        st.markdown("Faça login para acessar o Painel de Gestão.")
+        st.markdown("Entre com suas credenciais.")
         
         usuario = st.text_input("Usuário")
         senha = st.text_input("Senha", type="password")
-        
-        # Só mostra opção de manter conectado se a biblioteca carregou
-        manter_conectado = False
-        if COOKIE_ENABLED:
-            manter_conectado = st.checkbox("Manter conectado por 6 meses", value=True)
         
         if st.button("Entrar 🚀", type="primary", use_container_width=True):
             with st.spinner("Verificando..."):
@@ -79,19 +45,13 @@ if not st.session_state['logado']:
                 if sucesso:
                     st.session_state['logado'] = True
                     st.session_state['usuario_atual'] = mensagem
-                    
-                    # GRAVA O COOKIE SE SOLICITADO
-                    if manter_conectado and COOKIE_ENABLED:
-                        expire_date = datetime.now() + timedelta(days=180)
-                        cookie_manager.set(cookie_nome, mensagem, expires_at=expire_date)
-                    
                     st.success(f"Bem-vindo, {mensagem}!")
-                    time.sleep(1)
+                    time.sleep(0.5)
                     st.rerun()
                 else:
                     st.error(mensagem)
     
-    st.stop() # Bloqueia o resto do código
+    st.stop() # Bloqueia o resto do código se não logar
 
 # ============================================================================
 # 🔓 ÁREA LOGADA (DASHBOARD)
@@ -109,9 +69,8 @@ with c_user:
     st.markdown(f"<div style='text-align: right;'>👤 <b>{st.session_state['usuario_atual']}</b></div>", unsafe_allow_html=True)
     
     if st.button("Sair (Logout)", key="btn_logout"):
-        if COOKIE_ENABLED:
-            cookie_manager.delete(cookie_nome)
         st.session_state['logado'] = False
+        st.session_state['usuario_atual'] = ""
         st.rerun()
 
 # --- MAPEAMENTO DE PÁGINAS ---
