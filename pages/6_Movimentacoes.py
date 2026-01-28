@@ -89,21 +89,56 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs(["Cadastro", "Técnico", "Matriz", "SMS",
 
 with tab1:
     st.warning("⚠️ Suprimentos: Preencher campos do fornecedor.")
+    
+    # --- SELEÇÃO DE CLIENTE E OBRA ---
     c1, c2 = st.columns(2)
     cliente = c1.text_input("Cliente")
     obra = c1.text_input("Obra")
     
+    # --- SELEÇÃO DE FORNECEDOR EXISTENTE ---
     db_forn = utils_db.listar_fornecedores()
-    sel_forn = c1.selectbox("Fornecedor (Banco):", [""] + [f['Fornecedor'] for f in db_forn])
-    cnpj_auto = next((str(f['CNPJ']) for f in db_forn if f['Fornecedor'] == sel_forn), "") if sel_forn else ""
-    forn = c1.text_input("Razão Social:", value=sel_forn)
-    cnpj = c1.text_input("CNPJ:", value=cnpj_auto)
+    lista_nomes = [""] + [f['Fornecedor'] for f in db_forn]
+    
+    sel_forn = c1.selectbox("Selecionar Fornecedor (Banco de Dados):", lista_nomes)
+    
+    # Preenche automático se selecionou alguém
+    cnpj_auto = ""
+    if sel_forn:
+        found = next((f for f in db_forn if f['Fornecedor'] == sel_forn), None)
+        if found: cnpj_auto = str(found['CNPJ'])
+
+    # Campos editáveis (caso queira ajustar algo manualmente)
+    forn = c1.text_input("Razão Social (Preenchimento Automático):", value=sel_forn)
+    cnpj = c1.text_input("CNPJ (Preenchimento Automático):", value=cnpj_auto)
     
     resp_eng = c2.text_input("Engenharia")
     resp_sup = c2.text_input("Suprimentos")
     revisao = c2.text_input("Revisão", "R-00")
     resumo = c2.text_area("Resumo Escopo")
 
+    # --- CAMPO NOVO: CADASTRAR FORNECEDOR (O QUE FALTOU) ---
+    st.markdown("---")
+    with st.expander("➕ Não achou? Cadastre um NOVO Fornecedor aqui"):
+        st.info("Isso salvará o fornecedor na aba 'FORNECEDORES' da planilha.")
+        cc1, cc2, cc3 = st.columns([2, 1, 1])
+        
+        # Keys dinâmicas para não dar conflito entre páginas
+        novo_nome_f = cc1.text_input("Nome do Novo Fornecedor", key=f"new_f_name_{DISCIPLINA_ATUAL}")
+        novo_cnpj_f = cc2.text_input("CNPJ", key=f"new_f_cnpj_{DISCIPLINA_ATUAL}")
+        
+        # Espaçamento para alinhar o botão
+        cc3.write("")
+        cc3.write("")
+        if cc3.button("💾 Cadastrar", key=f"btn_save_f_{DISCIPLINA_ATUAL}"):
+            if novo_nome_f:
+                if utils_db.cadastrar_fornecedor_db(novo_nome_f, novo_cnpj_f):
+                    st.success(f"✅ {novo_nome_f} cadastrado com sucesso!")
+                    st.cache_data.clear() # Limpa memória para ele aparecer na lista na hora
+                    st.rerun() # Recarrega a página
+                else:
+                    st.error("Erro ao salvar na planilha.")
+            else:
+                st.warning("Digite pelo menos o nome.")
 with tab2:
     st.subheader("Itens Técnicos")
     # Busca apenas os itens desta disciplina específica
