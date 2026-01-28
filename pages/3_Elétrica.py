@@ -6,7 +6,7 @@ from datetime import date
 import utils_db
 
 # --- CONFIGURAÇÃO: ELÉTRICA ---
-DISCIPLINA_ATUAL = "Eletrica"
+DISCIPLINA_ATUAL = "Elétrica"
 ITENS_MATRIZ = [
     "Cabos e Fios", "Eletrocalhas e Perfilados", "Quadros e Painéis",
     "Disjuntores e Componentes", "Infraestrutura seca", "Mão de Obra Montagem",
