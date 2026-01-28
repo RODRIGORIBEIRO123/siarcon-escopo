@@ -89,7 +89,6 @@ def aprender_novo_item(categoria, novo_item):
     except: return False
 
 def cadastrar_fornecedor_db(nome, cnpj):
-    # Mantido igual (código omitido para brevidade, usar o anterior se precisar)
     sh = _conectar_gsheets()
     if not sh: return False
     try:
@@ -100,7 +99,6 @@ def cadastrar_fornecedor_db(nome, cnpj):
     except: return False
 
 def registrar_projeto(dados):
-    # Mantido igual (código omitido para brevidade)
     sh = _conectar_gsheets()
     if not sh: return False
     try:
