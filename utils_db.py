@@ -36,6 +36,7 @@ def _ler_aba_como_df(nome_aba):
     try:
         try: ws = sh.worksheet(nome_aba)
         except: 
+            # Fallback se a aba 'Dados' estiver com nome padrão
             if nome_aba == "Dados": 
                 try: ws = sh.worksheet("Página1")
                 except: return pd.DataFrame()
@@ -44,7 +45,7 @@ def _ler_aba_como_df(nome_aba):
     except: return pd.DataFrame()
 
 # ==================================================
-# 3. LEITURA INTELIGENTE
+# 3. LEITURA INTELIGENTE (CATEGORIAS)
 # ==================================================
 def carregar_opcoes():
     df = _ler_aba_como_df("Dados")
@@ -68,7 +69,7 @@ def listar_fornecedores():
     return df[['Fornecedor', 'CNPJ']].dropna(subset=['Fornecedor']).drop_duplicates().to_dict('records')
 
 # ==================================================
-# 4. FUNÇÕES DO DASHBOARD (QUE FALTAVAM)
+# 4. FUNÇÕES DO DASHBOARD (RESTAURADAS)
 # ==================================================
 def listar_todos_projetos():
     """Retorna DataFrame dos projetos para o Dashboard."""
@@ -83,7 +84,7 @@ def listar_todos_projetos():
     for col in cols_obrigatorias:
         if col not in df.columns: df[col] = ""
             
-    # Converte ID para string
+    # Converte ID para string para evitar erro
     if '_id' in df.columns: df['_id'] = df['_id'].astype(str)
     return df
 
@@ -103,7 +104,7 @@ def atualizar_status_projeto(id_projeto, novo_status):
     return False
 
 # ==================================================
-# 5. ESCRITA
+# 5. ESCRITA (SALVAR)
 # ==================================================
 def aprender_novo_item(categoria, novo_item):
     sh = _conectar_gsheets()
