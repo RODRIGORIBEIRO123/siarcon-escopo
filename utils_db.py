@@ -1,181 +1,123 @@
-# --- INÍCIO DO CORPO DO CÓDIGO (COPIAR PARA TODOS OS ARQUIVOS) ---
+import streamlit as st
+import pandas as pd
+import gspread
 
-# --- CARGA DE DADOS ---
-if 'opcoes_db' not in st.session_state or st.sidebar.button("🔄 Forçar Recarga"):
-    with st.spinner("Lendo banco de dados..."):
-        st.cache_data.clear()
-        st.session_state['opcoes_db'] = utils_db.carregar_opcoes()
+# ==================================================
+# 1. LISTA PADRÃO NRs (FIXA)
+# ==================================================
+NRS_PADRAO = [
+    "NR-01 (Disposições Gerais)", "NR-03 (Embargo e Interdição)", "NR-04 (SESMT)",
+    "NR-05 (CIPA)", "NR-06 (EPI)", "NR-07 (PCMSO)", "NR-08 (Edificações)",
+    "NR-09 (Avaliação e Controle de Exposições)", "NR-10 (Eletricidade)",
+    "NR-11 (Transporte e Movimentação)", "NR-12 (Máquinas e Equipamentos)",
+    "NR-13 (Vasos de Pressão)", "NR-15 (Insalubridade)", "NR-16 (Periculosidade)",
+    "NR-17 (Ergonomia)", "NR-18 (Construção Civil)", "NR-23 (Incêndios)",
+    "NR-24 (Condições Sanitárias)", "NR-26 (Sinalização)",
+    "NR-33 (Espaços Confinados)", "NR-35 (Trabalho em Altura)"
+]
 
-# --- DEFINE AS CHAVES DE CATEGORIA PARA O BANCO (SEPARAÇÃO POR DISCIPLINA) ---
-cat_tecnica_db = f"tecnico_{DISCIPLINA_ATUAL.lower()}"  # Ex: tecnico_hidraulica
-cat_qualidade_db = f"qualidade_{DISCIPLINA_ATUAL.lower()}" # Ex: qualidade_hidraulica
-
-def formatar_moeda(valor):
+# ==================================================
+# 2. CONEXÃO
+# ==================================================
+def _conectar_gsheets():
     try:
-        v = float(str(valor).replace('R$', '').replace('.', '').replace(',', '.').strip())
-        return f"R$ {v:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
-    except: return valor
+        if "gcp_service_account" not in st.secrets: return None
+        creds_dict = dict(st.secrets["gcp_service_account"])
+        if "private_key" in creds_dict:
+            chave = creds_dict["private_key"]
+            if "\n" not in chave: creds_dict["private_key"] = chave.replace("\\n", "\n")
+        gc = gspread.service_account_from_dict(creds_dict)
+        return gc.open("DB_SIARCON") 
+    except: return None
 
-def gerar_docx(dados):
-    doc = Document()
-    try: style = doc.styles['Normal']; style.font.name = 'Calibri'; style.font.size = Pt(11)
-    except: pass
-    
-    doc.add_heading(f'Escopo - {dados["disciplina"]}', 0)
-    doc.add_paragraph(f"Data: {date.today().strftime('%d/%m/%Y')} | Rev: {dados.get('revisao','-')}")
-    
-    doc.add_heading('1. DADOS GERAIS', 1)
-    t = doc.add_table(rows=1, cols=2)
-    try: t.style = 'Table Grid'
-    except: pass
-    infos = [("Cliente", dados['cliente']), ("Obra", dados['obra']), ("Fornecedor", dados['fornecedor']),
-             ("Engenharia", dados['responsavel']), ("Suprimentos", dados['resp_suprimentos'])]
-    for k, v in infos:
-        row = t.add_row().cells; row[0].text = k; row[0].paragraphs[0].runs[0].bold = True; row[1].text = str(v)
+def _ler_aba_como_df(nome_aba):
+    sh = _conectar_gsheets()
+    if not sh: return pd.DataFrame()
+    try:
+        try: ws = sh.worksheet(nome_aba)
+        except: 
+            if nome_aba == "Dados": 
+                try: ws = sh.worksheet("Página1")
+                except: return pd.DataFrame()
+            else: return pd.DataFrame()
+        return pd.DataFrame(ws.get_all_records())
+    except: return pd.DataFrame()
 
-    doc.add_heading('2. ESCOPO TÉCNICO', 1)
-    doc.add_paragraph(f"Resumo: {dados.get('resumo_escopo','')}")
-    if dados.get('tecnico_livre'): 
-        doc.add_paragraph("Obs Técnicas:", style='List Bullet')
-        doc.add_paragraph(dados['tecnico_livre'])
-    for item in dados.get('itens_tecnicos', []): doc.add_paragraph(item, style='List Bullet')
+# ==================================================
+# 3. LEITURA INTELIGENTE (CORREÇÃO AQUI)
+# ==================================================
+def carregar_opcoes():
+    df = _ler_aba_como_df("Dados")
+    opcoes = {'sms': NRS_PADRAO.copy()} # Começa com NRs padrão
 
-    doc.add_heading('3. QUALIDADE', 1)
-    for item in dados.get('itens_qualidade', []): doc.add_paragraph(item, style='List Bullet')
-
-    doc.add_heading('4. MATRIZ DE RESPONSABILIDADE', 1)
-    tm = doc.add_table(rows=1, cols=3)
-    try: tm.style = 'Table Grid'
-    except: pass
-    h = tm.rows[0].cells; h[0].text = "ITEM"; h[1].text = "SIARCON"; h[2].text = "FORNECEDOR"
-    for i, r in dados.get('matriz', {}).items():
-        row = tm.add_row().cells; row[0].text = i
-        if r == "SIARCON": row[1].text = "X"
-        else: row[2].text = "X"
-
-    doc.add_heading('5. SMS E SEGURANÇA', 1)
-    if dados.get('sms_livre'):
-        doc.add_paragraph("Obs Segurança:", style='List Bullet')
-        doc.add_paragraph(dados['sms_livre'])
-    for nr in dados.get('nrs_selecionadas', []): doc.add_paragraph(nr, style='List Bullet')
-
-    doc.add_heading('6. COMERCIAL', 1)
-    doc.add_paragraph(f"Valor: {formatar_moeda(dados.get('valor_total',''))}")
-    doc.add_paragraph(f"Pagamento: {dados.get('condicao_pgto','')}")
-    if dados.get('obs_gerais'): doc.add_paragraph(f"Obs: {dados['obs_gerais']}")
-
-    b = io.BytesIO(); doc.save(b); b.seek(0); return b
-
-# --- INTERFACE ---
-st.title(f"🛠️ {DISCIPLINA_ATUAL}")
-opcoes = st.session_state.get('opcoes_db', {})
-
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["Cadastro", "Técnico", "Matriz", "SMS", "Comercial"])
-
-with tab1:
-    st.warning("⚠️ Suprimentos: Preencher campos do fornecedor.")
-    c1, c2 = st.columns(2)
-    cliente = c1.text_input("Cliente")
-    obra = c1.text_input("Obra")
-    
-    db_forn = utils_db.listar_fornecedores()
-    sel_forn = c1.selectbox("Fornecedor (Banco):", [""] + [f['Fornecedor'] for f in db_forn])
-    cnpj_auto = next((str(f['CNPJ']) for f in db_forn if f['Fornecedor'] == sel_forn), "") if sel_forn else ""
-    forn = c1.text_input("Razão Social:", value=sel_forn)
-    cnpj = c1.text_input("CNPJ:", value=cnpj_auto)
-    
-    resp_eng = c2.text_input("Engenharia")
-    resp_sup = c2.text_input("Suprimentos")
-    revisao = c2.text_input("Revisão", "R-00")
-    resumo = c2.text_area("Resumo Escopo")
-
-with tab2:
-    st.subheader("Itens Técnicos")
-    # Busca apenas os itens desta disciplina específica
-    lista_tec = opcoes.get(cat_tecnica_db, [])
-    # Se for Dutos, por compatibilidade, soma com 'tecnico' genérico se existir
-    if DISCIPLINA_ATUAL == "Dutos": lista_tec = list(set(lista_tec + opcoes.get('tecnico', [])))
-    
-    k_tec = f"tec_{DISCIPLINA_ATUAL.lower()}"
-    itens_tec = st.multiselect("Selecione Itens:", sorted(lista_tec), key=k_tec)
-    
-    c_add, c_txt = st.columns(2)
-    novo_tec = c_add.text_input("Novo Item Técnico (DB):", key=f"new_{k_tec}")
-    if c_add.button("💾 Adicionar", key=f"btn_{k_tec}"):
-        # Salva com a categoria específica (ex: tecnico_hidraulica)
-        if utils_db.aprender_novo_item(cat_tecnica_db, novo_tec):
-            st.toast("Salvo!"); st.rerun()
+    if not df.empty and 'Categoria' in df.columns and 'Item' in df.columns:
+        # Normaliza para minúsculo
+        df['Categoria'] = df['Categoria'].astype(str).str.lower().str.strip()
+        
+        # AGORA ELE CRIA LISTAS SEPARADAS PARA CADA CATEGORIA QUE ACHAR
+        # Ex: vai criar opcoes['tecnico_dutos'], opcoes['tecnico_hidraulica'] automaticamente
+        categorias_encontradas = df['Categoria'].unique()
+        
+        for cat in categorias_encontradas:
+            itens = sorted(df[df['Categoria'] == cat]['Item'].unique().tolist())
             
-    tec_livre = st.text_area("📝 Texto Livre (Técnico):", height=150)
-    
-    st.divider()
-    st.subheader("Controle de Qualidade")
-    # Busca itens de qualidade específicos desta disciplina
-    lista_qual = opcoes.get(cat_qualidade_db, [])
-    # Se for Dutos, mantém compatibilidade
-    if DISCIPLINA_ATUAL == "Dutos": lista_qual = list(set(lista_qual + opcoes.get('qualidade', [])))
+            # Se for SMS, junta com o padrão
+            if cat == 'sms':
+                opcoes['sms'] = sorted(list(set(opcoes['sms'] + itens)))
+            else:
+                opcoes[cat] = itens
+                
+    return opcoes
 
-    k_qual = f"qual_{DISCIPLINA_ATUAL.lower()}"
-    itens_qual = st.multiselect("Selecione Itens:", sorted(lista_qual), key=k_qual)
-    
-    c_add_q, c_vz = st.columns(2)
-    novo_qual = c_add_q.text_input("Novo Item Qualidade (DB):", key=f"new_q_{k_qual}")
-    if c_add_q.button("💾 Adicionar Qualidade", key=f"btn_q_{k_qual}"):
-        if utils_db.aprender_novo_item(cat_qualidade_db, novo_qual):
-             st.toast("Salvo!"); st.rerun()
+def listar_fornecedores():
+    df = _ler_aba_como_df("Dados")
+    if df.empty or 'Fornecedor' not in df.columns: return []
+    return df[['Fornecedor', 'CNPJ']].dropna(subset=['Fornecedor']).drop_duplicates().to_dict('records')
 
-with tab3:
-    escolhas = {}
-    nome_f = forn.split(' ')[0].upper() if forn else "FORN"
-    for item in ITENS_MATRIZ:
-        c_m1, c_m2 = st.columns([2,1])
-        c_m1.write(f"**{item}**")
-        escolhas[item] = c_m2.radio(item, ["SIARCON", nome_f], horizontal=True, label_visibility="collapsed", key=f"mtz_{item}")
-        st.divider()
+# ==================================================
+# 4. ESCRITA
+# ==================================================
+def aprender_novo_item(categoria, novo_item):
+    sh = _conectar_gsheets()
+    if not sh: return False
+    try:
+        try: ws = sh.worksheet("Dados")
+        except: ws = sh.add_worksheet("Dados", 100, 10)
+        # Salva a categoria exata (ex: 'tecnico_hidraulica')
+        ws.append_row([categoria.lower(), novo_item, "", ""])
+        return True
+    except: return False
 
-with tab4:
-    st.subheader("SMS")
-    nrs = st.multiselect("NRs Aplicáveis:", opcoes.get('sms', []), key=f"sms_{DISCIPLINA_ATUAL}")
-    
-    c_add_s, c_vz = st.columns(2)
-    novo_sms = c_add_s.text_input("Novo Item SMS (DB):", key=f"new_s_{DISCIPLINA_ATUAL}")
-    if c_add_s.button("💾 Adicionar SMS", key=f"btn_s_{DISCIPLINA_ATUAL}"):
-        if utils_db.aprender_novo_item("sms", novo_sms):
-            st.toast("Salvo!"); st.rerun()
-            
-    st.divider()
-    sms_livre = st.text_area("📝 Texto Livre (Segurança):", height=150)
+def cadastrar_fornecedor_db(nome, cnpj):
+    # Mantido igual (código omitido para brevidade, usar o anterior se precisar)
+    sh = _conectar_gsheets()
+    if not sh: return False
+    try:
+        try: ws = sh.worksheet("Dados")
+        except: ws = sh.add_worksheet("Dados", 100, 10)
+        ws.append_row(["", "", nome, cnpj])
+        return True
+    except: return False
 
-with tab5:
-    c_v1, c_v2 = st.columns(2)
-    val = c_v1.text_input("Valor Total (R$)")
-    pgto = c_v2.text_area("Pagamento")
-    obs = st.text_area("Obs Gerais")
-    status = st.selectbox("Status", ["Em Elaboração", "Finalizado"])
+def registrar_projeto(dados):
+    # Mantido igual (código omitido para brevidade)
+    sh = _conectar_gsheets()
+    if not sh: return False
+    try:
+        try: ws = sh.worksheet("Projetos")
+        except: 
+            ws = sh.add_worksheet("Projetos", 100, 20)
+            ws.append_row(['_id', 'status', 'disciplina', 'cliente', 'obra', 'fornecedor', 'valor_total'])
+        
+        headers = ws.row_values(1)
+        if not headers: ws.append_row(['_id', 'status', 'disciplina', 'cliente', 'obra', 'fornecedor', 'valor_total'])
 
-st.markdown("---")
-dados = {
-    'disciplina': DISCIPLINA_ATUAL, 'cliente': cliente, 'obra': obra,
-    'fornecedor': forn, 'cnpj_fornecedor': cnpj,
-    'responsavel': resp_eng, 'resp_suprimentos': resp_sup,
-    'revisao': revisao, 'resumo_escopo': resumo,
-    'itens_tecnicos': itens_tec, 'tecnico_livre': tec_livre,
-    'itens_qualidade': itens_qual, 'matriz': escolhas, 
-    'nrs_selecionadas': nrs, 'sms_livre': sms_livre,
-    'valor_total': val, 'condicao_pgto': pgto, 'obs_gerais': obs,
-    'status': status, 'data_inicio': date.today().strftime("%Y-%m-%d")
-}
+        if '_id' not in dados: 
+            from datetime import datetime
+            dados['_id'] = datetime.now().strftime("%Y%m%d%H%M%S")
 
-c_b1, c_b2 = st.columns(2)
-if c_b1.button("☁️ APENAS SALVAR"):
-    if not cliente or not obra: st.error("Preencha Cliente e Obra")
-    else: 
-        if utils_db.registrar_projeto(dados): st.success("Salvo!"); st.toast("Salvo")
-        else: st.error("Erro")
-
-if c_b2.button("💾 SALVAR E GERAR DOCX", type="primary"):
-    if not cliente or not obra: st.error("Preencha Cliente e Obra")
-    else:
-        utils_db.registrar_projeto(dados)
-        b = gerar_docx(dados)
-        st.download_button(f"📥 Baixar DOCX", b, f"Escopo_{DISCIPLINA_ATUAL}.docx")
+        row_data = []
+        for h in headers: row_data.append(str(dados.get(h, "")))
+        ws.append_row(row_data)
+        return True
+    except: return False
