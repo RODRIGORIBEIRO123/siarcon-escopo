@@ -1,13 +1,8 @@
 streamlit
-python-docx
-Pillow
+pandas
 gspread
 google-auth
-pandas
+python-docx
 pdfplumber
 ezdxf
-matplotlib
-openai
 openpyxl
-xlsxwriter
-networkx
