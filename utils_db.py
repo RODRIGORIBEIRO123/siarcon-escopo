@@ -1,9 +1,10 @@
 import streamlit as st
 import pandas as pd
 import gspread
+from datetime import datetime
 
 # ==================================================
-# 1. LISTA PADRÃO NRs (FIXA)
+# 1. LISTA PADRÃO NRs
 # ==================================================
 NRS_PADRAO = [
     "NR-01 (Disposições Gerais)", "NR-03 (Embargo e Interdição)", "NR-04 (SESMT)",
@@ -34,28 +35,36 @@ def _ler_aba_como_df(nome_aba):
     sh = _conectar_gsheets()
     if not sh: return pd.DataFrame()
     try:
+        # Tenta achar a aba pelo nome exato, ou tenta variações
         try: ws = sh.worksheet(nome_aba)
         except: 
-            # Fallback se a aba 'Dados' estiver com nome padrão
-            if nome_aba == "Dados": 
-                try: ws = sh.worksheet("Página1")
-                except: return pd.DataFrame()
+            if nome_aba == "Dados":
+                # Fallbacks para a aba de Configuração
+                for n in ["Página1", "Sheet1", "Config"]:
+                    try: 
+                        ws = sh.worksheet(n)
+                        break
+                    except: pass
+                else: return pd.DataFrame()
             else: return pd.DataFrame()
-        return pd.DataFrame(ws.get_all_records())
+        
+        dados = ws.get_all_records()
+        return pd.DataFrame(dados)
     except: return pd.DataFrame()
 
 # ==================================================
-# 3. LEITURA INTELIGENTE (CATEGORIAS)
+# 3. LEITURA DE ITENS (CATEGORIAS)
 # ==================================================
 def carregar_opcoes():
+    """Lê itens técnicos e NRs da aba 'Dados' ou 'DUTOS' se configurado."""
     df = _ler_aba_como_df("Dados")
     opcoes = {'sms': NRS_PADRAO.copy()} 
 
     if not df.empty and 'Categoria' in df.columns and 'Item' in df.columns:
         df['Categoria'] = df['Categoria'].astype(str).str.lower().str.strip()
-        categorias_encontradas = df['Categoria'].unique()
+        categorias = df['Categoria'].unique()
         
-        for cat in categorias_encontradas:
+        for cat in categorias:
             itens = sorted(df[df['Categoria'] == cat]['Item'].unique().tolist())
             if cat == 'sms':
                 opcoes['sms'] = sorted(list(set(opcoes['sms'] + itens)))
@@ -63,28 +72,81 @@ def carregar_opcoes():
                 opcoes[cat] = itens     
     return opcoes
 
+# ==================================================
+# 4. LEITURA DE FORNECEDORES (INTELIGENTE)
+# ==================================================
 def listar_fornecedores():
+    """
+    Procura fornecedores na aba 'FORNECEDORES' (Col A=Nome, B=CNPJ)
+    Se não achar, procura na aba 'Dados' (Col C=Fornecedor, D=CNPJ)
+    """
+    sh = _conectar_gsheets()
+    if not sh: return []
+    
+    # 1. TENTA A ABA ESPECÍFICA 'FORNECEDORES'
+    try:
+        ws = sh.worksheet("FORNECEDORES")
+        # Assume que Coluna 1 é Nome, Coluna 2 é CNPJ
+        vals = ws.get_all_values()
+        if len(vals) > 1: # Tem cabeçalho e dados
+            lista = []
+            # Pula cabeçalho (index 0)
+            for row in vals[1:]:
+                if row[0]: # Se tem nome
+                    cnpj = row[1] if len(row) > 1 else ""
+                    lista.append({'Fornecedor': row[0], 'CNPJ': cnpj})
+            return lista
+    except:
+        pass # Se der erro, tenta o método antigo
+
+    # 2. FALLBACK: TENTA A ABA 'Dados'
     df = _ler_aba_como_df("Dados")
-    if df.empty or 'Fornecedor' not in df.columns: return []
-    return df[['Fornecedor', 'CNPJ']].dropna(subset=['Fornecedor']).drop_duplicates().to_dict('records')
+    if not df.empty and 'Fornecedor' in df.columns:
+        return df[['Fornecedor', 'CNPJ']].dropna(subset=['Fornecedor']).drop_duplicates().to_dict('records')
+    
+    return []
 
 # ==================================================
-# 4. FUNÇÕES DO DASHBOARD (RESTAURADAS)
+# 5. ESCRITA (CADASTROS)
+# ==================================================
+def aprender_novo_item(categoria, novo_item):
+    sh = _conectar_gsheets()
+    if not sh: return False
+    try:
+        try: ws = sh.worksheet("Dados")
+        except: ws = sh.add_worksheet("Dados", 100, 10)
+        ws.append_row([categoria.lower(), novo_item, "", ""])
+        return True
+    except: return False
+
+def cadastrar_fornecedor_db(nome, cnpj):
+    sh = _conectar_gsheets()
+    if not sh: return False
+    
+    # Tenta salvar na aba FORNECEDORES se ela existir
+    try:
+        ws = sh.worksheet("FORNECEDORES")
+        ws.append_row([nome, cnpj])
+        return True
+    except:
+        # Se não, salva na aba Dados
+        try:
+            ws = sh.worksheet("Dados")
+            ws.append_row(["", "", nome, cnpj])
+            return True
+        except: 
+            return False
+
+# ==================================================
+# 6. REGISTRO DE PROJETOS (RECRIAR ABA SE PRECISAR)
 # ==================================================
 def listar_todos_projetos():
-    """Retorna DataFrame dos projetos para o Dashboard."""
     df = _ler_aba_como_df("Projetos")
+    cols_esperadas = ['_id', 'status', 'disciplina', 'cliente', 'obra', 'fornecedor', 'valor_total', 'data_inicio']
     
-    # Se estiver vazio, cria estrutura para não dar erro
-    if df.empty: 
-        return pd.DataFrame(columns=['_id', 'status', 'disciplina', 'cliente', 'obra', 'fornecedor', 'valor_total'])
-
-    # Garante colunas essenciais
-    cols_obrigatorias = ['_id', 'status', 'disciplina', 'cliente', 'obra', 'fornecedor', 'valor_total']
-    for col in cols_obrigatorias:
+    if df.empty: return pd.DataFrame(columns=cols_esperadas)
+    for col in cols_esperadas:
         if col not in df.columns: df[col] = ""
-            
-    # Converte ID para string para evitar erro
     if '_id' in df.columns: df['_id'] = df['_id'].astype(str)
     return df
 
@@ -103,29 +165,6 @@ def atualizar_status_projeto(id_projeto, novo_status):
     except: pass
     return False
 
-# ==================================================
-# 5. ESCRITA (SALVAR)
-# ==================================================
-def aprender_novo_item(categoria, novo_item):
-    sh = _conectar_gsheets()
-    if not sh: return False
-    try:
-        try: ws = sh.worksheet("Dados")
-        except: ws = sh.add_worksheet("Dados", 100, 10)
-        ws.append_row([categoria.lower(), novo_item, "", ""])
-        return True
-    except: return False
-
-def cadastrar_fornecedor_db(nome, cnpj):
-    sh = _conectar_gsheets()
-    if not sh: return False
-    try:
-        try: ws = sh.worksheet("Dados")
-        except: ws = sh.add_worksheet("Dados", 100, 10)
-        ws.append_row(["", "", nome, cnpj])
-        return True
-    except: return False
-
 def registrar_projeto(dados):
     sh = _conectar_gsheets()
     if not sh: return False
@@ -133,14 +172,14 @@ def registrar_projeto(dados):
         try: ws = sh.worksheet("Projetos")
         except: 
             ws = sh.add_worksheet("Projetos", 100, 20)
-            ws.append_row(['_id', 'status', 'disciplina', 'cliente', 'obra', 'fornecedor', 'valor_total'])
-        
-        headers = ws.row_values(1)
-        if not headers: ws.append_row(['_id', 'status', 'disciplina', 'cliente', 'obra', 'fornecedor', 'valor_total'])
+            ws.append_row(['_id', 'status', 'disciplina', 'cliente', 'obra', 'fornecedor', 'valor_total', 'data_inicio'])
 
-        if '_id' not in dados: 
-            from datetime import datetime
-            dados['_id'] = datetime.now().strftime("%Y%m%d%H%M%S")
+        headers = ws.row_values(1)
+        if not headers: 
+            headers = ['_id', 'status', 'disciplina', 'cliente', 'obra', 'fornecedor', 'valor_total', 'data_inicio']
+            ws.append_row(headers)
+
+        if '_id' not in dados: dados['_id'] = datetime.now().strftime("%Y%m%d%H%M%S")
 
         row_data = []
         for h in headers: row_data.append(str(dados.get(h, "")))
