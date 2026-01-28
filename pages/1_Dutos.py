@@ -12,9 +12,8 @@ ITENS_MATRIZ = [
     "Suportes e Fixações", "Grelhas e Difusores", "Consumíveis",
     "Andaimes/Plataformas", "Projetos Executivos", "ART/RRT"
 ]
-
-st.set_page_config(page_title="Escopo Dutos", page_icon="❄️", layout="wide")
-# --- INÍCIO DO CORPO DO CÓDIGO (COPIAR PARA TODOS OS ARQUIVOS) ---
+# ... COLE O BLOCO PRINCIPAL AQUI ABAIXO ...# --- INÍCIO DO CÓDIGO COMUM ---
+st.set_page_config(page_title=f"Escopo {DISCIPLINA_ATUAL}", page_icon="📝", layout="wide")
 
 # --- CARGA DE DADOS ---
 if 'opcoes_db' not in st.session_state or st.sidebar.button("🔄 Forçar Recarga"):
@@ -22,9 +21,9 @@ if 'opcoes_db' not in st.session_state or st.sidebar.button("🔄 Forçar Recarg
         st.cache_data.clear()
         st.session_state['opcoes_db'] = utils_db.carregar_opcoes()
 
-# --- DEFINE AS CHAVES DE CATEGORIA PARA O BANCO (SEPARAÇÃO POR DISCIPLINA) ---
-cat_tecnica_db = f"tecnico_{DISCIPLINA_ATUAL.lower()}"  # Ex: tecnico_hidraulica
-cat_qualidade_db = f"qualidade_{DISCIPLINA_ATUAL.lower()}" # Ex: qualidade_hidraulica
+# --- DEFINE AS CHAVES DE CATEGORIA PARA O BANCO ---
+cat_tecnica_db = f"tecnico_{DISCIPLINA_ATUAL.lower()}"
+cat_qualidade_db = f"qualidade_{DISCIPLINA_ATUAL.lower()}"
 
 def formatar_moeda(valor):
     try:
@@ -109,7 +108,7 @@ with tab2:
     st.subheader("Itens Técnicos")
     # Busca apenas os itens desta disciplina específica
     lista_tec = opcoes.get(cat_tecnica_db, [])
-    # Se for Dutos, por compatibilidade, soma com 'tecnico' genérico se existir
+    # Se for Dutos, por compatibilidade com banco antigo, soma com 'tecnico' genérico
     if DISCIPLINA_ATUAL == "Dutos": lista_tec = list(set(lista_tec + opcoes.get('tecnico', [])))
     
     k_tec = f"tec_{DISCIPLINA_ATUAL.lower()}"
@@ -118,7 +117,6 @@ with tab2:
     c_add, c_txt = st.columns(2)
     novo_tec = c_add.text_input("Novo Item Técnico (DB):", key=f"new_{k_tec}")
     if c_add.button("💾 Adicionar", key=f"btn_{k_tec}"):
-        # Salva com a categoria específica (ex: tecnico_hidraulica)
         if utils_db.aprender_novo_item(cat_tecnica_db, novo_tec):
             st.toast("Salvo!"); st.rerun()
             
@@ -126,9 +124,7 @@ with tab2:
     
     st.divider()
     st.subheader("Controle de Qualidade")
-    # Busca itens de qualidade específicos desta disciplina
     lista_qual = opcoes.get(cat_qualidade_db, [])
-    # Se for Dutos, mantém compatibilidade
     if DISCIPLINA_ATUAL == "Dutos": lista_qual = list(set(lista_qual + opcoes.get('qualidade', [])))
 
     k_qual = f"qual_{DISCIPLINA_ATUAL.lower()}"
