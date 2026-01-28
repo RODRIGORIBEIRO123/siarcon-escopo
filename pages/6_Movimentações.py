@@ -5,15 +5,19 @@ import io
 from datetime import date
 import utils_db
 
-# --- CONFIGURAÇÃO: TAB ---
-DISCIPLINA_ATUAL = "TAB"
+# ============================================================================
+# 🚨 CONFIGURAÇÃO ESPECÍFICA: MOVIMENTAÇÕES
+# ============================================================================
+DISCIPLINA_ATUAL = "Movimentacoes" 
+
 ITENS_MATRIZ = [
-    "Instrumentos de Medição", "Mão de Obra de Ajuste", "Relatórios Técnicos",
-    "Troca de Polias/Correias", "Balanceamento Hidrônico", "Balanceamento de Ar",
-    "ART de Execução", "Análise de Qualidade do Ar (RE 09)"
+    "Guindaste", "Caminhão Munk", "Empilhadeira",
+    "Equipe de Remoção Técnica", "Plano de Rigging", "Seguro de Carga",
+    "Batedores/Escolta", "Autorizações Viárias", "Isolamento da Área"
 ]
-# ... COLE O BLOCO PRINCIPAL AQUI ABAIXO ...# --- INÍCIO DO CÓDIGO COMUM ---
-st.set_page_config(page_title=f"Escopo {DISCIPLINA_ATUAL}", page_icon="📝", layout="wide")
+# ============================================================================
+
+st.set_page_config(page_title=f"Escopo {DISCIPLINA_ATUAL}", page_icon="🏗️", layout="wide")
 
 # --- CARGA DE DADOS ---
 if 'opcoes_db' not in st.session_state or st.sidebar.button("🔄 Forçar Recarga"):
@@ -21,9 +25,21 @@ if 'opcoes_db' not in st.session_state or st.sidebar.button("🔄 Forçar Recarg
         st.cache_data.clear()
         st.session_state['opcoes_db'] = utils_db.carregar_opcoes()
 
-# --- DEFINE AS CHAVES DE CATEGORIA PARA O BANCO ---
+# --- CHAVES DE CATEGORIA ---
 cat_tecnica_db = f"tecnico_{DISCIPLINA_ATUAL.lower()}"
 cat_qualidade_db = f"qualidade_{DISCIPLINA_ATUAL.lower()}"
+
+# --- VERIFICAÇÃO DE EDIÇÃO (LÓGICA DO BOTÃO LÁPIS) ---
+id_projeto = st.session_state.get('id_projeto_editar')
+dados_edit = {}
+
+if id_projeto:
+    temp_dados = utils_db.buscar_projeto_por_id(id_projeto)
+    if temp_dados and temp_dados.get('disciplina') == DISCIPLINA_ATUAL:
+        dados_edit = temp_dados
+        st.toast(f"✏️ Editando projeto: {dados_edit.get('obra')}")
+    else:
+        dados_edit = {}
 
 def formatar_moeda(valor):
     try:
@@ -83,125 +99,143 @@ def gerar_docx(dados):
 
 # --- INTERFACE ---
 st.title(f"🛠️ {DISCIPLINA_ATUAL}")
+if dados_edit: st.info(f"Modo Edição: {dados_edit.get('cliente')} - {dados_edit.get('obra')}")
+
 opcoes = st.session_state.get('opcoes_db', {})
 
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["Cadastro", "Técnico", "Matriz", "SMS", "Comercial"])
 
 with tab1:
     st.warning("⚠️ Suprimentos: Preencher campos do fornecedor.")
-    
-    # --- SELEÇÃO DE CLIENTE E OBRA ---
     c1, c2 = st.columns(2)
-    cliente = c1.text_input("Cliente")
-    obra = c1.text_input("Obra")
     
-    # --- SELEÇÃO DE FORNECEDOR EXISTENTE ---
+    # PREENCHIMENTO AUTOMÁTICO (EDIÇÃO)
+    cliente = c1.text_input("Cliente", value=dados_edit.get('cliente', ''))
+    obra = c1.text_input("Obra", value=dados_edit.get('obra', ''))
+    
     db_forn = utils_db.listar_fornecedores()
     lista_nomes = [""] + [f['Fornecedor'] for f in db_forn]
     
-    sel_forn = c1.selectbox("Selecionar Fornecedor (Banco de Dados):", lista_nomes)
+    # Tenta pré-selecionar
+    val_forn_db = dados_edit.get('fornecedor', '')
+    index_forn = 0
+    if val_forn_db in lista_nomes: index_forn = lista_nomes.index(val_forn_db)
     
-    # Preenche automático se selecionou alguém
+    sel_forn = c1.selectbox("Selecionar Fornecedor (Banco):", lista_nomes, index=index_forn)
+    
     cnpj_auto = ""
     if sel_forn:
         found = next((f for f in db_forn if f['Fornecedor'] == sel_forn), None)
         if found: cnpj_auto = str(found['CNPJ'])
-
-    # Campos editáveis (caso queira ajustar algo manualmente)
-    forn = c1.text_input("Razão Social (Preenchimento Automático):", value=sel_forn)
-    cnpj = c1.text_input("CNPJ (Preenchimento Automático):", value=cnpj_auto)
     
-    resp_eng = c2.text_input("Engenharia")
-    resp_sup = c2.text_input("Suprimentos")
-    revisao = c2.text_input("Revisão", "R-00")
-    resumo = c2.text_area("Resumo Escopo")
+    val_final_forn = sel_forn if sel_forn else dados_edit.get('fornecedor', '')
+    val_final_cnpj = cnpj_auto if cnpj_auto else dados_edit.get('cnpj_fornecedor', '')
 
-    # --- CAMPO NOVO: CADASTRAR FORNECEDOR (O QUE FALTOU) ---
+    forn = c1.text_input("Razão Social:", value=val_final_forn)
+    cnpj = c1.text_input("CNPJ:", value=val_final_cnpj)
+    
+    resp_eng = c2.text_input("Engenharia", value=dados_edit.get('responsavel', ''))
+    resp_sup = c2.text_input("Suprimentos", value=dados_edit.get('resp_suprimentos', ''))
+    revisao = c2.text_input("Revisão", value=dados_edit.get('revisao', 'R-00'))
+    resumo = c2.text_area("Resumo Escopo", value=dados_edit.get('resumo_escopo', ''))
+
     st.markdown("---")
     with st.expander("➕ Não achou? Cadastre um NOVO Fornecedor aqui"):
-        st.info("Isso salvará o fornecedor na aba 'FORNECEDORES' da planilha.")
         cc1, cc2, cc3 = st.columns([2, 1, 1])
-        
-        # Keys dinâmicas para não dar conflito entre páginas
-        novo_nome_f = cc1.text_input("Nome do Novo Fornecedor", key=f"new_f_name_{DISCIPLINA_ATUAL}")
-        novo_cnpj_f = cc2.text_input("CNPJ", key=f"new_f_cnpj_{DISCIPLINA_ATUAL}")
-        
-        # Espaçamento para alinhar o botão
-        cc3.write("")
-        cc3.write("")
-        if cc3.button("💾 Cadastrar", key=f"btn_save_f_{DISCIPLINA_ATUAL}"):
+        novo_nome_f = cc1.text_input("Nome", key=f"nf_{DISCIPLINA_ATUAL}")
+        novo_cnpj_f = cc2.text_input("CNPJ", key=f"cf_{DISCIPLINA_ATUAL}")
+        cc3.write(""); cc3.write("")
+        if cc3.button("💾", key=f"bf_{DISCIPLINA_ATUAL}"):
             if novo_nome_f:
-                if utils_db.cadastrar_fornecedor_db(novo_nome_f, novo_cnpj_f):
-                    st.success(f"✅ {novo_nome_f} cadastrado com sucesso!")
-                    st.cache_data.clear() # Limpa memória para ele aparecer na lista na hora
-                    st.rerun() # Recarrega a página
-                else:
-                    st.error("Erro ao salvar na planilha.")
-            else:
-                st.warning("Digite pelo menos o nome.")
+                utils_db.cadastrar_fornecedor_db(novo_nome_f, novo_cnpj_f)
+                st.success("Salvo!"); st.cache_data.clear(); st.rerun()
+
 with tab2:
     st.subheader("Itens Técnicos")
-    # Busca apenas os itens desta disciplina específica
     lista_tec = opcoes.get(cat_tecnica_db, [])
-    # Se for Dutos, por compatibilidade com banco antigo, soma com 'tecnico' genérico
-    if DISCIPLINA_ATUAL == "Dutos": lista_tec = list(set(lista_tec + opcoes.get('tecnico', [])))
+    
+    # Recupera itens salvos para edição
+    itens_salvos = dados_edit.get('itens_tecnicos', [])
+    if isinstance(itens_salvos, str): itens_salvos = eval(itens_salvos)
+    
+    opcoes_finais = sorted(list(set(lista_tec + itens_salvos)))
     
     k_tec = f"tec_{DISCIPLINA_ATUAL.lower()}"
-    itens_tec = st.multiselect("Selecione Itens:", sorted(lista_tec), key=k_tec)
+    itens_tec = st.multiselect("Selecione Itens:", opcoes_finais, default=itens_salvos, key=k_tec)
     
     c_add, c_txt = st.columns(2)
     novo_tec = c_add.text_input("Novo Item Técnico (DB):", key=f"new_{k_tec}")
     if c_add.button("💾 Adicionar", key=f"btn_{k_tec}"):
-        if utils_db.aprender_novo_item(cat_tecnica_db, novo_tec):
-            st.toast("Salvo!"); st.rerun()
+        if utils_db.aprender_novo_item(cat_tecnica_db, novo_tec): st.toast("Salvo!"); st.rerun()
             
-    tec_livre = st.text_area("📝 Texto Livre (Técnico):", height=150)
+    tec_livre = st.text_area("📝 Texto Livre (Técnico):", value=dados_edit.get('tecnico_livre', ''), height=150)
     
     st.divider()
-    st.subheader("Controle de Qualidade")
+    st.subheader("Qualidade")
     lista_qual = opcoes.get(cat_qualidade_db, [])
-    if DISCIPLINA_ATUAL == "Dutos": lista_qual = list(set(lista_qual + opcoes.get('qualidade', [])))
+    
+    itens_salvos_q = dados_edit.get('itens_qualidade', [])
+    if isinstance(itens_salvos_q, str): itens_salvos_q = eval(itens_salvos_q)
+    opcoes_finais_q = sorted(list(set(lista_qual + itens_salvos_q)))
 
     k_qual = f"qual_{DISCIPLINA_ATUAL.lower()}"
-    itens_qual = st.multiselect("Selecione Itens:", sorted(lista_qual), key=k_qual)
+    itens_qual = st.multiselect("Selecione Itens:", opcoes_finais_q, default=itens_salvos_q, key=k_qual)
     
     c_add_q, c_vz = st.columns(2)
     novo_qual = c_add_q.text_input("Novo Item Qualidade (DB):", key=f"new_q_{k_qual}")
-    if c_add_q.button("💾 Adicionar Qualidade", key=f"btn_q_{k_qual}"):
-        if utils_db.aprender_novo_item(cat_qualidade_db, novo_qual):
-             st.toast("Salvo!"); st.rerun()
+    if c_add_q.button("💾 Adicionar", key=f"btn_q_{k_qual}"):
+        if utils_db.aprender_novo_item(cat_qualidade_db, novo_qual): st.toast("Salvo!"); st.rerun()
 
 with tab3:
     escolhas = {}
     nome_f = forn.split(' ')[0].upper() if forn else "FORN"
+    matriz_salva = dados_edit.get('matriz', {})
+    if isinstance(matriz_salva, str): matriz_salva = eval(matriz_salva)
+
     for item in ITENS_MATRIZ:
         c_m1, c_m2 = st.columns([2,1])
         c_m1.write(f"**{item}**")
-        escolhas[item] = c_m2.radio(item, ["SIARCON", nome_f], horizontal=True, label_visibility="collapsed", key=f"mtz_{item}")
+        
+        val_padrao = 0 
+        if item in matriz_salva and matriz_salva[item] != "SIARCON": val_padrao = 1
+        
+        escolhas[item] = c_m2.radio(item, ["SIARCON", nome_f], index=val_padrao, horizontal=True, label_visibility="collapsed", key=f"mtz_{item}")
         st.divider()
 
 with tab4:
     st.subheader("SMS")
-    nrs = st.multiselect("NRs Aplicáveis:", opcoes.get('sms', []), key=f"sms_{DISCIPLINA_ATUAL}")
+    nrs_salvas = dados_edit.get('nrs_selecionadas', [])
+    if isinstance(nrs_salvas, str): nrs_salvas = eval(nrs_salvas)
+    opcoes_sms = sorted(list(set(opcoes.get('sms', []) + nrs_salvas)))
+
+    nrs = st.multiselect("NRs Aplicáveis:", opcoes_sms, default=nrs_salvas, key=f"sms_{DISCIPLINA_ATUAL}")
     
     c_add_s, c_vz = st.columns(2)
     novo_sms = c_add_s.text_input("Novo Item SMS (DB):", key=f"new_s_{DISCIPLINA_ATUAL}")
     if c_add_s.button("💾 Adicionar SMS", key=f"btn_s_{DISCIPLINA_ATUAL}"):
-        if utils_db.aprender_novo_item("sms", novo_sms):
-            st.toast("Salvo!"); st.rerun()
+        if utils_db.aprender_novo_item("sms", novo_sms): st.toast("Salvo!"); st.rerun()
             
     st.divider()
-    sms_livre = st.text_area("📝 Texto Livre (Segurança):", height=150)
+    sms_livre = st.text_area("📝 Texto Livre (Segurança):", value=dados_edit.get('sms_livre', ''), height=150)
 
 with tab5:
     c_v1, c_v2 = st.columns(2)
-    val = c_v1.text_input("Valor Total (R$)")
-    pgto = c_v2.text_area("Pagamento")
-    obs = st.text_area("Obs Gerais")
-    status = st.selectbox("Status", ["Em Elaboração", "Finalizado"])
+    val = c_v1.text_input("Valor Total (R$)", value=dados_edit.get('valor_total', ''))
+    pgto = c_v2.text_area("Pagamento", value=dados_edit.get('condicao_pgto', ''))
+    obs = st.text_area("Obs Gerais", value=dados_edit.get('obs_gerais', ''))
+    
+    status_atual = dados_edit.get('status', 'Em Elaboração')
+    lista_status = ["Em Elaboração", "Em Análise Obras", "Em Cotação", "Finalizado", "Concluído"]
+    idx_status = 0
+    if status_atual in lista_status: idx_status = lista_status.index(status_atual)
+    
+    status = st.selectbox("Status", lista_status, index=idx_status)
 
 st.markdown("---")
+id_final = dados_edit.get('_id', None)
+
 dados = {
+    '_id': id_final,
     'disciplina': DISCIPLINA_ATUAL, 'cliente': cliente, 'obra': obra,
     'fornecedor': forn, 'cnpj_fornecedor': cnpj,
     'responsavel': resp_eng, 'resp_suprimentos': resp_sup,
@@ -210,11 +244,11 @@ dados = {
     'itens_qualidade': itens_qual, 'matriz': escolhas, 
     'nrs_selecionadas': nrs, 'sms_livre': sms_livre,
     'valor_total': val, 'condicao_pgto': pgto, 'obs_gerais': obs,
-    'status': status, 'data_inicio': date.today().strftime("%Y-%m-%d")
+    'status': status, 'data_inicio': dados_edit.get('data_inicio', date.today().strftime("%Y-%m-%d"))
 }
 
 c_b1, c_b2 = st.columns(2)
-if c_b1.button("☁️ APENAS SALVAR"):
+if c_b1.button("☁️ SALVAR NO BANCO"):
     if not cliente or not obra: st.error("Preencha Cliente e Obra")
     else: 
         if utils_db.registrar_projeto(dados): st.success("Salvo!"); st.toast("Salvo")
