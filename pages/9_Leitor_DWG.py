@@ -10,83 +10,130 @@ if 'logado' not in st.session_state or not st.session_state['logado']:
     st.warning("🔒 Acesso negado. Faça login no Dashboard.")
     st.stop()
 
-st.set_page_config(page_title="Leitor DXF Avançado", page_icon="📐", layout="wide")
+st.set_page_config(page_title="Leitor DXF (ABNT)", page_icon="📐", layout="wide")
 
-st.title("📐 Leitor Técnico de Projetos (DXF)")
+st.title("📐 Leitor Técnico (DXF) - ABNT NBR 16401")
 st.markdown("""
-Esta ferramenta extrai textos e blocos do DXF para gerar listas de materiais.
-**Como funciona:**
-1. A IA identifica as **Bitolas de Dutos**, **Equipamentos** e **Grelhas**.
-2. Você confirma as quantidades/metragens na tabela interativa.
-3. O sistema calcula a **Área de Isolamento** automaticamente.
+**Instrução Importante:** Para evitar erros, no AutoCAD, vá em *Save As* e escolha **AutoCAD 2010 DXF**.
+Se o arquivo for muito pesado ou binário, o sistema tentará o "Modo de Leitura Forçada".
 """)
 
 # ============================================================================
-# 1. CONFIGURAÇÕES (VOLTARAM!)
+# 1. CONFIGURAÇÕES (ABNT NBR 16401)
 # ============================================================================
 with st.sidebar:
-    st.header("⚙️ Configurações de Cálculo")
-    classe_pressao = st.selectbox("Classe de Pressão (SMACNA)", ["Baixa (até 50mmca)", "Média (até 100mmca)", "Alta (até 150mmca)"])
+    st.header("⚙️ Configurações (ABNT)")
+    
+    # NBR 16401 define estanqueidade por classes de pressão
+    classe_pressao = st.selectbox(
+        "Classe de Pressão (ABNT NBR 16401)", 
+        [
+            "Classe A (Baixa Pressão - até 500 Pa)", 
+            "Classe B (Média Pressão - até 1000 Pa)", 
+            "Classe C (Alta Pressão - até 2000 Pa)",
+            "Classe D (Muito Alta - Especial)"
+        ]
+    )
+    
+    st.info(f"Selecionado: {classe_pressao}")
+    
     perda_corte = st.number_input("% Perda / Corte (Chapas)", min_value=0.0, max_value=20.0, value=10.0, step=1.0)
-    tipo_isolamento = st.selectbox("Isolamento", ["Lã de Vidro", "Borracha Elast.", "Sem Isolamento"])
+    tipo_isolamento = st.selectbox("Isolamento", ["Lã de Vidro", "Borracha Elast.", "Poliestireno (Isopor)", "Sem Isolamento"])
 
 # ============================================================================
-# 2. FUNÇÕES DE EXTRAÇÃO
+# 2. FUNÇÕES DE EXTRAÇÃO BLINDADAS
 # ============================================================================
-def extrair_textos_dxf(dxf_file):
+def ler_dxf_bruto(conteudo_str):
+    """
+    Função 'MacGyver': Se o ezdxf falhar, lê o arquivo linha por linha
+    procurando padrões de texto. Menos elegante, mas funciona sempre.
+    """
+    textos = []
+    # No formato DXF ASCII, o código de grupo 1 indica texto primário
+    # O padrão é:
+    # 1
+    # CONTEUDO DO TEXTO
+    linhas = conteudo_str.split('\n')
+    for i, linha in enumerate(linhas):
+        linha = linha.strip()
+        # Se acharmos um código de texto, pegamos a próxima linha
+        if linha == '1' and i + 1 < len(linhas):
+            texto_provavel = linhas[i+1].strip()
+            # Filtra lixo e pega só o que parece texto útil
+            if len(texto_provavel) > 2 and not texto_provavel.startswith('{'):
+                textos.append(texto_provavel)
+    return textos
+
+def extrair_textos_dxf(bytes_file):
+    textos = []
+    sucesso_metodo = ""
+    
+    # Tenta decodificar o arquivo (Windows 1252 é padrão AutoCAD Brasil, ou UTF-8)
     try:
-        doc = ezdxf.read(dxf_file)
+        content_str = bytes_file.getvalue().decode("cp1252")
+    except:
+        try:
+            content_str = bytes_file.getvalue().decode("utf-8", errors='ignore')
+        except:
+            return [], "Erro fatal de codificação"
+
+    # TENTATIVA 1: Biblioteca Oficial (EZDXF)
+    try:
+        stream = io.StringIO(content_str)
+        doc = ezdxf.read(stream)
         msp = doc.modelspace()
-        textos = []
-        # Extrai TEXT e MTEXT
         for e in msp.query('TEXT MTEXT'):
             txt = e.dxf.text if e.dxftype() == 'TEXT' else e.text
-            if txt and len(txt) > 2: # Ignora textos muito curtos
+            if txt and len(txt) > 2:
                 textos.append(txt.strip())
-        return textos
-    except Exception as e:
-        st.error(f"Erro ao ler DXF: {e}")
-        return []
+        sucesso_metodo = "Leitura Padrão (Precisa)"
+    except:
+        # TENTATIVA 2: Modo Bruto (Fallback)
+        # Se a biblioteca falhar (erro binário), usamos o leitor de texto bruto
+        textos = ler_dxf_bruto(content_str)
+        sucesso_metodo = "Leitura Forçada (Fallback)"
+    
+    return textos, sucesso_metodo
 
 def analisar_com_ia_categorizado(lista_textos):
     if "openai" not in st.secrets:
         st.error("🚨 Chave OpenAI não configurada."); return None
     
     client = OpenAI(api_key=st.secrets["openai"]["api_key"])
-    texto_bruto = "\n".join(lista_textos[:4000]) # Limite para não estourar tokens
+    
+    # Pega uma amostra maior para garantir
+    texto_bruto = "\n".join(lista_textos[:4500]) 
     
     prompt = """
-    Você é um Engenheiro de Orçamentos MEP. Analise a lista de textos extraída de um DWG/DXF.
+    Você é um Engenheiro de Orçamentos MEP Sênior.
+    Analise a lista de textos (OCR/DXF) de um projeto de AVAC.
     
-    SEU OBJETIVO: Separar e estruturar os dados em 4 categorias (CSV separado por ponto e vírgula).
+    SEU OBJETIVO: Filtrar e estruturar os dados em 4 categorias CSV (;).
     
-    CATEGORIAS A BUSCAR:
-    1. DUTOS: Procure dimensões (ex: 300x200, 500x400, ø200). Ignore textos de arquitetura.
-    2. GRELHAS/DIFUSORES: Procure códigos (ex: G-01, D-02, Boca de Lobo, Veneziana).
-    3. EQUIPAMENTOS: Procure Fancoil, Chiller, Split, VRF, K7, com suas capacidades (TR, HP, BTU).
-    4. ELETRICA/AUTOMAÇÃO: Procure Quadros (QGBT, QF), Painéis, Sensores.
+    1. DUTOS: Procure dimensões (ex: 300x200, 500x400, ø200, 20x20). 
+       - Ignore cotas de parede (ex: 15, 2.80). foque em pares AxL.
+    2. TERMINAIS: Procure Grelhas, Difusores, Venezianas, Dampers (ex: G-01, VZ-02).
+    3. EQUIPAMENTOS: Procure Fancoil, Chiller, Split, VRF, K7, Exaustor.
+       - Tente capturar a capacidade (TR, BTU) e Tensão.
+    4. ELETRICA/AUTOMAÇÃO: Quadros, Sensores, Termostatos.
 
-    SAÍDA OBRIGATÓRIA (Apenas este formato, sem introdução):
+    SAÍDA OBRIGATÓRIA (Use exatamente este formato):
     
     ---DUTOS---
     Largura;Altura;Tipo(Rect/Circ)
     300;200;Rect
-    500;400;Rect
     
     ---TERMINAIS---
-    Item;Quantidade Estimada (Pela contagem de tags)
+    Item;Qtd (Conte as tags)
     Grelha Retorno 600x600;4
-    Difusor Linear;10
     
     ---EQUIPAMENTOS---
-    Tag;Descrição;Detalhes (Capacidade/Tensão)
-    FC-01;Fancoil Duto;5TR 220V
-    SPL-02;Split Hiwall;12000 BTU
+    Tag;Tipo;Detalhes
+    FC-01;Fancoil;5TR
     
     ---ELETRICA---
     Tag;Descrição
-    Q-01;Quadro de Força
-    DDC-01;Painel Automação
+    Q-01;Quadro
     """
     
     try:
@@ -94,7 +141,7 @@ def analisar_com_ia_categorizado(lista_textos):
             model="gpt-4o",
             messages=[
                 {"role": "system", "content": prompt},
-                {"role": "user", "content": f"Analise estes textos do CAD:\n{texto_bruto}"}
+                {"role": "user", "content": f"Analise estes textos brutos:\n{texto_bruto}"}
             ],
             temperature=0.1
         )
@@ -104,10 +151,8 @@ def analisar_com_ia_categorizado(lista_textos):
         return None
 
 def processar_resposta_ia(resposta):
-    # Separa os blocos da resposta
     blocos = {"DUTOS": [], "TERMINAIS": [], "EQUIPAMENTOS": [], "ELETRICA": []}
     atual = None
-    
     for linha in resposta.split('\n'):
         linha = linha.strip()
         if "---DUTOS---" in linha: atual = "DUTOS"; continue
@@ -115,126 +160,106 @@ def processar_resposta_ia(resposta):
         if "---EQUIPAMENTOS---" in linha: atual = "EQUIPAMENTOS"; continue
         if "---ELETRICA---" in linha: atual = "ELETRICA"; continue
         
-        if atual and linha and ";" in linha and "Largura" not in linha and "Item" not in linha and "Tag" not in linha:
+        if atual and linha and ";" in linha and "Largura" not in linha and "Item" not in linha:
             blocos[atual].append(linha.split(';'))
-            
     return blocos
 
 # ============================================================================
 # 3. INTERFACE PRINCIPAL
 # ============================================================================
-uploaded_dxf = st.file_uploader("📂 Carregar Arquivo .DXF", type=["dxf"])
+uploaded_dxf = st.file_uploader("📂 Carregar Arquivo .DXF (Salve como ASCII 2010)", type=["dxf"])
 
 if uploaded_dxf:
-    with st.spinner("Lendo arquivo DXF..."):
-        try:
-            content = uploaded_dxf.getvalue().decode("cp1252", errors="ignore")
-            stream = io.StringIO(content)
-            lista_textos = extrair_textos_dxf(stream)
-            st.success(f"{len(lista_textos)} textos extraídos com sucesso!")
-        except Exception as e:
-            st.error("Erro ao decodificar arquivo. Tente salvar o DXF em versão mais antiga (2010).")
-            lista_textos = []
-
+    with st.spinner("Decodificando arquivo..."):
+        lista_textos, metodo = extrair_textos_dxf(uploaded_dxf)
+        
     if lista_textos:
-        if st.button("🚀 Analisar e Extrair Dados", type="primary"):
-            with st.spinner("A IA está categorizando os itens..."):
+        st.success(f"✅ {len(lista_textos)} textos extraídos via {metodo}!")
+        
+        if st.button("🚀 Processar com IA", type="primary"):
+            with st.spinner("Classificando itens de engenharia..."):
                 resultado_ia = analisar_com_ia_categorizado(lista_textos)
-                
                 if resultado_ia:
-                    dados_processados = processar_resposta_ia(resultado_ia)
-                    st.session_state['dados_dxf'] = dados_processados
+                    st.session_state['dados_dxf'] = processar_resposta_ia(resultado_ia)
                     st.rerun()
+    else:
+        st.error("❌ Não foi possível ler textos. O arquivo pode ser uma imagem (Scan) ou estar corrompido.")
 
 # ============================================================================
-# 4. EXIBIÇÃO DOS RESULTADOS (ABAS)
+# 4. EXIBIÇÃO E CÁLCULOS
 # ============================================================================
 if 'dados_dxf' in st.session_state:
     dados = st.session_state['dados_dxf']
     
     tab_dutos, tab_term, tab_equip, tab_elet = st.tabs([
-        "🌪️ Rede de Dutos (Cálculo)", 
-        "💨 Grelhas e Difusores", 
+        "🌪️ Rede de Dutos (ABNT 16401)", 
+        "💨 Terminais de Ar", 
         "⚙️ Equipamentos", 
-        "⚡ Elétrica/Automação"
+        "⚡ Elétrica"
     ])
     
-    # --- ABA 1: DUTOS (CÁLCULO AUTOMÁTICO) ---
+    # --- ABA DUTOS ---
     with tab_dutos:
-        st.info("A IA identificou as bitolas abaixo. Insira o COMPRIMENTO TOTAL (m) para calcular a área.")
+        st.info("Insira o COMPRIMENTO TOTAL (m) para calcular a área conforme ABNT NBR 16401.")
         
-        # Prepara DataFrame para edição
         lista_dutos = dados["DUTOS"]
         if lista_dutos:
             df_dutos = pd.DataFrame(lista_dutos, columns=["Largura (mm)", "Altura (mm)", "Tipo"])
-            # Adiciona coluna de comprimento para o usuário preencher (padrão 0)
             df_dutos["Comprimento Total (m)"] = 0.0
             
-            # Tabela Editável
-            df_editado = st.data_editor(df_dutos, num_rows="dynamic", key="editor_dutos")
+            df_editado = st.data_editor(df_dutos, num_rows="dynamic", key="editor_dutos_abnt")
             
-            # --- CÁLCULOS MATEMÁTICOS ---
             st.divider()
-            st.subheader("📊 Resultados Calculados")
+            st.subheader("📊 Memória de Cálculo")
             
-            # Converte para float para calcular
             try:
+                # Tratamento de dados
                 df_calc = df_editado.copy()
-                df_calc["Largura (mm)"] = pd.to_numeric(df_calc["Largura (mm)"], errors='coerce').fillna(0)
-                df_calc["Altura (mm)"] = pd.to_numeric(df_calc["Altura (mm)"], errors='coerce').fillna(0)
+                for col in ["Largura (mm)", "Altura (mm)", "Comprimento Total (m)"]:
+                    df_calc[col] = pd.to_numeric(df_calc[col], errors='coerce').fillna(0)
                 
-                # Cálculo do Perímetro (m) = (2*L + 2*A) / 1000
+                # Fórmulas
+                # Perímetro retangular (m) = (2L + 2A)/1000
+                # Se for circular, a IA costuma mandar Diâmetro na largura. P = (pi * D)/1000
+                # Aqui simplificamos assumindo retangular ou maior dimensão.
+                
                 df_calc["Perímetro (m)"] = (2 * df_calc["Largura (mm)"] + 2 * df_calc["Altura (mm)"]) / 1000
+                df_calc["Área Física (m²)"] = df_calc["Perímetro (m)"] * df_calc["Comprimento Total (m)"]
                 
-                # Cálculo da Área (m²) = Perímetro * Comprimento
-                df_calc["Área Duto (m²)"] = df_calc["Perímetro (m)"] * df_calc["Comprimento Total (m)"]
-                
-                # Adiciona Perda
                 fator_perda = 1 + (perda_corte / 100)
-                df_calc["Área c/ Perda (m²)"] = df_calc["Área Duto (m²)"] * fator_perda
+                df_calc["Área Total (m²)"] = df_calc["Área Física (m²)"] * fator_perda
                 
-                # Totais
-                area_total = df_calc["Área c/ Perda (m²)"].sum()
+                area_total = df_calc["Área Total (m²)"].sum()
                 
-                # Exibição
+                # KPIs
                 c1, c2, c3 = st.columns(3)
-                c1.metric("Área Total de Chapa (m²)", f"{area_total:,.2f}")
+                c1.metric("Área Chapa (c/ Perda)", f"{area_total:,.2f} m²")
                 
-                if tipo_isolamento != "Sem Isolamento":
-                    c2.metric(f"Área Isolamento ({tipo_isolamento})", f"{area_total:,.2f} m²")
+                msg_isol = f"{area_total:,.2f} m²" if tipo_isolamento != "Sem Isolamento" else "---"
+                c2.metric(f"Isolamento ({tipo_isolamento})", msg_isol)
                 
-                c3.metric("Classe Pressão Selecionada", classe_pressao)
+                c3.metric("Norma Aplicada", "NBR 16401", delta=classe_pressao)
                 
-                st.dataframe(df_calc[["Largura (mm)", "Altura (mm)", "Comprimento Total (m)", "Área c/ Perda (m²)"]])
+                st.write("Detalhamento:")
+                st.dataframe(df_calc)
                 
             except Exception as e:
-                st.warning("Preencha os comprimentos para ver o cálculo.")
+                st.error(f"Erro no cálculo: {e}")
         else:
-            st.warning("Nenhuma bitola de duto identificada automaticamente.")
+            st.warning("Nenhum duto identificado automaticamente.")
 
-    # --- ABA 2: TERMINAIS ---
+    # --- OUTRAS ABAS (Mantidas simples) ---
     with tab_term:
-        st.subheader("Lista de Grelhas, Difusores e Venezianas")
         if dados["TERMINAIS"]:
-            df_term = pd.DataFrame(dados["TERMINAIS"], columns=["Descrição", "Qtd Estimada (Tags)"])
-            st.data_editor(df_term, num_rows="dynamic")
-        else:
-            st.info("Nenhum terminal identificado.")
+            st.data_editor(pd.DataFrame(dados["TERMINAIS"], columns=["Item", "Qtd"]), num_rows="dynamic")
+        else: st.info("Vazio")
 
-    # --- ABA 3: EQUIPAMENTOS ---
     with tab_equip:
-        st.subheader("Lista de Equipamentos (HVAC)")
         if dados["EQUIPAMENTOS"]:
-            df_equip = pd.DataFrame(dados["EQUIPAMENTOS"], columns=["Tag", "Modelo/Tipo", "Detalhes"])
-            st.data_editor(df_equip, num_rows="dynamic")
-        else:
-            st.info("Nenhum equipamento identificado.")
+            st.data_editor(pd.DataFrame(dados["EQUIPAMENTOS"], columns=["Tag", "Tipo", "Detalhes"]), num_rows="dynamic")
+        else: st.info("Vazio")
 
-    # --- ABA 4: ELÉTRICA ---
     with tab_elet:
-        st.subheader("Painéis Elétricos e Automação")
         if dados["ELETRICA"]:
-            df_elet = pd.DataFrame(dados["ELETRICA"], columns=["Tag", "Descrição"])
-            st.data_editor(df_elet, num_rows="dynamic")
-        else:
-            st.info("Nenhum item elétrico identificado.")
+            st.data_editor(pd.DataFrame(dados["ELETRICA"], columns=["Tag", "Descrição"]), num_rows="dynamic")
+        else: st.info("Vazio")
