@@ -47,7 +47,45 @@ def _ler_aba_como_df(nome_aba):
     except: return pd.DataFrame()
 
 # ==================================================
-# 3. LEITURA DE DADOS
+# 3. AUTENTICAÇÃO (NOVO!)
+# ==================================================
+def verificar_login(usuario, senha):
+    """Verifica se usuario e senha existem na aba Usuarios."""
+    sh = _conectar_gsheets()
+    if not sh: return False, "Erro de conexão com o Banco de Dados."
+    
+    try:
+        ws = sh.worksheet("Usuarios")
+    except:
+        return False, "Aba 'Usuarios' não encontrada na planilha."
+
+    # Lê todos os usuários
+    dados = ws.get_all_records()
+    df_users = pd.DataFrame(dados)
+    
+    if df_users.empty: return False, "Nenhum usuário cadastrado."
+    
+    # Converte para string para garantir comparação exata
+    df_users['Usuario'] = df_users['Usuario'].astype(str)
+    df_users['Senha'] = df_users['Senha'].astype(str)
+    
+    usuario = str(usuario)
+    senha = str(senha)
+    
+    # Busca usuario
+    user_encontrado = df_users[
+        (df_users['Usuario'] == usuario) & 
+        (df_users['Senha'] == senha)
+    ]
+    
+    if not user_encontrado.empty:
+        nome_real = user_encontrado.iloc[0]['Nome']
+        return True, nome_real
+    else:
+        return False, "Usuário ou senha incorretos."
+
+# ==================================================
+# 4. LEITURA DE DADOS
 # ==================================================
 def carregar_opcoes():
     df = _ler_aba_como_df("Dados")
@@ -78,11 +116,11 @@ def listar_fornecedores():
     return []
 
 # ==================================================
-# 4. FUNÇÕES DO PROJETO (DASHBOARD)
+# 5. FUNÇÕES DO DASHBOARD
 # ==================================================
 def listar_todos_projetos():
     df = _ler_aba_como_df("Projetos")
-    cols = ['_id', 'status', 'disciplina', 'cliente', 'obra', 'fornecedor', 'valor_total', 'data_inicio']
+    cols = ['_id', 'status', 'disciplina', 'cliente', 'obra', 'fornecedor', 'valor_total', 'data_inicio', 'criado_por']
     if df.empty: return pd.DataFrame(columns=cols)
     for c in cols: 
         if c not in df.columns: df[c] = ""
@@ -90,7 +128,6 @@ def listar_todos_projetos():
     return df
 
 def buscar_projeto_por_id(id_projeto):
-    """Busca os dados completos de um projeto pelo ID."""
     df = listar_todos_projetos()
     if df.empty: return None
     projeto = df[df['_id'] == str(id_projeto)]
@@ -114,7 +151,7 @@ def atualizar_status_projeto(id_projeto, novo_status):
     return False
 
 # ==================================================
-# 5. ESCRITA
+# 6. ESCRITA
 # ==================================================
 def aprender_novo_item(categoria, novo_item):
     sh = _conectar_gsheets()
@@ -144,16 +181,15 @@ def registrar_projeto(dados):
         try: ws = sh.worksheet("Projetos")
         except: 
             ws = sh.add_worksheet("Projetos", 100, 20)
-            ws.append_row(['_id', 'status', 'disciplina', 'cliente', 'obra', 'fornecedor', 'valor_total', 'data_inicio'])
+            ws.append_row(['_id', 'status', 'disciplina', 'cliente', 'obra', 'fornecedor', 'valor_total', 'data_inicio', 'criado_por'])
         
         headers = ws.row_values(1)
         if not headers: 
-            headers = ['_id', 'status', 'disciplina', 'cliente', 'obra', 'fornecedor', 'valor_total', 'data_inicio']
+            headers = ['_id', 'status', 'disciplina', 'cliente', 'obra', 'fornecedor', 'valor_total', 'data_inicio', 'criado_por']
             ws.append_row(headers)
 
         if '_id' not in dados: dados['_id'] = datetime.now().strftime("%Y%m%d%H%M%S")
 
-        # Se o projeto já existe (edição), atualizamos a linha. Se não, criamos nova.
         cell = None
         try: cell = ws.find(str(dados['_id']))
         except: pass
@@ -161,10 +197,9 @@ def registrar_projeto(dados):
         row_data = []
         for h in headers: row_data.append(str(dados.get(h, "")))
 
-        if cell: # Atualizar linha existente
-            for i, val in enumerate(row_data):
-                ws.update_cell(cell.row, i+1, val)
-        else: # Inserir nova linha
+        if cell: 
+            for i, val in enumerate(row_data): ws.update_cell(cell.row, i+1, val)
+        else: 
             ws.append_row(row_data)
         return True
     except: return False
