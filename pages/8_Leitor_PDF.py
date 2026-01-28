@@ -1,37 +1,76 @@
 import streamlit as st
-import pdfplumber
+import fitz  # PyMuPDF
 from openai import OpenAI
+import base64
 
-st.set_page_config(page_title="Leitor IA | SIARCON", page_icon="🧠")
+# --- 🔒 BLOCO DE SEGURANÇA ---
+if 'logado' not in st.session_state or not st.session_state['logado']:
+    st.warning("🔒 Acesso negado. Faça login no Dashboard.")
+    st.stop()
 
-st.title("🧠 Leitor de PDF com Inteligência Artificial")
-st.markdown("Carregue um memorial ou escopo técnico e deixe a IA extrair os dados e sugerir melhorias.")
+st.set_page_config(page_title="Leitor IA (Visão)", page_icon="👁️", layout="wide")
 
-# --- CONFIGURAÇÃO DA IA ---
-def consultar_ia(texto_pdf):
-    # Verifica se a chave existe
+st.title("👁️ Levantamento de Dutos com IA (Visão)")
+st.markdown("""
+Esta ferramenta usa **Visão Computacional** (GPT-4o). Ela 'olha' para a página do projeto 
+como um engenheiro humano faria, identificando tabelas de materiais e especificações 
+que leitores de texto comuns não conseguem processar.
+""")
+
+# --- FUNÇÕES AUXILIARES ---
+
+def pdf_page_to_base64(pdf_file, page_number):
+    """Converte uma página específica do PDF em imagem Base64 para a IA ver."""
+    doc = fitz.open(stream=pdf_file.read(), filetype="pdf")
+    page = doc.load_page(page_number)
+    pix = page.get_pixmap(matrix=fitz.Matrix(2, 2)) # Zoom 2x para melhor leitura
+    img_data = pix.tobytes("png")
+    return base64.b64encode(img_data).decode('utf-8')
+
+def analisar_imagem_com_ia(base64_image):
     if "openai" not in st.secrets:
-        st.error("🚨 Chave da OpenAI não configurada nos Secrets!")
+        st.error("🚨 Chave OpenAI não configurada.")
         return None
     
     client = OpenAI(api_key=st.secrets["openai"]["api_key"])
     
-    prompt_sistema = """
-    Você é um Engenheiro Sênior especialista em orçamentos e escopos técnicos (HVAC, Elétrica, Hidráulica).
-    Sua missão é ler o texto técnico fornecido e gerar um relatório estruturado com:
-    1. RESUMO: O que é a obra em poucas linhas.
-    2. LISTA DE MATERIAIS: Extraia todos os itens quantificáveis em formato de lista.
-    3. PONTOS DE ATENÇÃO: Identifique riscos, erros técnicos ou itens que parecem estar faltando no escopo.
+    prompt = """
+    Você é um Engenheiro de Orçamentos Especialista em AVAC (Dutos de Ar Condicionado).
+    Analise esta imagem técnica (que pode ser uma planta, um memorial ou uma planilha).
+    
+    SEU OBJETIVO: Extrair o Levantamento de Materiais de Dutos.
+    
+    Procure visualmente por:
+    1. Tabelas de quantidades de dutos (M2 ou Kg) por material (Galvanizado, Inox, MPU).
+    2. Especificações de espessuras de chapa (Bitolas #26, #24, #22, etc.).
+    3. Isolamento Térmico (Espessura, Tipo, M2).
+    4. Acessórios (Dampers, Grelhas, Difusores - se houver lista).
+    
+    SAÍDA ESPERADA (Em Markdown):
+    - Crie uma tabela organizada com: Item | Descrição Técnica | Unidade | Quantidade Estimada.
+    - Se a imagem estiver ruim ou não tiver dados, avise.
+    - Seja preciso com os números.
     """
-
+    
     try:
         response = client.chat.completions.create(
-            model="gpt-4o", # Ou "gpt-3.5-turbo" se preferir economizar
+            model="gpt-4o", # Modelo com visão
             messages=[
-                {"role": "system", "content": prompt_sistema},
-                {"role": "user", "content": f"Analise este documento técnico:\n\n{texto_pdf[:15000]}"} # Limite de caracteres para não estourar
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/png;base64,{base64_image}"
+                            },
+                        },
+                    ],
+                }
             ],
-            temperature=0.3
+            max_tokens=2000,
+            temperature=0.1 # Baixa criatividade para focar em precisão
         )
         return response.choices[0].message.content
     except Exception as e:
@@ -39,35 +78,36 @@ def consultar_ia(texto_pdf):
         return None
 
 # --- INTERFACE ---
-uploaded_file = st.file_uploader("Carregar PDF Técnico", type="pdf")
+uploaded_file = st.file_uploader("📂 Carregar PDF (Memorial ou Planta)", type="pdf")
 
-if uploaded_file is not None:
-    # 1. EXTRAÇÃO DO TEXTO
-    with st.spinner("Lendo arquivo PDF..."):
-        texto_completo = ""
-        with pdfplumber.open(uploaded_file) as pdf:
-            for page in pdf.pages:
-                texto_completo += page.extract_text() + "\n"
-        
-    st.success(f"PDF Lido! Total de caracteres: {len(texto_completo)}")
+if uploaded_file:
+    # Mostra quantas páginas tem
+    doc = fitz.open(stream=uploaded_file.read(), filetype="pdf")
+    total_paginas = len(doc)
+    uploaded_file.seek(0) # Reseta o ponteiro do arquivo
     
-    with st.expander("Ver texto bruto extraído"):
-        st.text_area("Conteúdo", texto_completo, height=200)
+    st.info(f"O documento possui {total_paginas} páginas.")
+    
+    # Seleção da página para analisar (Para economizar custo e ser mais preciso)
+    pagina_selecionada = st.number_input("Qual página contém a tabela/lista de dutos?", min_value=1, max_value=total_paginas, value=1)
+    
+    if st.button("🚀 Analisar Página Selecionada", type="primary"):
+        with st.spinner("👀 A IA está 'lendo' a imagem da página... Aguarde."):
+            # 1. Converte a página escolhida em imagem
+            imagem_b64 = pdf_page_to_base64(uploaded_file, pagina_selecionada - 1)
+            uploaded_file.seek(0) # Reseta arquivo
+            
+            # 2. Mostra a imagem para o usuário conferir
+            st.image(base64.b64decode(imagem_b64), caption=f"Página {pagina_selecionada} enviada para análise", use_column_width=True)
+            
+            # 3. Envia para o GPT-4o Vision
+            resultado = analisar_imagem_com_ia(imagem_b64)
+            
+        if resultado:
+            st.divider()
+            st.subheader("📋 Levantamento Extraído")
+            st.markdown(resultado)
+            st.download_button("📥 Baixar Levantamento", resultado, f"levantamento_pag_{pagina_selecionada}.txt")
 
-    # 2. ANÁLISE DA IA
-    st.divider()
-    st.subheader("🤖 Análise Inteligente")
-    
-    if st.button("Gerar Análise Técnica (IA)", type="primary"):
-        if len(texto_completo) < 50:
-            st.warning("O PDF parece vazio ou é uma imagem escaneada. A IA precisa de texto selecionável.")
-        else:
-            with st.spinner("A IA está analisando o projeto... (Isso pode levar alguns segundos)"):
-                analise = consultar_ia(texto_completo)
-                
-            if analise:
-                st.markdown("### 📋 Relatório da Engenharia (IA)")
-                st.markdown(analise)
-                
-                # Botão para baixar a análise
-                st.download_button("📥 Baixar Relatório IA", analise, "relatorio_ia.txt")
+st.markdown("---")
+st.caption("Dica: Para melhor precisão, selecione a página exata onde está a tabela de resumo ou memorial de cálculo dos dutos.")
