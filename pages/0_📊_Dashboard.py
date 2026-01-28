@@ -1,25 +1,43 @@
 import streamlit as st
 import pandas as pd
 import utils_db
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 import time
+import extra_streamlit_components as stx
 
 st.set_page_config(page_title="SIARCON", page_icon="🔒", layout="wide")
 
 # ============================================================================
-# 🔒 TELA DE LOGIN (BLOQUEIO)
+# 🍪 CONFIGURAÇÃO DE COOKIES (PERSISTÊNCIA 6 MESES)
+# ============================================================================
+def get_manager():
+    return stx.CookieManager()
+
+cookie_manager = get_manager()
+cookie_nome = "siarcon_auth_token"
+
+# Verifica se já existe um cookie salvo no navegador
+cookie_usuario = cookie_manager.get(cookie=cookie_nome)
+
+# ============================================================================
+# LÓGICA DE LOGIN
 # ============================================================================
 if 'logado' not in st.session_state:
     st.session_state['logado'] = False
 
+# 1. Se achou cookie válido, faz login automático
+if cookie_usuario and not st.session_state['logado']:
+    st.session_state['logado'] = True
+    st.session_state['usuario_atual'] = cookie_usuario
+    # Opcional: st.toast(f"Bem-vindo de volta, {cookie_usuario}!")
+
+# 2. Se NÃO está logado, mostra tela de login
 if not st.session_state['logado']:
-    # --- LAYOUT DA TELA DE LOGIN ---
     c_vazio1, c_login, c_vazio2 = st.columns([1, 1, 1])
     
     with c_login:
         st.markdown("<br><br>", unsafe_allow_html=True)
-        # Tenta mostrar o logo no login
         if os.path.exists("Siarcon.png"):
             st.image("Siarcon.png", width=200)
         elif os.path.exists("siarcon.png"):
@@ -33,26 +51,34 @@ if not st.session_state['logado']:
         usuario = st.text_input("Usuário")
         senha = st.text_input("Senha", type="password")
         
+        # Checkbox "Manter conectado"
+        manter_conectado = st.checkbox("Manter conectado por 6 meses", value=True)
+        
         if st.button("Entrar 🚀", type="primary", use_container_width=True):
             with st.spinner("Verificando credenciais..."):
                 sucesso, mensagem = utils_db.verificar_login(usuario, senha)
                 if sucesso:
                     st.session_state['logado'] = True
-                    st.session_state['usuario_atual'] = mensagem # Guarda o nome
+                    st.session_state['usuario_atual'] = mensagem
+                    
+                    # SALVA O COOKIE SE O USUÁRIO QUISER
+                    if manter_conectado:
+                        expire_date = datetime.now() + timedelta(days=180) # 6 Meses
+                        cookie_manager.set(cookie_nome, mensagem, expires_at=expire_date)
+                    
                     st.success(f"Bem-vindo, {mensagem}!")
                     time.sleep(1)
                     st.rerun()
                 else:
                     st.error(mensagem)
     
-    # IMPORTANTE: Para o código aqui se não estiver logado
-    st.stop()
+    st.stop() # Para o código aqui se não estiver logado
 
 # ============================================================================
-# 🔓 ÁREA LOGADA (SEU DASHBOARD PERFEITO)
+# 🔓 ÁREA LOGADA (DASHBOARD)
 # ============================================================================
 
-# -- CABEÇALHO DO SISTEMA --
+# -- CABEÇALHO --
 c_logo, c_tit, c_user = st.columns([1, 6, 2])
 with c_logo:
     if os.path.exists("Siarcon.png"): st.image("Siarcon.png", width=120)
@@ -62,7 +88,10 @@ with c_tit:
     st.title("Gestão de Projetos")
 with c_user:
     st.markdown(f"<div style='text-align: right;'>👤 <b>{st.session_state['usuario_atual']}</b></div>", unsafe_allow_html=True)
+    
+    # BOTÃO SAIR (Apaga o Cookie)
     if st.button("Sair (Logout)", key="btn_logout"):
+        cookie_manager.delete(cookie_nome) # Deleta o cookie do navegador
         st.session_state['logado'] = False
         st.rerun()
 
@@ -109,7 +138,7 @@ with st.expander("➕ CADASTRAR NOVO PROJETO", expanded=False):
 
 st.divider()
 
-# --- 2. KANBAN (O SEU LAYOUT PERFEITO) ---
+# --- 2. KANBAN ---
 if st.button("🔄 Atualizar Quadro"):
     st.cache_data.clear(); st.rerun()
 
