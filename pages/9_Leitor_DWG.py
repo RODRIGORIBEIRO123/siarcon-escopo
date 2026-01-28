@@ -8,17 +8,16 @@ import io
 import re
 from collections import Counter
 
-# --- 🔒 BLOCO DE SEGURANÇA ---
+# --- 🔒 SEGURANÇA ---
 if 'logado' not in st.session_state or not st.session_state['logado']:
     st.warning("🔒 Acesso negado. Faça login no Dashboard.")
     st.stop()
 
-st.set_page_config(page_title="Leitor DXF (Blindado)", page_icon="📐", layout="wide")
+st.set_page_config(page_title="Leitor DXF (Filtro Inteligente)", page_icon="📐", layout="wide")
 
-st.title("📐 Leitor Técnico DXF (Blindado)")
+st.title("📐 Leitor Técnico DXF (Com Filtro Anti-Ruído)")
 st.markdown("""
-**Status:** Versão com Recuperação de Erros.
-Se o arquivo tiver dados binários corrompidos, o sistema ativará o **Modo de Resgate** (Apenas Texto) automaticamente.
+**Melhoria:** Adicionado um "Pente Fino" que ignora lixo do CAD (layers, coordenadas) e foca apenas em textos que parecem **Medidas (AxL)** ou **Tags (FC-01)**.
 """)
 
 # ============================================================================
@@ -32,20 +31,47 @@ with st.sidebar:
     st.subheader("📏 Calibração")
     unidade_desenho = st.selectbox("Unidade do Desenho", ["Centímetros (cm)", "Metros (m)", "Milímetros (mm)"])
     
-    # Define raio padrão
     if unidade_desenho == "Centímetros (cm)": raio_padrao = 50.0
     elif unidade_desenho == "Metros (m)": raio_padrao = 0.5
     else: raio_padrao = 500.0
 
-    raio_busca = st.number_input("Raio de Busca (Geometria)", value=raio_padrao, help="Distância para procurar linhas.")
-    comp_minimo = st.number_input("Comprimento Padrão (m)", value=1.10, help="Usado se a geometria falhar.")
+    raio_busca = st.number_input("Raio de Busca (Geometria)", value=raio_padrao)
+    comp_minimo = st.number_input("Comprimento Padrão (m)", value=1.10)
     
     st.divider()
     perda_corte = st.number_input("% Perda / Corte", value=10.0)
     tipo_isolamento = st.selectbox("Isolamento", ["Lã de Vidro", "Borracha Elast.", "Isopor", "Sem Isolamento"])
 
 # ============================================================================
-# 2. MOTOR DE EXTRAÇÃO (COM RESGATE BINÁRIO)
+# 2. FUNÇÕES DE FILTRAGEM (O SEGREDO DO SUCESSO)
+# ============================================================================
+
+def eh_texto_de_engenharia(texto):
+    """
+    Retorna True apenas se o texto parecer uma medida de duto ou tag de equipamento.
+    Filtra 99% do lixo do DXF.
+    """
+    t = texto.upper().strip()
+    if len(t) < 2 or len(t) > 40: return False
+    
+    # 1. Padrão Duto Retangular (Num x Num) ex: 300x200, 30x20
+    # Aceita 'X' ou 'x'. Deve ter numeros dos dois lados.
+    if re.search(r'\d+\s*[xX]\s*\d+', t): return True
+    
+    # 2. Padrão Diâmetro (ø200, diam 200)
+    if 'ø' in t or '%%C' in t or 'DIAM' in t: return True
+    
+    # 3. Padrão Tag de Equipamento (Letras-Numeros) ex: FC-01, VZ-02, Q-01
+    if re.search(r'[A-Z]{1,5}\s*-\s*\d+', t): return True
+    
+    # 4. Palavras Chave Específicas
+    keywords = ["GRELHA", "DIFUSOR", "VENEZIANA", "DAMPER", "FANCOIL", "SPLIT", "CHILLER", "QUADRO", "DDC", "TR", "BTU", "HP", "CV"]
+    if any(k in t for k in keywords): return True
+    
+    return False
+
+# ============================================================================
+# 3. MOTOR DE EXTRAÇÃO
 # ============================================================================
 
 def calcular_distancia(p1, p2):
@@ -71,117 +97,98 @@ def obter_comprimento_entidade(entity):
     return 0
 
 def extrair_texto_modo_resgate(bytes_content):
-    """
-    Função de última instância: Lê o arquivo binário ignorando erros e extrai strings.
-    """
-    textos_encontrados = []
-    # Tenta decodificar ignorando erros (Latin-1 cobre quase tudo)
-    try:
-        texto_full = bytes_content.decode("cp1252", errors="ignore")
-    except:
-        texto_full = bytes_content.decode("utf-8", errors="ignore")
+    """Modo Bruto com Filtro Inteligente"""
+    itens = []
+    try: texto_full = bytes_content.decode("cp1252", errors="ignore")
+    except: texto_full = bytes_content.decode("utf-8", errors="ignore")
     
-    # No DXF, textos costumam vir após o marcador de grupo 1.
-    # Regex simples para pegar linhas que parecem texto de engenharia
-    # Procura linhas que tenham letras/números e pelo menos 3 caracteres
     linhas = texto_full.split('\n')
-    for i, linha in enumerate(linhas):
-        l = linha.strip()
-        # Filtro heurístico: linhas curtas com números ou letras (ex: 500x300, Fancoil)
-        if len(l) > 2 and len(l) < 50:
-            # Verifica se tem cara de dimensão ou tag (tem numero ou traço)
-            if any(char.isdigit() for char in l):
-                textos_encontrados.append({'texto': l, 'geo_m': 0.0}) # Geo 0.0 pois perdemos a linha
-            elif "GRELHA" in l.upper() or "DIFUSOR" in l.upper() or "FANCOIL" in l.upper():
-                textos_encontrados.append({'texto': l, 'geo_m': 0.0})
+    for l in linhas:
+        l = l.strip()
+        # APLICA O FILTRO IMEDIATAMENTE
+        if eh_texto_de_engenharia(l):
+            itens.append({'texto': l, 'geo_m': 0.0})
                 
-    return textos_encontrados, "Modo de Resgate (Geometria Indisponível)"
+    return itens, "Modo Resgate (Filtro Ativado)"
 
 def extrair_dados_com_geometria(bytes_file, raio_search):
-    """
-    Tenta ler com geometria. Se falhar, cai para o modo resgate.
-    """
     bytes_content = bytes_file.getvalue()
     
-    # --- TENTATIVA 1: EZDXF RECOVER (Tenta consertar o arquivo) ---
     try:
-        # Precisamos de um stream de texto
         try: content_str = bytes_content.decode("cp1252")
         except: content_str = bytes_content.decode("utf-8", errors='ignore')
         
         stream = io.StringIO(content_str)
-        
-        # O Recover é mais robusto que o Read
         doc, auditor = recover.read(stream)
-        
-        if auditor.has_errors:
-            # Se tiver erros críticos, pode ser melhor ir pro resgate, mas tentamos continuar
-            pass
-
         msp = doc.modelspace()
         
-        # Carrega geometria (Limitado a 4000 para performance)
+        # Carrega geometria (Limitado)
         geometrias = []
-        count_geo = 0
-        for e in msp.query('LINE LWPOLYLINE'):
+        for i, e in enumerate(msp.query('LINE LWPOLYLINE')):
+            if i > 5000: break
             geometrias.append(e)
-            count_geo += 1
-            if count_geo > 4000: break
             
         textos = list(msp.query('TEXT MTEXT'))
         
-        # Limite de textos
-        if len(textos) > 3000: textos = textos[:3000]
-
+        # Se tiver muitos textos, não limita mais cegamente. FILTRA PRIMEIRO.
         itens = []
-        for e in textos:
-            txt = e.dxf.text if e.dxftype() == 'TEXT' else e.text
-            if not txt or len(txt) < 3: continue
+        count_processados = 0
+        
+        progresso = st.progress(0, text="Filtrando textos de engenharia...")
+        total = len(textos)
+
+        for idx, e in enumerate(textos):
+            if idx % 500 == 0: progresso.progress(min(100, int(idx/total*100)))
             
-            # Tenta pegar coordenada e medir
+            txt = e.dxf.text if e.dxftype() == 'TEXT' else e.text
+            if not txt: continue
+            
+            # FILTRO PENTE FINO AQUI TAMBÉM
+            if not eh_texto_de_engenharia(txt): continue
+            
+            # Se passou no filtro, tenta medir
             comp_final = 0.0
             try:
                 insert = e.dxf.insert
                 pos = (insert[0], insert[1])
-                
-                maior_comp = 0.0
+                maior = 0.0
                 if geometrias:
-                    checks = 0
+                    c_check = 0
                     for geo in geometrias:
                         try:
-                            if geo.dxftype() == 'LINE': ref = geo.dxf.start
-                            else: ref = geo.get_points()[0]
-                            
-                            dist = math.hypot(ref[0]-pos[0], ref[1]-pos[1])
-                            if dist <= raio_search:
+                            if geo.dxftype()=='LINE': ref=geo.dxf.start
+                            else: ref=geo.get_points()[0]
+                            if abs(ref[0]-pos[0]) > raio_search*2: continue
+                            if math.hypot(ref[0]-pos[0], ref[1]-pos[1]) <= raio_search:
                                 c = obter_comprimento_entidade(geo)
-                                if c > maior_comp: maior_comp = c
+                                if c > maior: maior = c
                         except: pass
-                        checks += 1
-                        if checks > 200: break # Otimização
+                        c_check += 1
+                        if c_check > 200: break
                 
-                comp_final = maior_comp
+                comp_final = maior
                 if unidade_desenho == "Centímetros (cm)": comp_final /= 100
                 elif unidade_desenho == "Milímetros (mm)": comp_final /= 1000
-            except:
-                pass # Se der erro na geometria, segue com comp=0
+            except: pass
             
             itens.append({'texto': txt.strip(), 'geo_m': comp_final})
+            count_processados += 1
+            # Limite de segurança apenas para itens ÚTEIS
+            if count_processados > 4000: break
             
-        return itens, "Leitura Geométrica (Completa)"
+        progresso.empty()
+        return itens, "Leitura Geométrica (Filtro Ativado)"
 
     except Exception as e:
-        # --- TENTATIVA 2: MODO RESGATE ---
-        # Se deu erro de 'Invalid binary data' ou qualquer outro crash
         return extrair_texto_modo_resgate(bytes_content)
 
 # ============================================================================
-# 3. INTELIGÊNCIA ARTIFICIAL
+# 4. INTELIGÊNCIA ARTIFICIAL
 # ============================================================================
 def analisar_com_ia_detalhada(lista_itens):
     if "openai" not in st.secrets: st.error("Sem chave API"); return None
     
-    # Agrupa
+    # Agrupa e calcula médias
     resumo = {}
     for item in lista_itens:
         t = item['texto']
@@ -190,19 +197,24 @@ def analisar_com_ia_detalhada(lista_itens):
         resumo[t]['soma'] += item['geo_m']
         
     txt_prompt = ""
-    # Pega os 350 mais frequentes
-    for k, v in sorted(resumo.items(), key=lambda x: x[1]['qtd'], reverse=True)[:350]:
+    # Agora mandamos TUDO que passou no filtro (pois já limpamos o lixo)
+    # Mas limitamos a 400 itens para caber no prompt
+    itens_filtrados = sorted(resumo.items(), key=lambda x: x[1]['qtd'], reverse=True)[:400]
+    
+    if not itens_filtrados: return "VAZIO"
+
+    for k, v in itens_filtrados:
         med = v['soma'] / v['qtd'] if v['qtd'] > 0 else 0
         txt_prompt += f"TXT:'{k}'|Q:{v['qtd']}|MED:{med:.2f}m\n"
         
     client = OpenAI(api_key=st.secrets["openai"]["api_key"])
     
     prompt = """
-    Engenheiro HVAC Sênior. Classifique os itens (Texto + Qtd + CompMédio).
+    Engenheiro HVAC. Classifique os itens JÁ FILTRADOS.
     
     REGRAS:
-    1. DUTOS: Dimensões (AxL, ø). Se MED > 0.2 use-o. Se MED=0, marque 0.
-    2. EQUIPAMENTOS: Procure TR/BTU/HP/CV/Volts nos textos.
+    1. DUTOS: Dimensões (AxL, ø). Se MED > 0.2 use-o.
+    2. EQUIPAMENTOS: Tag, Tipo, Detalhes (TR/BTU/HP).
     3. TERMINAIS: Grelhas, Difusores.
     
     SAÍDA CSV (;):
@@ -220,7 +232,6 @@ def analisar_com_ia_detalhada(lista_itens):
     
     ---ELETRICA---
     Tag;Desc;Qtd
-    Q-1;Quadro;1
     """
     
     try:
@@ -233,6 +244,7 @@ def analisar_com_ia_detalhada(lista_itens):
     except Exception as e: st.error(e); return None
 
 def processar_resposta(r):
+    if r == "VAZIO": return None
     blocos = {"DUTOS":[],"TERMINAIS":[],"EQUIPAMENTOS":[],"ELETRICA":[]}
     atual = None
     for l in r.split('\n'):
@@ -246,33 +258,38 @@ def processar_resposta(r):
     return blocos
 
 # ============================================================================
-# 4. INTERFACE
+# 5. INTERFACE
 # ============================================================================
-uploaded_dxf = st.file_uploader("📂 Carregar DXF (Qualquer versão)", type=["dxf"])
+uploaded_dxf = st.file_uploader("📂 Carregar DXF (Filtro Ativado)", type=["dxf"])
 
 if uploaded_dxf:
-    with st.spinner("Analisando arquivo..."):
+    with st.spinner("Lendo arquivo e aplicando Filtro Pente-Fino..."):
         itens_brutos, msg_status = extrair_dados_com_geometria(uploaded_dxf, raio_busca)
 
-    if itens_brutos:
-        tipo_msg = st.warning if "Resgate" in msg_status else st.success
-        tipo_msg(f"✅ Arquivo Processado! {len(itens_brutos)} itens encontrados.")
-        st.caption(f"Método utilizado: {msg_status}")
+    if itens_brutos and len(itens_brutos) > 0:
+        # Mostra quantos itens UTEIS sobraram
+        st.success(f"✅ Arquivo Processado! {len(itens_brutos)} itens RELEVANTES encontrados (Lixo removido).")
+        st.caption(f"Método: {msg_status}")
         
         if st.button("🚀 Extrair Quantitativo (IA)", type="primary"):
             with st.spinner("Interpretando dados..."):
                 res = analisar_com_ia_detalhada(itens_brutos)
-                if res:
-                    st.session_state['dados_geo_v3'] = processar_resposta(res)
+                if res and res != "VAZIO":
+                    st.session_state['dados_geo_v4'] = processar_resposta(res)
                     st.rerun()
+                else:
+                    st.warning("A IA não encontrou itens conhecidos na lista filtrada.")
     else:
-        st.error("❌ Não foi possível ler nenhum dado do arquivo.")
+        st.error("❌ Nenhum texto de engenharia (medidas, tags) encontrado.")
+        st.info("O filtro removeu todo o conteúdo pois parecia lixo de CAD (coordenadas, layers). Verifique se o DXF contém textos como '500x300' ou 'FC-01'.")
 
 # ============================================================================
-# 5. RESULTADOS
+# 6. RESULTADOS
 # ============================================================================
-if 'dados_geo_v3' in st.session_state:
-    d = st.session_state['dados_geo_v3']
+if 'dados_geo_v4' in st.session_state:
+    d = st.session_state['dados_geo_v4']
+    if not d: st.stop()
+
     t1, t2, t3, t4 = st.tabs(["🌪️ Dutos","💨 Terminais","⚙️ Equips","⚡ Elétrica"])
     
     with t1:
@@ -280,13 +297,11 @@ if 'dados_geo_v3' in st.session_state:
             df = pd.DataFrame(d["DUTOS"], columns=["Largura","Altura","Qtd","CompIA"])
             for c in df.columns: df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
             
-            # SE A GEOMETRIA FALHOU (Modo Resgate ou Zero), USA O PADRÃO DO MENU LATERAL
             df["Comp. Unit (m)"] = df["CompIA"].apply(lambda x: x if x > 0.2 else comp_minimo)
             
-            st.info(f"Dica: Usando comprimento padrão de {comp_minimo}m onde a geometria não foi detectada.")
-            df_ed = st.data_editor(df, num_rows="dynamic", key="dutos_v4")
+            st.info(f"Comprimento Padrão usado onde geometria falhou: {comp_minimo}m")
+            df_ed = st.data_editor(df, num_rows="dynamic", key="dutos_v5")
             
-            # Cálculos
             df_ed["Perímetro"] = (2*df_ed["Largura"] + 2*df_ed["Altura"])/1000
             df_ed["Total (m)"] = df_ed["Qtd"] * df_ed["Comp. Unit (m)"]
             df_ed["Área (m²)"] = df_ed["Perímetro"] * df_ed["Total (m)"]
@@ -300,7 +315,7 @@ if 'dados_geo_v3' in st.session_state:
             isol = f"{area:,.2f} m²" if tipo_isolamento != "Sem Isolamento" else "-"
             c3.metric("Isolamento", isol)
             st.dataframe(df_ed)
-        else: st.warning("Nenhum duto encontrado.")
+        else: st.warning("Nenhum duto encontrado na lista filtrada.")
 
     with t2:
         if d["TERMINAIS"]: st.data_editor(pd.DataFrame(d["TERMINAIS"], columns=["Item","Qtd"]), num_rows="dynamic")
