@@ -1,208 +1,73 @@
 import streamlit as st
 import pdfplumber
-import pandas as pd
-import re
-from io import BytesIO
+from openai import OpenAI
 
-st.set_page_config(page_title="Auditor Turbo PDF", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="Leitor IA | SIARCON", page_icon="🧠")
 
-# ==================================================
-# ⚙️ BARRA LATERAL (DO TURBO) - AJUSTES DE LEITURA
-# ==================================================
-with st.sidebar:
-    st.header("⚙️ Ajustes de Leitura")
-    st.info("Se as tabelas vierem bagunçadas, ajuste aqui:")
+st.title("🧠 Leitor de PDF com Inteligência Artificial")
+st.markdown("Carregue um memorial ou escopo técnico e deixe a IA extrair os dados e sugerir melhorias.")
+
+# --- CONFIGURAÇÃO DA IA ---
+def consultar_ia(texto_pdf):
+    # Verifica se a chave existe
+    if "openai" not in st.secrets:
+        st.error("🚨 Chave da OpenAI não configurada nos Secrets!")
+        return None
     
-    metodo = st.radio(
-        "Método de Detecção:",
-        ("lattice", "stream"),
-        index=0,
-        help="'Lattice' = Tabelas com linhas desenhadas.\n'Stream' = Tabelas com espaços em branco."
-    )
+    client = OpenAI(api_key=st.secrets["openai"]["api_key"])
     
-    tolerancia = st.slider(
-        "Tolerância (x-tolerance)",
-        min_value=1, max_value=10, value=3,
-        help="Aumente se as colunas estiverem quebrando."
-    )
-
-# ==================================================
-# 🧠 FUNÇÕES ROBUSTAS (DO TURBO)
-# ==================================================
-def limpar_cabecalho(lista_colunas):
+    prompt_sistema = """
+    Você é um Engenheiro Sênior especialista em orçamentos e escopos técnicos (HVAC, Elétrica, Hidráulica).
+    Sua missão é ler o texto técnico fornecido e gerar um relatório estruturado com:
+    1. RESUMO: O que é a obra em poucas linhas.
+    2. LISTA DE MATERIAIS: Extraia todos os itens quantificáveis em formato de lista.
+    3. PONTOS DE ATENÇÃO: Identifique riscos, erros técnicos ou itens que parecem estar faltando no escopo.
     """
-    Função vital: Impede o erro 'Duplicate column names'
-    Renomeia colunas vazias ou repetidas automaticamente.
-    """
-    colunas_limpas = []
-    contagem = {}
 
-    for i, col in enumerate(lista_colunas):
-        # 1. Trata None ou Vazio
-        if col is None or str(col).strip() == "":
-            nome_base = f"Coluna_{i+1}"
-        else:
-            nome_base = str(col).strip().replace('\n', ' ')
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o", # Ou "gpt-3.5-turbo" se preferir economizar
+            messages=[
+                {"role": "system", "content": prompt_sistema},
+                {"role": "user", "content": f"Analise este documento técnico:\n\n{texto_pdf[:15000]}"} # Limite de caracteres para não estourar
+            ],
+            temperature=0.3
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        st.error(f"Erro na IA: {e}")
+        return None
 
-        # 2. Trata Duplicatas
-        if nome_base in contagem:
-            contagem[nome_base] += 1
-            novo_nome = f"{nome_base}_{contagem[nome_base]}"
-        else:
-            contagem[nome_base] = 0
-            novo_nome = nome_base
+# --- INTERFACE ---
+uploaded_file = st.file_uploader("Carregar PDF Técnico", type="pdf")
 
-        colunas_limpas.append(novo_nome)
-
-    return colunas_limpas
-
-# ==================================================
-# 🧠 CÉREBRO ANALÍTICO (DO AUDITOR)
-# ==================================================
-def analisar_texto_inteligente(texto_completo):
-    analise = {
-        "resumo": "Não identificado.",
-        "escopo_detectado": [],
-        "alertas": [],
-        "sugestoes": []
-    }
-
-    # 1. RESUMO
-    match_resumo = re.search(r'(?i)(ref\.|assunto|objeto|referência)[:\s]+(.+)', texto_completo)
-    if match_resumo:
-        analise["resumo"] = match_resumo.group(2).split('\n')[0]
-    else:
-        analise["resumo"] = texto_completo[:300].replace('\n', ' ') + "..."
-
-    # 2. ESCOPO
-    palavras_chave = ["Escopo", "Descrição dos Serviços", "Objeto", "Serviços Inclusos", "Premissas"]
-    linhas = texto_completo.split('\n')
-    capturando = False
-    
-    for linha in linhas:
-        if any(key in linha for key in palavras_chave) and len(linha) < 60:
-            capturando = True
-            analise["escopo_detectado"].append(f"📌 **{linha.strip()}**")
-            continue
+if uploaded_file is not None:
+    # 1. EXTRAÇÃO DO TEXTO
+    with st.spinner("Lendo arquivo PDF..."):
+        texto_completo = ""
+        with pdfplumber.open(uploaded_file) as pdf:
+            for page in pdf.pages:
+                texto_completo += page.extract_text() + "\n"
         
-        if capturando:
-            if any(x in linha for x in ["Valor", "Total", "Condições", "Pagamento"]):
-                capturando = False
-            elif len(linha.strip()) > 3:
-                analise["escopo_detectado"].append(linha.strip())
+    st.success(f"PDF Lido! Total de caracteres: {len(texto_completo)}")
     
-    if not analise["escopo_detectado"]:
-        analise["escopo_detectado"].append("Não consegui isolar o texto do escopo automaticamente.")
+    with st.expander("Ver texto bruto extraído"):
+        st.text_area("Conteúdo", texto_completo, height=200)
 
-    # 3. ALERTAS (RISCOS)
-    obrigatorios = {
-        "Validade Proposta": ["validade", "vencimento"],
-        "Prazo Entrega": ["prazo", "entrega", "cronograma"],
-        "Pagamento": ["pagamento", "faturamento"],
-        "Impostos": ["impostos", "icms", "iss", "tributos"]
-    }
-
-    for item, keywords in obrigatorios.items():
-        if not any(k in texto_completo.lower() for k in keywords):
-            analise["alertas"].append(f"⚠️ **{item}** não encontrado.")
-            analise["sugestoes"].append(f"Pedir clareza sobre: **{item}**.")
-
-    # 4. DATA ANTIGA
-    anos = re.findall(r'202[0-9]', texto_completo)
-    if anos:
-        ano_atual = pd.Timestamp.now().year
-        if any(int(a) < (ano_atual - 1) for a in anos):
-            analise["alertas"].append(f"🚨 Possível documento antigo detectado (Anos: {set(anos)}).")
-
-    return analise
-
-# ==================================================
-# 🖥️ APLICAÇÃO PRINCIPAL
-# ==================================================
-st.title("⚡ Leitor & Auditor de Propostas")
-st.markdown("Extração robusta de tabelas + Análise de contrato.")
-
-arquivo = st.file_uploader("Carregue o PDF aqui", type=["pdf"])
-
-if arquivo:
+    # 2. ANÁLISE DA IA
     st.divider()
-    with st.spinner("Processando (Modo Turbo + Auditor)..."):
-        try:
-            texto_full = ""
-            tabelas_finais = []
-            
-            with pdfplumber.open(arquivo) as pdf:
-                total_paginas = len(pdf.pages)
-                bar = st.progress(0)
+    st.subheader("🤖 Análise Inteligente")
+    
+    if st.button("Gerar Análise Técnica (IA)", type="primary"):
+        if len(texto_completo) < 50:
+            st.warning("O PDF parece vazio ou é uma imagem escaneada. A IA precisa de texto selecionável.")
+        else:
+            with st.spinner("A IA está analisando o projeto... (Isso pode levar alguns segundos)"):
+                analise = consultar_ia(texto_completo)
                 
-                for i, page in enumerate(pdf.pages):
-                    # A. Extração de Texto (Para o Auditor)
-                    texto_full += (page.extract_text() or "") + "\n"
-                    
-                    # B. Extração de Tabelas (Modo Turbo)
-                    # Usa as configurações da Barra Lateral para evitar erros
-                    tabelas = page.extract_tables({
-                        "vertical_strategy": "lines" if metodo == "lattice" else "text",
-                        "horizontal_strategy": "lines" if metodo == "lattice" else "text",
-                        "snap_tolerance": tolerancia,
-                    })
-                    
-                    for tab in tabelas:
-                        df = pd.DataFrame(tab)
-                        # Remove linhas vazias
-                        df = df.dropna(how='all')
-                        
-                        if not df.empty and len(df) > 1:
-                            # --- AQUI ESTÁ A CORREÇÃO DO ERRO ---
-                            cabecalho_bruto = df.iloc[0].tolist()
-                            
-                            # Limpa nomes duplicados ou None ANTES de criar as colunas
-                            cabecalho_limpo = limpar_cabecalho(cabecalho_bruto)
-                            
-                            df.columns = cabecalho_limpo
-                            df = df[1:].reset_index(drop=True) # Remove a linha do header
-                            
-                            tabelas_finais.append(df)
-                    
-                    bar.progress((i + 1) / total_paginas)
-
-            # --- EXIBIÇÃO: PARTE 1 (AUDITORIA) ---
-            resultado = analisar_texto_inteligente(texto_full)
-            
-            st.markdown(f"### 📄 Resumo: {resultado['resumo']}")
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                st.subheader("🔍 Escopo Detectado")
-                with st.container(border=True):
-                    for linha in resultado["escopo_detectado"]:
-                        if "📌" in linha: st.markdown(f"**{linha}**")
-                        else: st.write(linha)
-
-            with col2:
-                st.subheader("🚨 Riscos & Alertas")
-                with st.container(border=True):
-                    if resultado["alertas"]:
-                        for a in resultado["alertas"]: st.error(a)
-                    else: st.success("✅ Documento parece completo.")
-                    
-                    if resultado["sugestoes"]:
-                        st.caption("Sugestões:")
-                        for s in resultado["sugestoes"]: st.info(s)
-
-            st.divider()
-
-            # --- EXIBIÇÃO: PARTE 2 (MATERIAIS / TABELAS) ---
-            st.subheader(f"📦 Listas de Materiais ({len(tabelas_finais)} encontradas)")
-            
-            if tabelas_finais:
-                for idx, df in enumerate(tabelas_finais):
-                    with st.expander(f"📋 Tabela {idx+1} ({len(df)} linhas) - Clique para ver", expanded=(idx==0)):
-                        st.dataframe(df, use_container_width=True)
-                        csv = df.to_csv(index=False).encode('utf-8')
-                        st.download_button(f"📥 Baixar CSV", csv, f"tabela_{idx+1}.csv", "text/csv")
-            else:
-                st.warning("Nenhuma tabela estruturada encontrada. Tente mudar para 'Stream' na barra lateral.")
-
-        except Exception as e:
-            st.error(f"Erro crítico no processamento: {e}")
+            if analise:
+                st.markdown("### 📋 Relatório da Engenharia (IA)")
+                st.markdown(analise)
+                
+                # Botão para baixar a análise
+                st.download_button("📥 Baixar Relatório IA", analise, "relatorio_ia.txt")
