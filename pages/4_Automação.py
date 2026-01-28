@@ -6,7 +6,7 @@ from datetime import date
 import utils_db
 
 # --- CONFIGURAÇÃO: AUTOMAÇÃO ---
-DISCIPLINA_ATUAL = "Automacao"
+DISCIPLINA_ATUAL = "Automação"
 ITENS_MATRIZ = [
     "Controladores (CLP/DDC)", "Sensores (Temp/Umid/Pressão)", "Atuadores e Válvulas",
     "Cabos de Comunicação", "Software e Programação", "Start-up Assistido",
