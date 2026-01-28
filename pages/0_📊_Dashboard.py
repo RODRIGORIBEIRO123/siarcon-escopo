@@ -5,25 +5,45 @@ from datetime import datetime
 
 st.set_page_config(page_title="Dashboard | SIARCON", page_icon="📊", layout="wide")
 
-st.title("📊 Gestão de Projetos SIARCON")
+# ============================================================================
+# CABEÇALHO COM LOGO
+# ============================================================================
+c_logo, c_tit = st.columns([1, 6])
+with c_logo:
+    try:
+        st.image("logo.png", width=120) # Certifique-se de ter um arquivo logo.png
+    except:
+        st.write("🏢 **SIARCON**")
+with c_tit:
+    st.title("Gestão de Projetos")
 
 # ============================================================================
-# 1. ÁREA DE CRIAÇÃO (STATUS INICIAL: NÃO INICIADO)
+# MAPEAMENTO DE PÁGINAS (Para o botão Editar funcionar)
+# ============================================================================
+PAGINAS_DISCIPLINAS = {
+    "Dutos": "pages/1_Dutos.py",
+    "Hidraulica": "pages/2_Hidraulica.py",
+    "Eletrica": "pages/3_Eletrica.py",
+    "Automacao": "pages/4_Automacao.py",
+    "TAB": "pages/5_TAB.py",
+    "Movimentacoes": "pages/6_Movimentacoes.py",
+    "Cobre": "pages/7_Cobre.py"
+}
+
+# ============================================================================
+# 1. ÁREA DE CRIAÇÃO
 # ============================================================================
 with st.expander("➕ CADASTRAR NOVO PROJETO", expanded=False):
     c1, c2, c3 = st.columns([2, 2, 3])
     novo_cliente = c1.text_input("Nome do Cliente")
     nova_obra = c2.text_input("Nome da Obra")
     
-    disciplinas_disponiveis = [
-        "Dutos", "Hidraulica", "Eletrica", "Automacao", 
-        "TAB", "Movimentacoes", "Cobre"
-    ]
+    disciplinas_disponiveis = list(PAGINAS_DISCIPLINAS.keys())
     disciplinas_selecionadas = c3.multiselect("Disciplinas do Escopo:", options=disciplinas_disponiveis)
     
     if st.button("🚀 CRIAR PROJETOS", type="primary"):
         if not novo_cliente or not nova_obra or not disciplinas_selecionadas:
-            st.error("Preencha Cliente, Obra e selecione ao menos uma disciplina.")
+            st.error("Preencha todos os campos.")
         else:
             count = 0
             for i, disc in enumerate(disciplinas_selecionadas):
@@ -39,122 +59,111 @@ with st.expander("➕ CADASTRAR NOVO PROJETO", expanded=False):
                 }
                 utils_db.registrar_projeto(dados_novo)
                 count += 1
-            
-            st.success(f"{count} projetos criados em 'Não Iniciado'!")
-            st.cache_data.clear()
-            st.rerun()
+            st.success(f"{count} projetos criados!"); st.cache_data.clear(); st.rerun()
 
 st.divider()
 
 # ============================================================================
-# 2. KANBAN (5 COLUNAS)
-# FLUXO: NÃO INICIADO > ENG > OBRAS > SUPRIMENTOS > CONCLUÍDO
+# 2. KANBAN (LAYOUT INTOCADO - AGORA COM EDITAR)
 # ============================================================================
 if st.button("🔄 Atualizar Quadro"):
-    st.cache_data.clear()
-    st.rerun()
+    st.cache_data.clear(); st.rerun()
 
 df = utils_db.listar_todos_projetos()
 
 if df.empty:
-    st.info("Nenhum projeto no quadro. Cadastre acima.")
+    st.info("Nenhum projeto encontrado.")
 else:
-    # 5 Colunas para o novo fluxo
     col1, col2, col3, col4, col5 = st.columns(5)
     
+    # Função auxiliar para desenhar o botão de editar
+    def botao_editar(row):
+        # Botão pequeno de editar
+        if st.button("✏️", key=f"edit_{row['_id']}", help="Editar Escopo"):
+            # Salva o ID na memória para a página ler
+            st.session_state['id_projeto_editar'] = row['_id']
+            # Redireciona para a página da disciplina
+            pagina_destino = PAGINAS_DISCIPLINAS.get(row['disciplina'])
+            if pagina_destino:
+                st.switch_page(pagina_destino)
+            else:
+                st.error("Página não encontrada.")
+
     # --- COLUNA 1: NÃO INICIADO ---
     with col1:
         st.markdown("### 💤 Não Iniciado")
-        filtrados = df[df['status'] == 'Não Iniciado']
-        
-        for idx, row in filtrados.iterrows():
-            titulo = f"{row['disciplina']} | {row['obra']}"
+        for idx, row in df[df['status'] == 'Não Iniciado'].iterrows():
             with st.container(border=True):
-                st.write(f"**{titulo}**")
+                c_tit, c_edit = st.columns([4, 1])
+                c_tit.write(f"**{row['disciplina']} | {row['obra']}**")
+                with c_edit: botao_editar(row)
+                
                 st.caption(row['cliente'])
                 if st.button("Iniciar (Eng) ➡️", key=f"start_{row['_id']}"):
                     utils_db.atualizar_status_projeto(row['_id'], "Em Elaboração")
                     st.cache_data.clear(); st.rerun()
 
-    # --- COLUNA 2: ENGENHARIA (Em Elaboração) ---
+    # --- COLUNA 2: ENGENHARIA ---
     with col2:
         st.markdown("### 👷 Engenharia")
         st.caption("(Definição Técnica)")
-        filtrados = df[df['status'] == 'Em Elaboração']
-        
-        for idx, row in filtrados.iterrows():
-            titulo = f"{row['disciplina']} | {row['obra']}"
+        for idx, row in df[df['status'] == 'Em Elaboração'].iterrows():
             with st.container(border=True):
-                st.info(f"**{titulo}**")
-                st.caption(row['cliente'])
+                c_tit, c_edit = st.columns([4, 1])
+                c_tit.info(f"**{row['disciplina']} | {row['obra']}**")
+                with c_edit: botao_editar(row)
                 
-                # Manda para Obras
+                st.caption(row['cliente'])
                 if st.button("Validar (Obras) ➡️", key=f"to_obras_{row['_id']}"):
                     utils_db.atualizar_status_projeto(row['_id'], "Em Análise Obras")
                     st.cache_data.clear(); st.rerun()
 
-    # --- COLUNA 3: OBRAS (Em Análise) ---
+    # --- COLUNA 3: OBRAS ---
     with col3:
         st.markdown("### 🏗️ Obras")
         st.caption("(Validação Campo)")
-        # Status novo que criamos para essa etapa
-        filtrados = df[df['status'] == 'Em Análise Obras']
-        
-        for idx, row in filtrados.iterrows():
-            titulo = f"{row['disciplina']} | {row['obra']}"
+        for idx, row in df[df['status'] == 'Em Análise Obras'].iterrows():
             with st.container(border=True):
-                st.warning(f"**{titulo}**")
+                c_tit, c_edit = st.columns([4, 1])
+                c_tit.warning(f"**{row['disciplina']} | {row['obra']}**")
+                with c_edit: botao_editar(row)
+                
                 st.caption(row['cliente'])
-                
-                c_voltar, c_ir = st.columns(2)
-                # Volta para Engenharia
-                if c_voltar.button("⬅️ Eng", key=f"back_eng_from_obras_{row['_id']}"):
-                    utils_db.atualizar_status_projeto(row['_id'], "Em Elaboração")
-                    st.cache_data.clear(); st.rerun()
-                
-                # Vai para Suprimentos
-                if c_ir.button("Sup ➡️", key=f"to_sup_{row['_id']}"):
-                    utils_db.atualizar_status_projeto(row['_id'], "Em Cotação")
-                    st.cache_data.clear(); st.rerun()
+                c_v, c_i = st.columns(2)
+                if c_v.button("⬅️ Eng", key=f"bk_eng_{row['_id']}"):
+                    utils_db.atualizar_status_projeto(row['_id'], "Em Elaboração"); st.cache_data.clear(); st.rerun()
+                if c_i.button("Sup ➡️", key=f"go_sup_{row['_id']}"):
+                    utils_db.atualizar_status_projeto(row['_id'], "Em Cotação"); st.cache_data.clear(); st.rerun()
 
-    # --- COLUNA 4: SUPRIMENTOS (Em Cotação) ---
+    # --- COLUNA 4: SUPRIMENTOS ---
     with col4:
         st.markdown("### 💰 Suprimentos")
         st.caption("(Cotação/Compra)")
-        filtrados = df[df['status'] == 'Em Cotação']
-        
-        for idx, row in filtrados.iterrows():
-            titulo = f"{row['disciplina']} | {row['obra']}"
+        for idx, row in df[df['status'] == 'Em Cotação'].iterrows():
             with st.container(border=True):
-                st.error(f"**{titulo}**") # Vermelho/Rosa para destacar Suprimentos
+                c_tit, c_edit = st.columns([4, 1])
+                c_tit.error(f"**{row['disciplina']} | {row['obra']}**")
+                with c_edit: botao_editar(row)
+
                 st.caption(row['cliente'])
-                
                 if row['fornecedor']: st.write(f"🏢 {row['fornecedor']}")
                 if row['valor_total']: st.write(f"💲 {row['valor_total']}")
 
-                # Botões de Devolução
                 c_v1, c_v2 = st.columns(2)
-                if c_v1.button("⬅️ Eng", key=f"ret_eng_{row['_id']}"):
-                    utils_db.atualizar_status_projeto(row['_id'], "Em Elaboração")
-                    st.cache_data.clear(); st.rerun()
+                if c_v1.button("⬅️ Eng", key=f"r_eng_{row['_id']}"):
+                    utils_db.atualizar_status_projeto(row['_id'], "Em Elaboração"); st.cache_data.clear(); st.rerun()
+                if c_v2.button("⬅️ Obras", key=f"r_obr_{row['_id']}"):
+                    utils_db.atualizar_status_projeto(row['_id'], "Em Análise Obras"); st.cache_data.clear(); st.rerun()
                 
-                if c_v2.button("⬅️ Obras", key=f"ret_obras_{row['_id']}"):
-                    utils_db.atualizar_status_projeto(row['_id'], "Em Análise Obras")
-                    st.cache_data.clear(); st.rerun()
-
-                # Botão de Conclusão (destacado)
-                if st.button("✅ Concluir Compra", key=f"finish_{row['_id']}", type="primary"):
-                    utils_db.atualizar_status_projeto(row['_id'], "Concluído")
-                    st.cache_data.clear(); st.rerun()
+                if st.button("✅ Concluir", key=f"fin_{row['_id']}", type="primary"):
+                    utils_db.atualizar_status_projeto(row['_id'], "Concluído"); st.cache_data.clear(); st.rerun()
 
     # --- COLUNA 5: CONCLUÍDO ---
     with col5:
         st.markdown("### ✅ Concluído")
-        filtrados = df[df['status'] == 'Concluído']
-        
-        for idx, row in filtrados.iterrows():
-            titulo = f"{row['disciplina']} | {row['obra']}"
-            with st.expander(titulo):
-                st.write(f"**Cliente:** {row['cliente']}")
-                st.success(f"**Forn:** {row['fornecedor']}")
-                st.write(f"**Valor:** {row['valor_total']}")
+        for idx, row in df[df['status'] == 'Concluído'].iterrows():
+            with st.expander(f"{row['disciplina']} | {row['obra']}"):
+                st.write(f"Cliente: {row['cliente']}")
+                st.success(f"Forn: {row['fornecedor']}")
+                st.write(f"Valor: {row['valor_total']}")
+                botao_editar(row) # Edição permitida em concluído também
