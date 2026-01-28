@@ -7,3 +7,4 @@ pdfplumber
 ezdxf
 openpyxl
 openai
+extra-streamlit-components
