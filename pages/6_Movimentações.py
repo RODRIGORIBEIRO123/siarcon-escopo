@@ -8,13 +8,52 @@ import utils_db
 # ============================================================================
 # 🚨 CONFIGURAÇÃO ESPECÍFICA: MOVIMENTAÇÕES
 # ============================================================================
-DISCIPLINA_ATUAL = "Movimentacoes" 
+DISCIPLINA_ATUAL = "Movimentações" 
 
 ITENS_MATRIZ = [
     "Guindaste", "Caminhão Munk", "Empilhadeira",
     "Equipe de Remoção Técnica", "Plano de Rigging", "Seguro de Carga",
     "Batedores/Escolta", "Autorizações Viárias", "Isolamento da Área"
 ]
+
+# --- LISTAS PADRÃO (Carregam automático para não ficar vazio) ---
+PADRAO_TECNICO = [
+    "Locação de Guindaste (Capacidade a definir)",
+    "Locação de Caminhão Munck",
+    "Locação de Empilhadeira",
+    "Elaboração de Plano de Rigging (Engenharia)",
+    "Mobilização e Desmobilização de Equipamentos",
+    "Equipe de Remoção Técnica (Rigger + Ajudantes)",
+    "Transporte Rodoviário (Carreta/Prancha)",
+    "Licença AET (Trânsito)",
+    "Carro Batedor (Escolta)",
+    "Seguro de Carga e Içamento (RCTR-C / RCF-DC)",
+    "Patolamento e Estabilização de Solo"
+]
+
+PADRAO_QUALIDADE = [
+    "Certificado de Inspeção Recente (Guindaste/Munck)",
+    "Qualificação de Operadores (CNH/Cursos)",
+    "Certificado de Calibração (Célula de Carga)",
+    "Laudo de Manutenção Preventiva",
+    "Check-list Diário de Equipamentos",
+    "ART do Plano de Rigging",
+    "Certificado de Cintas, Manilhas e Cabos"
+]
+
+PADRAO_SMS = [
+    "Isolamento Físico de Área (Correntes/Cones/Tela)",
+    "Plano de Trânsito Interno (Logística)",
+    "Permissão de Trabalho (PT) Específica",
+    "Análise de Risco (APR) de Içamento",
+    "Inspeção Prévia de Acessórios de Içamento",
+    "Uso de Colete Refletivo e EPIs Específicos",
+    "NR-11 (Transporte, Movimentação, Armazenagem)",
+    "NR-12 (Segurança em Máquinas)",
+    "NR-18 (Condições e Meio Ambiente na Construção)",
+    "Sinalização Vertical e Horizontal Provisória"
+]
+
 # ============================================================================
 
 st.set_page_config(page_title=f"Escopo {DISCIPLINA_ATUAL}", page_icon="🏗️", layout="wide")
@@ -29,7 +68,7 @@ if 'opcoes_db' not in st.session_state or st.sidebar.button("🔄 Forçar Recarg
 cat_tecnica_db = f"tecnico_{DISCIPLINA_ATUAL.lower()}"
 cat_qualidade_db = f"qualidade_{DISCIPLINA_ATUAL.lower()}"
 
-# --- VERIFICAÇÃO DE EDIÇÃO (LÓGICA DO BOTÃO LÁPIS) ---
+# --- VERIFICAÇÃO DE EDIÇÃO ---
 id_projeto = st.session_state.get('id_projeto_editar')
 dados_edit = {}
 
@@ -152,13 +191,16 @@ with tab1:
 
 with tab2:
     st.subheader("Itens Técnicos")
-    lista_tec = opcoes.get(cat_tecnica_db, [])
+    # Busca itens do banco + mistura com os PADRÕES fixos deste arquivo
+    lista_tec_db = opcoes.get(cat_tecnica_db, [])
+    lista_tec_final = sorted(list(set(lista_tec_db + PADRAO_TECNICO)))
     
     # Recupera itens salvos para edição
     itens_salvos = dados_edit.get('itens_tecnicos', [])
     if isinstance(itens_salvos, str): itens_salvos = eval(itens_salvos)
     
-    opcoes_finais = sorted(list(set(lista_tec + itens_salvos)))
+    # Garante que os salvos também estejam na lista
+    opcoes_finais = sorted(list(set(lista_tec_final + itens_salvos)))
     
     k_tec = f"tec_{DISCIPLINA_ATUAL.lower()}"
     itens_tec = st.multiselect("Selecione Itens:", opcoes_finais, default=itens_salvos, key=k_tec)
@@ -172,11 +214,13 @@ with tab2:
     
     st.divider()
     st.subheader("Qualidade")
-    lista_qual = opcoes.get(cat_qualidade_db, [])
+    # Busca itens do banco + mistura com os PADRÕES fixos deste arquivo
+    lista_qual_db = opcoes.get(cat_qualidade_db, [])
+    lista_qual_final = sorted(list(set(lista_qual_db + PADRAO_QUALIDADE)))
     
     itens_salvos_q = dados_edit.get('itens_qualidade', [])
     if isinstance(itens_salvos_q, str): itens_salvos_q = eval(itens_salvos_q)
-    opcoes_finais_q = sorted(list(set(lista_qual + itens_salvos_q)))
+    opcoes_finais_q = sorted(list(set(lista_qual_final + itens_salvos_q)))
 
     k_qual = f"qual_{DISCIPLINA_ATUAL.lower()}"
     itens_qual = st.multiselect("Selecione Itens:", opcoes_finais_q, default=itens_salvos_q, key=k_qual)
@@ -204,11 +248,17 @@ with tab3:
 
 with tab4:
     st.subheader("SMS")
+    # Recupera NRs do banco + PADRÃO SMS MOVIMENTAÇÃO
+    lista_sms_db = opcoes.get('sms', [])
+    lista_sms_final = sorted(list(set(lista_sms_db + PADRAO_SMS)))
+
     nrs_salvas = dados_edit.get('nrs_selecionadas', [])
     if isinstance(nrs_salvas, str): nrs_salvas = eval(nrs_salvas)
-    opcoes_sms = sorted(list(set(opcoes.get('sms', []) + nrs_salvas)))
+    
+    # Junta tudo
+    opcoes_sms = sorted(list(set(lista_sms_final + nrs_salvas)))
 
-    nrs = st.multiselect("NRs Aplicáveis:", opcoes_sms, default=nrs_salvas, key=f"sms_{DISCIPLINA_ATUAL}")
+    nrs = st.multiselect("NRs e Itens de Segurança Aplicáveis:", opcoes_sms, default=nrs_salvas, key=f"sms_{DISCIPLINA_ATUAL}")
     
     c_add_s, c_vz = st.columns(2)
     novo_sms = c_add_s.text_input("Novo Item SMS (DB):", key=f"new_s_{DISCIPLINA_ATUAL}")
@@ -221,42 +271,4 @@ with tab4:
 with tab5:
     c_v1, c_v2 = st.columns(2)
     val = c_v1.text_input("Valor Total (R$)", value=dados_edit.get('valor_total', ''))
-    pgto = c_v2.text_area("Pagamento", value=dados_edit.get('condicao_pgto', ''))
-    obs = st.text_area("Obs Gerais", value=dados_edit.get('obs_gerais', ''))
-    
-    status_atual = dados_edit.get('status', 'Em Elaboração')
-    lista_status = ["Em Elaboração", "Em Análise Obras", "Em Cotação", "Finalizado", "Concluído"]
-    idx_status = 0
-    if status_atual in lista_status: idx_status = lista_status.index(status_atual)
-    
-    status = st.selectbox("Status", lista_status, index=idx_status)
-
-st.markdown("---")
-id_final = dados_edit.get('_id', None)
-
-dados = {
-    '_id': id_final,
-    'disciplina': DISCIPLINA_ATUAL, 'cliente': cliente, 'obra': obra,
-    'fornecedor': forn, 'cnpj_fornecedor': cnpj,
-    'responsavel': resp_eng, 'resp_suprimentos': resp_sup,
-    'revisao': revisao, 'resumo_escopo': resumo,
-    'itens_tecnicos': itens_tec, 'tecnico_livre': tec_livre,
-    'itens_qualidade': itens_qual, 'matriz': escolhas, 
-    'nrs_selecionadas': nrs, 'sms_livre': sms_livre,
-    'valor_total': val, 'condicao_pgto': pgto, 'obs_gerais': obs,
-    'status': status, 'data_inicio': dados_edit.get('data_inicio', date.today().strftime("%Y-%m-%d"))
-}
-
-c_b1, c_b2 = st.columns(2)
-if c_b1.button("☁️ SALVAR NO BANCO"):
-    if not cliente or not obra: st.error("Preencha Cliente e Obra")
-    else: 
-        if utils_db.registrar_projeto(dados): st.success("Salvo!"); st.toast("Salvo")
-        else: st.error("Erro")
-
-if c_b2.button("💾 SALVAR E GERAR DOCX", type="primary"):
-    if not cliente or not obra: st.error("Preencha Cliente e Obra")
-    else:
-        utils_db.registrar_projeto(dados)
-        b = gerar_docx(dados)
-        st.download_button(f"📥 Baixar DOCX", b, f"Escopo_{DISCIPLINA_ATUAL}.docx")
+    pgto = c_v2.text_area
