@@ -6,23 +6,23 @@ from datetime import date
 import utils_db
 
 # ============================================================================
-# 🚨 CONFIGURAÇÃO ESPECÍFICA DESTA DISCIPLINA
-# (Nos outros arquivos, você só vai mudar este bloco aqui!)
+# 🚨 ÁREA DE PERSONALIZAÇÃO (MUDE AQUI EM CADA ARQUIVO)
 # ============================================================================
-DISCIPLINA_ATUAL = "Dutos"
+DISCIPLINA_ATUAL = "Dutos" # <--- MUDE O NOME AQUI
 
+# LISTA DE MATERIAIS DA MATRIZ (MUDE CONFORME A DISCIPLINA)
 ITENS_MATRIZ = [
-    "Fabricação de Dutos", "Montagem de Dutos", "Isolamento Térmico",
-    "Suportes e Fixações", "Grelhas e Difusores", "Consumíveis",
-    "Andaimes/Plataformas", "Projetos Executivos", "ART/RRT"
+    "Fabricação", "Montagem", "Isolamento", "Suportes", "Consumíveis", "ART"
 ]
 # ============================================================================
 
 st.set_page_config(page_title=f"Escopo {DISCIPLINA_ATUAL}", page_icon="📝", layout="wide")
 
-# --- CARGA DE DADOS (CACHE) ---
-if 'opcoes_db' not in st.session_state or st.sidebar.button("🔄 Recarregar Dados"):
-    with st.spinner("Sincronizando com Banco de Dados..."):
+# --- CARGA DE DADOS COM LIMPEZA DE CACHE ---
+# Esse botão garante que se a lista de NRs mudar, ela atualiza na tela
+if 'opcoes_db' not in st.session_state or st.sidebar.button("🔄 Forçar Recarga de Dados"):
+    with st.spinner("Atualizando listas..."):
+        st.cache_data.clear() # <--- ISSO VAI CORRIGIR O PROBLEMA DAS NRs
         st.session_state['opcoes_db'] = utils_db.carregar_opcoes()
 
 def formatar_moeda(valor):
@@ -53,9 +53,8 @@ def gerar_docx(dados):
     doc.add_heading('2. ESCOPO TÉCNICO', 1)
     doc.add_paragraph(f"Resumo: {dados.get('resumo_escopo','')}")
     
-    # Campo Livre
     if dados.get('tecnico_livre'): 
-        doc.add_paragraph("Observações Técnicas Gerais:", style='List Bullet')
+        doc.add_paragraph("Observações Técnicas:", style='List Bullet')
         doc.add_paragraph(dados['tecnico_livre'])
         
     doc.add_paragraph("Itens Específicos:", style='List Bullet')
@@ -75,6 +74,10 @@ def gerar_docx(dados):
         else: row[2].text = "X"
 
     doc.add_heading('5. SMS E SEGURANÇA', 1)
+    if dados.get('sms_livre'):
+        doc.add_paragraph("Observações de Segurança:", style='List Bullet')
+        doc.add_paragraph(dados['sms_livre'])
+
     for nr in dados.get('nrs_selecionadas', []): doc.add_paragraph(nr, style='List Bullet')
 
     doc.add_heading('6. COMERCIAL', 1)
@@ -115,11 +118,11 @@ with tab2:
     
     c_add, c_txt = st.columns(2)
     novo_tec = c_add.text_input("Novo Item Técnico (DB):", key=f"new_{k_tec}")
-    if c_add.button("💾 Adicionar Técnico", key=f"btn_{k_tec}"):
+    if c_add.button("💾 Salvar Item Técnico", key=f"btn_{k_tec}"):
         if utils_db.aprender_novo_item("tecnico", novo_tec):
             st.toast("Item técnico salvo!"); st.rerun()
             
-    tec_livre = st.text_area("📝 Informações Gerais e Complementares (Texto Livre):", height=150, placeholder="Descreva detalhes específicos...")
+    tec_livre = st.text_area("📝 Informações Gerais (Técnico):", height=150, placeholder="Descreva detalhes específicos...")
     
     st.divider()
     st.subheader("Controle de Qualidade")
@@ -128,7 +131,7 @@ with tab2:
     
     c_add_q, c_vazio = st.columns(2)
     novo_qual = c_add_q.text_input("Novo Item Qualidade (DB):", key=f"new_q_{k_qual}")
-    if c_add_q.button("💾 Adicionar Qualidade", key=f"btn_q_{k_qual}"):
+    if c_add_q.button("💾 Salvar Item Qualidade", key=f"btn_q_{k_qual}"):
         if utils_db.aprender_novo_item("qualidade", novo_qual):
              st.toast("Item qualidade salvo!"); st.rerun()
 
@@ -142,8 +145,21 @@ with tab3:
         st.divider()
 
 with tab4:
-    st.subheader("Normas Regulamentadoras (NRs)")
-    nrs = st.multiselect("Selecione as NRs Aplicáveis:", opcoes.get('sms', []), key=f"sms_{DISCIPLINA_ATUAL}")
+    st.subheader("Normas Regulamentadoras (SMS)")
+    
+    # 1. SELEÇÃO DE NRS (Agora deve mostrar todas)
+    nrs = st.multiselect("Selecione NRs e Itens de Segurança:", opcoes.get('sms', []), key=f"sms_{DISCIPLINA_ATUAL}")
+    
+    # 2. CADASTRAR NOVO ITEM NO BANCO (Igual técnico/qualidade)
+    c_add_s, c_vazio_s = st.columns(2)
+    novo_sms = c_add_s.text_input("Cadastrar Novo Item/NR no Banco:", key=f"new_s_{DISCIPLINA_ATUAL}")
+    if c_add_s.button("💾 Salvar Item SMS", key=f"btn_s_{DISCIPLINA_ATUAL}"):
+        if utils_db.aprender_novo_item("sms", novo_sms):
+            st.toast("Item SMS salvo!"); st.rerun()
+            
+    # 3. CAMPO DE TEXTO LIVRE
+    st.divider()
+    sms_livre = st.text_area("📝 Observações Gerais de Segurança (Texto Livre):", height=150, placeholder="Ex: Exigência de integração, exames específicos, etc.")
 
 with tab5:
     c_v1, c_v2 = st.columns(2)
@@ -160,7 +176,9 @@ dados_projeto = {
     'responsavel': resp_eng, 'resp_suprimentos': resp_sup,
     'revisao': revisao, 'resumo_escopo': resumo,
     'itens_tecnicos': itens_tec, 'tecnico_livre': tec_livre,
-    'itens_qualidade': itens_qual, 'matriz': escolhas, 'nrs_selecionadas': nrs,
+    'itens_qualidade': itens_qual, 
+    'matriz': escolhas, 
+    'nrs_selecionadas': nrs, 'sms_livre': sms_livre, # Novo campo SMS livre
     'valor_total': val, 'condicao_pgto': pgto, 'obs_gerais': obs,
     'status': status, 'data_inicio': date.today().strftime("%Y-%m-%d")
 }
