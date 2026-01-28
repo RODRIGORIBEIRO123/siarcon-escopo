@@ -1,331 +1,215 @@
 import streamlit as st
 import ezdxf
 from ezdxf import recover
-import math
 import pandas as pd
 import tempfile
 import os
 import re
+import math
+from collections import Counter
 
 # --- 🔒 SEGURANÇA ---
 if 'logado' not in st.session_state or not st.session_state['logado']:
     st.warning("🔒 Acesso negado. Faça login no Dashboard.")
     st.stop()
 
-st.set_page_config(page_title="Leitor DXF (Cores)", page_icon="🎨", layout="wide")
+st.set_page_config(page_title="Leitor DXF (Contagem)", page_icon="🔢", layout="wide")
 
-st.title("🎨 Leitor de Dutos por COR (Visual)")
+st.title("🔢 Leitor Estatístico de Dutos")
 st.markdown("""
-**Solução para Layers Bagunçados:**
-Muitos projetos não organizam layers corretamente, mas usam **CORES** diferentes para Dutos e Arquitetura.
-Selecione abaixo a cor das linhas dos dutos para fazer o levantamento preciso.
+**Abordagem Infalível:** Este método ignora as linhas desenhadas (que costumam dar erro) e foca 100% na leitura das **Etiquetas de Texto**.
+O sistema conta quantas peças de cada medida existem e multiplica pelo comprimento padrão de peça (ex: 1.10m).
 """)
 
 # ============================================================================
-# 1. FUNÇÕES AUXILIARES (GEOMETRIA E COR)
+# 1. FUNÇÕES DE EXTRAÇÃO DE TEXTO (BLINDADAS)
 # ============================================================================
 
-def calcular_distancia_pontos(p1, p2):
-    return math.hypot(p2[0] - p1[0], p2[1] - p1[1])
+def limpar_texto_dxf(texto):
+    """Remove códigos de formatação do AutoCAD (ex: \\A1;500)"""
+    if not texto: return ""
+    # Remove códigos de controle como \A1; \C7; etc
+    t = re.sub(r'\\[ACFHQTW].*?;', '', texto)
+    # Remove chaves {}
+    t = t.replace('{', '').replace('}', '')
+    return t.strip().upper()
 
-def obter_comprimento_e_centro(entity):
-    """Retorna (comprimento, ponto_central)"""
-    try:
-        if entity.dxftype() == 'LINE':
-            start = entity.dxf.start
-            end = entity.dxf.end
-            comp = calcular_distancia_pontos(start, end)
-            center = ((start[0] + end[0])/2, (start[1] + end[1])/2)
-            return comp, center
-        elif entity.dxftype() == 'LWPOLYLINE':
-            pts = entity.get_points()
-            if not pts: return 0, (0,0)
-            comp_total = 0
-            sum_x, sum_y = 0, 0
-            count = len(pts)
-            for i in range(len(pts) - 1):
-                comp_total += calcular_distancia_pontos(pts[i], pts[i+1])
-                sum_x += pts[i][0]; sum_y += pts[i][1]
-            if entity.closed and count > 1:
-                comp_total += calcular_distancia_pontos(pts[-1], pts[0])
-            
-            center = (sum_x/count, sum_y/count) if count > 0 else (0,0)
-            return comp_total, center
-    except: return 0, (0,0)
-    return 0, (0,0)
-
-def resolver_cor(entity, doc):
+def identificar_medida(texto):
     """
-    Retorna o número da cor (ACI).
-    Se for 256 (ByLayer), busca a cor do layer.
+    Analisa se o texto é uma medida de duto.
+    Retorna: (Largura, Altura, Tipo) ou (0,0,None)
     """
-    try:
-        c = entity.dxf.color
-        if c == 256: # ByLayer
-            layer_name = entity.dxf.layer
-            layer = doc.layers.get(layer_name)
-            return layer.dxf.color
-        return c
-    except:
-        return 7 # Retorna branco/preto por padrão se falhar
+    t = limpar_texto_dxf(texto)
+    
+    # 1. Tenta Padrão Retangular (500x300, 500 X 300, 500*300)
+    # Regex flexível para pegar números com x no meio
+    match_ret = re.search(r'^(\d+)\s*[xX*]\s*(\d+)$', t)
+    if match_ret:
+        l = float(match_ret.group(1))
+        h = float(match_ret.group(2))
+        return l, h, "Retangular"
+    
+    # 2. Tenta Padrão Circular (ø200, 200ø, diam 200)
+    # %%C é o código para símbolo de diâmetro no CAD
+    match_circ = re.search(r'([øØ]|%%C|DIAM\.?)\s*(\d+)', t)
+    match_circ_inv = re.search(r'(\d+)\s*([øØ]|%%C|DIAM\.?)', t)
+    
+    diam = 0
+    if match_circ: diam = float(match_circ.group(2))
+    elif match_circ_inv: diam = float(match_circ_inv.group(1))
+    
+    if diam > 0:
+        return diam, diam, "Circular"
+        
+    return 0, 0, None
 
-# ============================================================================
-# 2. PROCESSAMENTO (ARQUIVO SEGURO)
-# ============================================================================
-def ler_dxf_e_mapear_cores(uploaded_file):
-    """Lê o arquivo e inventaria quais cores existem nele."""
+def ler_textos_dxf(uploaded_file):
+    """
+    Lê o DXF e extrai APENAS textos, ignorando geometria corrompida.
+    """
+    textos_validos = []
+    erros = []
     temp_path = None
-    doc = None
-    cores_linhas = {} # {cor_idx: quantidade}
-    cores_textos = {}
-    erro = None
-
+    
     try:
+        # Salva temporário para evitar erro de buffer/rstrip
         with tempfile.NamedTemporaryFile(delete=False, suffix=".dxf") as tmp_file:
             tmp_file.write(uploaded_file.getvalue())
             temp_path = tmp_file.name
-        
-        doc, auditor = recover.readfile(temp_path)
-        msp = doc.modelspace()
-
-        # Inventário de Cores (Linhas)
-        for e in msp.query('LINE LWPOLYLINE'):
-            c = resolver_cor(e, doc)
-            cores_linhas[c] = cores_linhas.get(c, 0) + 1
-
-        # Inventário de Cores (Textos)
-        for e in msp.query('TEXT MTEXT'):
-            c = resolver_cor(e, doc)
-            cores_textos[c] = cores_textos.get(c, 0) + 1
             
+        # Usa recover para abrir até arquivo corrompido
+        doc, auditor = recover.readfile(temp_path)
+        
+        if auditor.has_errors:
+            erros.append(f"O arquivo continha erros que foram corrigidos automaticamente.")
+
+        msp = doc.modelspace()
+        
+        # Varre apenas entidades de TEXTO
+        for e in msp.query('TEXT MTEXT'):
+            raw_text = e.dxf.text if e.dxftype() == 'TEXT' else e.text
+            
+            l, h, tipo = identificar_medida(raw_text)
+            if tipo:
+                textos_validos.append({
+                    'Texto Original': raw_text,
+                    'Largura': l,
+                    'Altura': h,
+                    'Tipo': tipo
+                })
+                
     except Exception as e:
-        erro = str(e)
+        erros.append(f"Erro Fatal: {str(e)}")
     finally:
         if temp_path and os.path.exists(temp_path):
             try: os.remove(temp_path)
             except: pass
             
-    return doc, cores_linhas, cores_textos, erro
-
-def processar_por_cor(doc, cor_dutos_selecionada, cor_textos_selecionada, raio_maximo, fator_linha, usar_todas_cores_dutos=False):
-    msp = doc.modelspace()
-    
-    # 1. Extrair ETIQUETAS (Filtrando por cor se necessário)
-    etiquetas = []
-    
-    # query genérica, filtro manual depois
-    for e in msp.query('TEXT MTEXT'):
-        # Filtro de Cor do Texto
-        if cor_textos_selecionada != "Todas":
-            c = resolver_cor(e, doc)
-            if str(c) != str(cor_textos_selecionada): continue
-            
-        txt = e.dxf.text if e.dxftype() == 'TEXT' else e.text
-        if not txt: continue
-        t_clean = txt.strip().upper()
-        
-        # Validação Regex (Deve ter números)
-        if any(char.isdigit() for char in t_clean):
-            try:
-                insert = e.dxf.insert
-                etiquetas.append({
-                    'texto': t_clean,
-                    'pos': (insert[0], insert[1]),
-                    'soma_linhas': 0.0
-                })
-            except: pass
-            
-    if not etiquetas:
-        return [], "Nenhum texto válido encontrado com a cor selecionada."
-
-    # 2. Extrair LINHAS (Filtrando por cor)
-    linhas_processadas = 0
-    linhas_ignoradas = 0
-    
-    # Otimização: Carregar apenas linhas relevantes
-    for linha in msp.query('LINE LWPOLYLINE'):
-        # Filtro de Cor da Linha
-        if not usar_todas_cores_dutos:
-            c = resolver_cor(linha, doc)
-            if str(c) != str(cor_dutos_selecionada):
-                linhas_ignoradas += 1
-                continue
-        
-        comp, centro = obter_comprimento_e_centro(linha)
-        if comp <= 0: continue
-        
-        # 3. Associação Geométrica (Nearest Neighbor)
-        idx_mais_prox = -1
-        menor_dist = float('inf')
-        
-        # Busca a etiqueta mais próxima dessa linha
-        for i, et in enumerate(etiquetas):
-            # Check rápido de Bounding Box
-            if abs(et['pos'][0] - centro[0]) > raio_maximo: continue
-            if abs(et['pos'][1] - centro[1]) > raio_maximo: continue
-            
-            dist = math.hypot(et['pos'][0] - centro[0], et['pos'][1] - centro[1])
-            if dist < menor_dist:
-                menor_dist = dist
-                idx_mais_prox = i
-        
-        # Se achou uma etiqueta perto o suficiente, soma
-        if idx_mais_prox != -1 and menor_dist <= raio_maximo:
-            etiquetas[idx_mais_prox]['soma_linhas'] += comp
-            linhas_processadas += 1
-        else:
-            linhas_ignoradas += 1
-
-    # 4. Consolidar Resultados
-    resumo = {}
-    for item in etiquetas:
-        if item['soma_linhas'] > 0:
-            t = item['texto']
-            if t not in resumo: resumo[t] = 0.0
-            resumo[t] += item['soma_linhas']
-            
-    resultado_final = []
-    for k, v in resumo.items():
-        comp_ajustado = v / fator_linha
-        resultado_final.append({'Bitola': k, 'Comprimento Total (m)': comp_ajustado})
-        
-    log = f"Processadas: {linhas_processadas} | Ignoradas (Cor/Longe): {linhas_ignoradas}"
-    return resultado_final, log
+    return textos_validos, erros
 
 # ============================================================================
-# 3. INTERFACE
+# 2. INTERFACE E CÁLCULOS
 # ============================================================================
+
 with st.sidebar:
-    st.header("⚙️ Calibração")
-    unidade_desenho = st.selectbox("Unidade do CAD", ["Centímetros (cm)", "Metros (m)", "Milímetros (mm)"])
+    st.header("⚙️ Parâmetros de Obra")
     
-    if unidade_desenho == "Centímetros (cm)": raio_def = 150.0
-    elif unidade_desenho == "Metros (m)": raio_def = 1.5
-    else: raio_def = 1500.0
-    
-    raio_atracao = st.number_input("Raio de Busca", value=raio_def, help="Distância máx entre Texto e Linha.")
+    st.info("Como não medimos as linhas, assumimos um comprimento padrão por etiqueta encontrada.")
+    comp_padrao_peca = st.number_input("Comp. Padrão da Peça (m)", value=1.10, step=0.05, help="Geralmente dutos retos têm 1.10m ou 1.20m.")
     
     st.divider()
-    st.info("Desenho dos Dutos:")
-    modo_desenho = st.radio("Estilo:", ["Linha Dupla (Paredes)", "Linha Única (Eixo)"])
-    fator_divisao = 2.0 if modo_desenho == "Linha Dupla (Paredes)" else 1.0
-    
-    st.divider()
-    perda = st.number_input("% Perda Material", value=10.0)
-    isolamento = st.selectbox("Isolamento", ["Lã de Vidro", "Borracha", "Isopor", "Nenhum"])
+    classe_pressao = st.selectbox("Classe Pressão", ["Classe A (Baixa)", "Classe B (Média)", "Classe C (Alta)"])
+    perda = st.number_input("% Perda / Corte", value=10.0)
+    isolamento = st.selectbox("Isolamento", ["Lã de Vidro", "Borracha Elast.", "Isopor", "Nenhum"])
 
 # --- UPLOAD ---
-uploaded_dxf = st.file_uploader("📂 Carregar DXF (Qualquer versão)", type=["dxf"])
+uploaded_dxf = st.file_uploader("📂 Carregar Projeto DXF", type=["dxf"])
 
 if uploaded_dxf:
-    with st.spinner("Analisando cores do arquivo..."):
-        doc_carregado, cores_lin, cores_txt, erro = ler_dxf_e_mapear_cores(uploaded_dxf)
-    
-    if erro:
-        st.error(f"Erro ao ler arquivo: {erro}")
-    else:
-        st.success("Arquivo analisado! Selecione as Cores.")
+    with st.spinner("Contando etiquetas de duto..."):
+        lista_itens, lista_erros = ler_textos_dxf(uploaded_dxf)
         
-        # Mapeamento de Cores AutoCAD para Nomes (Facilita a vida)
-        def nome_cor(idx):
-            mapa = {1:'Vermelho', 2:'Amarelo', 3:'Verde', 4:'Ciano', 5:'Azul', 6:'Magenta', 7:'Branco/Preto', 8:'Cinza', 256:'ByLayer'}
-            return f"Cor {idx} ({mapa.get(idx, 'Outra')})"
-
-        col1, col2 = st.columns(2)
+    if lista_itens:
+        if lista_erros:
+            with st.expander("⚠️ Avisos de Leitura (Clique para ver)"):
+                for err in lista_erros: st.write(err)
         
-        # Seleção Cor DUTOS
-        opcoes_linhas = [(k, f"{nome_cor(k)} - {v} linhas encontradas") for k,v in cores_lin.items()]
-        # Ordena por quantidade de linhas (provavelmente a cor com mais linhas é a arquitetura ou o duto)
-        opcoes_linhas.sort(key=lambda x: x[1], reverse=True)
+        # Consolidação (Agrupar por medida igual)
+        df_raw = pd.DataFrame(lista_itens)
         
-        with col1:
-            st.markdown("### 🌪️ Dutos (Linhas)")
-            usar_todas = st.checkbox("Usar TODAS as cores (Não recomendado)", value=False)
-            cor_duto_sel = None
-            if not usar_todas:
-                sel_l = st.selectbox("Selecione a COR dos Dutos:", opcoes_linhas, format_func=lambda x: x[1])
-                cor_duto_sel = sel_l[0] if sel_l else None
+        # Cria uma coluna de identificação única (ex: "500x300 (Retangular)")
+        df_raw['Bitola'] = df_raw.apply(lambda x: f"{int(x['Largura'])}x{int(x['Altura'])}" if x['Tipo'] == 'Retangular' else f"ø{int(x['Largura'])}", axis=1)
         
-        # Seleção Cor TEXTOS
-        opcoes_textos = [(k, f"{nome_cor(k)} - {v} textos encontrados") for k,v in cores_txt.items()]
-        opcoes_textos.sort(key=lambda x: x[1], reverse=True)
+        # Contagem
+        df_agrupado = df_raw.groupby(['Bitola', 'Largura', 'Altura', 'Tipo']).size().reset_index(name='Qtd Peças')
         
-        with col2:
-            st.markdown("### 📝 Textos (Etiquetas)")
-            usar_todos_txt = st.checkbox("Ler TODOS os textos", value=True)
-            cor_txt_sel = "Todas"
-            if not usar_todos_txt:
-                sel_t = st.selectbox("Selecione a COR dos Textos:", opcoes_textos, format_func=lambda x: x[1])
-                cor_txt_sel = sel_t[0] if sel_t else 7
-
+        st.success(f"Sucesso! Encontramos {len(df_raw)} etiquetas de medida no desenho.")
+        
+        # --- TABELA INTERATIVA (O CORAÇÃO DA SOLUÇÃO) ---
+        st.markdown("### 📋 Ajuste de Quantitativos")
+        st.caption("Confira as quantidades. O 'Comp. Unitário' pode ser editado se houver peças especiais.")
+        
+        # Adiciona coluna de comprimento unitário (Padrão vs Editável)
+        df_agrupado['Comp. Unit (m)'] = comp_padrao_peca
+        
+        # Configura editor
+        df_editado = st.data_editor(
+            df_agrupado,
+            column_config={
+                "Bitola": st.column_config.TextColumn("Bitola", disabled=True),
+                "Qtd Peças": st.column_config.NumberColumn("Qtd (Tags)", help="Quantas vezes o texto aparece no desenho"),
+                "Comp. Unit (m)": st.column_config.NumberColumn("Comp. Peça (m)", min_value=0.1, max_value=6.0, step=0.1),
+            },
+            hide_index=True,
+            use_container_width=True,
+            num_rows="dynamic"
+        )
+        
         st.divider()
         
-        if st.button("🚀 Calcular Comprimentos", type="primary"):
-            if not usar_todas and cor_duto_sel is None:
-                st.error("Selecione uma cor para os dutos.")
-            else:
-                with st.spinner("Realizando varredura geométrica..."):
-                    # Fator Metro
-                    fator_m = 0.01 if unidade_desenho == "Centímetros (cm)" else (0.001 if "Milímetros" in unidade_desenho else 1.0)
-                    
-                    lista_res, log = processar_por_cor(doc_carregado, cor_duto_sel, cor_txt_sel, raio_atracao, fator_divisao, usar_todas)
-                    
-                    if lista_res:
-                        df = pd.DataFrame(lista_res)
-                        
-                        # Converte para Metros
-                        df['Comprimento Total (m)'] = df['Comprimento Total (m)'] * fator_m
-                        
-                        # Extração de Medidas
-                        def extrair(t):
-                            match_r = re.search(r'(\d+)\s*[xX]\s*(\d+)', t)
-                            if match_r: return float(match_r.group(1)), float(match_r.group(2)), "Retangular"
-                            match_c = re.search(r'[øØ](\d+)|(\d+)[øØ]|DIAM\s*(\d+)', t.upper())
-                            if match_c:
-                                val = next((g for g in match_c.groups() if g), 0)
-                                return float(val), float(val), "Circular"
-                            return 0,0,"Outro"
-                        
-                        df[['Largura', 'Altura', 'Tipo']] = df['Bitola'].apply(lambda x: pd.Series(extrair(x)))
-                        df_final = df[df['Largura'] > 0].copy()
-                        
-                        if not df_final.empty:
-                            # CORREÇÃO DO ERRO DE DATAFRAME AQUI
-                            # Garante que é número
-                            df_final['Largura'] = pd.to_numeric(df_final['Largura'], errors='coerce').fillna(0)
-                            df_final['Altura'] = pd.to_numeric(df_final['Altura'], errors='coerce').fillna(0)
-                            df_final['Comprimento Total (m)'] = pd.to_numeric(df_final['Comprimento Total (m)'], errors='coerce').fillna(0)
-                            
-                            # Cálculos
-                            df_final['Perímetro (m)'] = (2*df_final['Largura'] + 2*df_final['Altura']) / 1000
-                            mask_circ = df_final['Tipo'] == 'Circular'
-                            df_final.loc[mask_circ, 'Perímetro (m)'] = (math.pi * df_final.loc[mask_circ, 'Largura']) / 1000
-                            
-                            df_final['Área (m²)'] = df_final['Perímetro (m)'] * df_final['Comprimento Total (m)']
-                            
-                            # Totais
-                            area_tot = (df_final['Área (m²)'] * (1 + perda/100)).sum()
-                            peso_tot = area_tot * 5.6
-                            
-                            c1, c2, c3 = st.columns(3)
-                            c1.metric("Área Total", f"{area_tot:,.2f} m²")
-                            c2.metric("Peso", f"{peso_tot:,.0f} kg")
-                            c3.metric("Isolamento", f"{area_tot:,.2f} m²" if isolamento != "Nenhum" else "-")
-                            
-                            st.subheader("📋 Detalhamento")
-                            # Formatação Segura
-                            try:
-                                st.dataframe(
-                                    df_final[['Bitola', 'Tipo', 'Comprimento Total (m)', 'Área (m²)']]
-                                    .sort_values('Área (m²)', ascending=False)
-                                    .style.format("{:.2f}")
-                                )
-                            except Exception as e:
-                                st.dataframe(df_final) # Fallback sem estilo
-                                
-                            st.caption(f"Log Técnico: {log}")
-                        else:
-                            st.warning("Linhas medidas, mas sem associação com textos de bitola (ex: 500x300).")
-                            st.write("Textos Lidos:", df['Bitola'].unique())
+        # --- CÁLCULOS FINAIS ---
+        if not df_editado.empty:
+            try:
+                # 1. Calcula Perímetro
+                # Retangular: (2L + 2A) / 1000
+                # Circular: (Pi * D) / 1000
+                def calc_perimetro(row):
+                    if row['Tipo'] == 'Circular':
+                        return (math.pi * row['Largura']) / 1000
                     else:
-                        st.error("Nenhuma linha foi associada a textos. Tente aumentar o Raio de Busca ou mudar a Cor selecionada.")
+                        return (2 * row['Largura'] + 2 * row['Altura']) / 1000
+                
+                df_calc = df_editado.copy()
+                df_calc['Perímetro (m)'] = df_calc.apply(calc_perimetro, axis=1)
+                
+                # 2. Calcula Comprimento Total da Rede
+                df_calc['Rede Total (m)'] = df_calc['Qtd Peças'] * df_calc['Comp. Unit (m)']
+                
+                # 3. Calcula Área
+                df_calc['Área Física (m²)'] = df_calc['Perímetro (m)'] * df_calc['Rede Total (m)']
+                
+                # 4. Totais
+                fator_perda = 1 + (perda/100)
+                area_total = (df_calc['Área Física (m²)'] * fator_perda).sum()
+                peso_total = area_total * 5.6 # Estimativa kg/m2
+                
+                # --- EXIBIÇÃO DE RESULTADOS ---
+                st.subheader("📊 Resultados Finais")
+                
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("Área Total (c/ Perda)", f"{area_total:,.2f} m²", delta=f"{perda}% Perda")
+                c2.metric("Peso Estimado", f"{peso_total:,.0f} kg", help="Considerando média de 5.6 kg/m²")
+                c3.metric("Isolamento", f"{area_total:,.2f} m²" if isolamento != "Nenhum" else "-", delta=isolamento)
+                c4.metric("Peças Totais", f"{df_calc['Qtd Peças'].sum()} un")
+                
+                with st.expander("Ver Memória de Cálculo Detalhada"):
+                    st.dataframe(
+                        df_calc[['Bitola', 'Qtd Peças', 'Rede Total (m)', 'Área Física (m²)']],
+                        use_container_width=True
+                    )
+            except Exception as e:
+                st.error(f"Erro no cálculo: {e}")
+        
+    else:
+        st.warning("Não foram encontradas etiquetas de medida (ex: 500x300 ou ø200) no arquivo.")
+        st.info("Dica: Verifique se o arquivo DXF contém textos editáveis e não blocos explodidos em linhas.")
