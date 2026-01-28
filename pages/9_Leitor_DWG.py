@@ -13,11 +13,12 @@ if 'logado' not in st.session_state or not st.session_state['logado']:
     st.warning("🔒 Acesso negado. Faça login no Dashboard.")
     st.stop()
 
-st.set_page_config(page_title="Leitor DXF (Filtro Inteligente)", page_icon="📐", layout="wide")
+st.set_page_config(page_title="Leitor DXF (Modo Arrastão)", page_icon="📐", layout="wide")
 
-st.title("📐 Leitor Técnico DXF (Com Filtro Anti-Ruído)")
+st.title("📐 Leitor Técnico DXF (Modo IA Pura)")
 st.markdown("""
-**Melhoria:** Adicionado um "Pente Fino" que ignora lixo do CAD (layers, coordenadas) e foca apenas em textos que parecem **Medidas (AxL)** ou **Tags (FC-01)**.
+**Estratégia:** Esta versão captura TODO texto curto encontrado no desenho e deixa a IA filtrar o que é engenharia.
+Isso garante que nada seja perdido por filtros rígidos.
 """)
 
 # ============================================================================
@@ -43,35 +44,7 @@ with st.sidebar:
     tipo_isolamento = st.selectbox("Isolamento", ["Lã de Vidro", "Borracha Elast.", "Isopor", "Sem Isolamento"])
 
 # ============================================================================
-# 2. FUNÇÕES DE FILTRAGEM (O SEGREDO DO SUCESSO)
-# ============================================================================
-
-def eh_texto_de_engenharia(texto):
-    """
-    Retorna True apenas se o texto parecer uma medida de duto ou tag de equipamento.
-    Filtra 99% do lixo do DXF.
-    """
-    t = texto.upper().strip()
-    if len(t) < 2 or len(t) > 40: return False
-    
-    # 1. Padrão Duto Retangular (Num x Num) ex: 300x200, 30x20
-    # Aceita 'X' ou 'x'. Deve ter numeros dos dois lados.
-    if re.search(r'\d+\s*[xX]\s*\d+', t): return True
-    
-    # 2. Padrão Diâmetro (ø200, diam 200)
-    if 'ø' in t or '%%C' in t or 'DIAM' in t: return True
-    
-    # 3. Padrão Tag de Equipamento (Letras-Numeros) ex: FC-01, VZ-02, Q-01
-    if re.search(r'[A-Z]{1,5}\s*-\s*\d+', t): return True
-    
-    # 4. Palavras Chave Específicas
-    keywords = ["GRELHA", "DIFUSOR", "VENEZIANA", "DAMPER", "FANCOIL", "SPLIT", "CHILLER", "QUADRO", "DDC", "TR", "BTU", "HP", "CV"]
-    if any(k in t for k in keywords): return True
-    
-    return False
-
-# ============================================================================
-# 3. MOTOR DE EXTRAÇÃO
+# 2. MOTOR DE EXTRAÇÃO (SEM FILTRO)
 # ============================================================================
 
 def calcular_distancia(p1, p2):
@@ -97,7 +70,7 @@ def obter_comprimento_entidade(entity):
     return 0
 
 def extrair_texto_modo_resgate(bytes_content):
-    """Modo Bruto com Filtro Inteligente"""
+    """Lê tudo o que parece texto curto, sem regex complexo."""
     itens = []
     try: texto_full = bytes_content.decode("cp1252", errors="ignore")
     except: texto_full = bytes_content.decode("utf-8", errors="ignore")
@@ -105,11 +78,12 @@ def extrair_texto_modo_resgate(bytes_content):
     linhas = texto_full.split('\n')
     for l in linhas:
         l = l.strip()
-        # APLICA O FILTRO IMEDIATAMENTE
-        if eh_texto_de_engenharia(l):
+        # Filtro MÍNIMO: Apenas ignora linhas vazias ou gigantes (códigos binários)
+        if len(l) > 1 and len(l) < 60:
+            # Pega tudo. A IA que se vire.
             itens.append({'texto': l, 'geo_m': 0.0})
                 
-    return itens, "Modo Resgate (Filtro Ativado)"
+    return itens, "Modo Resgate (Texto Bruto)"
 
 def extrair_dados_com_geometria(bytes_file, raio_search):
     bytes_content = bytes_file.getvalue()
@@ -122,19 +96,18 @@ def extrair_dados_com_geometria(bytes_file, raio_search):
         doc, auditor = recover.read(stream)
         msp = doc.modelspace()
         
-        # Carrega geometria (Limitado)
         geometrias = []
+        # Aumentei o limite de geometria para tentar achar mais linhas
         for i, e in enumerate(msp.query('LINE LWPOLYLINE')):
-            if i > 5000: break
+            if i > 8000: break
             geometrias.append(e)
             
         textos = list(msp.query('TEXT MTEXT'))
         
-        # Se tiver muitos textos, não limita mais cegamente. FILTRA PRIMEIRO.
         itens = []
         count_processados = 0
         
-        progresso = st.progress(0, text="Filtrando textos de engenharia...")
+        progresso = st.progress(0, text="Lendo textos...")
         total = len(textos)
 
         for idx, e in enumerate(textos):
@@ -143,10 +116,11 @@ def extrair_dados_com_geometria(bytes_file, raio_search):
             txt = e.dxf.text if e.dxftype() == 'TEXT' else e.text
             if not txt: continue
             
-            # FILTRO PENTE FINO AQUI TAMBÉM
-            if not eh_texto_de_engenharia(txt): continue
+            t_clean = txt.strip()
+            # Filtro apenas de tamanho, para não pegar blocos de nota gigantes
+            if len(t_clean) < 2 or len(t_clean) > 60: continue
             
-            # Se passou no filtro, tenta medir
+            # Tenta medir
             comp_final = 0.0
             try:
                 insert = e.dxf.insert
@@ -164,31 +138,31 @@ def extrair_dados_com_geometria(bytes_file, raio_search):
                                 if c > maior: maior = c
                         except: pass
                         c_check += 1
-                        if c_check > 200: break
+                        if c_check > 300: break
                 
                 comp_final = maior
                 if unidade_desenho == "Centímetros (cm)": comp_final /= 100
                 elif unidade_desenho == "Milímetros (mm)": comp_final /= 1000
             except: pass
             
-            itens.append({'texto': txt.strip(), 'geo_m': comp_final})
+            itens.append({'texto': t_clean, 'geo_m': comp_final})
             count_processados += 1
-            # Limite de segurança apenas para itens ÚTEIS
-            if count_processados > 4000: break
+            # Aumentei o limite de segurança
+            if count_processados > 6000: break
             
         progresso.empty()
-        return itens, "Leitura Geométrica (Filtro Ativado)"
+        return itens, "Leitura Padrão"
 
     except Exception as e:
         return extrair_texto_modo_resgate(bytes_content)
 
 # ============================================================================
-# 4. INTELIGÊNCIA ARTIFICIAL
+# 3. INTELIGÊNCIA ARTIFICIAL (SELEÇÃO INTELIGENTE)
 # ============================================================================
 def analisar_com_ia_detalhada(lista_itens):
     if "openai" not in st.secrets: st.error("Sem chave API"); return None
     
-    # Agrupa e calcula médias
+    # Agrupa
     resumo = {}
     for item in lista_itens:
         t = item['texto']
@@ -196,31 +170,40 @@ def analisar_com_ia_detalhada(lista_itens):
         resumo[t]['qtd'] += 1
         resumo[t]['soma'] += item['geo_m']
         
-    txt_prompt = ""
-    # Agora mandamos TUDO que passou no filtro (pois já limpamos o lixo)
-    # Mas limitamos a 400 itens para caber no prompt
-    itens_filtrados = sorted(resumo.items(), key=lambda x: x[1]['qtd'], reverse=True)[:400]
+    # ORDENAÇÃO INTELIGENTE PARA A IA
+    # Em vez de mandar só os mais frequentes, priorizamos o que PARECE duto
+    def score_prioridade(texto):
+        t = texto.upper()
+        # Se tiver X no meio de numeros (300x200), ganha prioridade máxima
+        if re.search(r'\d[xX]\d', t): return 1000
+        if "FC-" in t or "TAG" in t: return 800
+        return 1 # Texto comum
+        
+    itens_ordenados = sorted(resumo.items(), key=lambda x: (score_prioridade(x[0]), x[1]['qtd']), reverse=True)
     
-    if not itens_filtrados: return "VAZIO"
-
-    for k, v in itens_filtrados:
+    # Pega os Top 450 itens mais "interessantes"
+    txt_prompt = ""
+    for k, v in itens_ordenados[:450]:
         med = v['soma'] / v['qtd'] if v['qtd'] > 0 else 0
         txt_prompt += f"TXT:'{k}'|Q:{v['qtd']}|MED:{med:.2f}m\n"
         
     client = OpenAI(api_key=st.secrets["openai"]["api_key"])
     
     prompt = """
-    Engenheiro HVAC. Classifique os itens JÁ FILTRADOS.
+    Você é um Engenheiro HVAC Sênior. 
+    Recebi uma lista SUJA de textos do CAD. Sua missão é GARIMPAR o que é útil.
     
-    REGRAS:
-    1. DUTOS: Dimensões (AxL, ø). Se MED > 0.2 use-o.
-    2. EQUIPAMENTOS: Tag, Tipo, Detalhes (TR/BTU/HP).
-    3. TERMINAIS: Grelhas, Difusores.
+    IGNORE: Coordenadas, nomes de layers (A-WALL), códigos estranhos, nomes de ambientes.
+    
+    EXTRAIA APENAS:
+    1. DUTOS: Textos numéricos como '500x300', '30x20', 'ø200'.
+    2. EQUIPAMENTOS: Tags (FC-01, VZ-01) e Detalhes (5TR, 12000BTU).
+    3. TERMINAIS: Grelhas (G-), Difusores.
     
     SAÍDA CSV (;):
     ---DUTOS---
     Largura;Altura;Qtd;CompMedio
-    500;400;10;1.20
+    500;300;10;1.20
     
     ---EQUIPAMENTOS---
     Tag;Tipo;Detalhes;Qtd
@@ -238,13 +221,13 @@ def analisar_com_ia_detalhada(lista_itens):
         r = client.chat.completions.create(
             model="gpt-4o", 
             messages=[{"role":"system","content":prompt},{"role":"user","content":txt_prompt}], 
-            temperature=0.0
+            temperature=0.1
         )
         return r.choices[0].message.content
     except Exception as e: st.error(e); return None
 
 def processar_resposta(r):
-    if r == "VAZIO": return None
+    if not r: return None
     blocos = {"DUTOS":[],"TERMINAIS":[],"EQUIPAMENTOS":[],"ELETRICA":[]}
     atual = None
     for l in r.split('\n'):
@@ -258,64 +241,62 @@ def processar_resposta(r):
     return blocos
 
 # ============================================================================
-# 5. INTERFACE
+# 4. INTERFACE
 # ============================================================================
-uploaded_dxf = st.file_uploader("📂 Carregar DXF (Filtro Ativado)", type=["dxf"])
+uploaded_dxf = st.file_uploader("📂 Carregar DXF", type=["dxf"])
 
 if uploaded_dxf:
-    with st.spinner("Lendo arquivo e aplicando Filtro Pente-Fino..."):
+    with st.spinner("Lendo arquivo bruto..."):
         itens_brutos, msg_status = extrair_dados_com_geometria(uploaded_dxf, raio_busca)
 
     if itens_brutos and len(itens_brutos) > 0:
-        # Mostra quantos itens UTEIS sobraram
-        st.success(f"✅ Arquivo Processado! {len(itens_brutos)} itens RELEVANTES encontrados (Lixo removido).")
-        st.caption(f"Método: {msg_status}")
+        st.success(f"✅ Arquivo Lido! {len(itens_brutos)} textos encontrados.")
+        st.caption(f"Status: {msg_status}")
         
         if st.button("🚀 Extrair Quantitativo (IA)", type="primary"):
-            with st.spinner("Interpretando dados..."):
+            with st.spinner("Garimpando dados de engenharia..."):
                 res = analisar_com_ia_detalhada(itens_brutos)
-                if res and res != "VAZIO":
-                    st.session_state['dados_geo_v4'] = processar_resposta(res)
+                if res:
+                    st.session_state['dados_geo_v5'] = processar_resposta(res)
                     st.rerun()
-                else:
-                    st.warning("A IA não encontrou itens conhecidos na lista filtrada.")
     else:
-        st.error("❌ Nenhum texto de engenharia (medidas, tags) encontrado.")
-        st.info("O filtro removeu todo o conteúdo pois parecia lixo de CAD (coordenadas, layers). Verifique se o DXF contém textos como '500x300' ou 'FC-01'.")
+        st.error("❌ O arquivo parece vazio de textos legíveis.")
 
 # ============================================================================
-# 6. RESULTADOS
+# 5. RESULTADOS
 # ============================================================================
-if 'dados_geo_v4' in st.session_state:
-    d = st.session_state['dados_geo_v4']
+if 'dados_geo_v5' in st.session_state:
+    d = st.session_state['dados_geo_v5']
     if not d: st.stop()
 
     t1, t2, t3, t4 = st.tabs(["🌪️ Dutos","💨 Terminais","⚙️ Equips","⚡ Elétrica"])
     
     with t1:
         if d["DUTOS"]:
-            df = pd.DataFrame(d["DUTOS"], columns=["Largura","Altura","Qtd","CompIA"])
-            for c in df.columns: df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
-            
-            df["Comp. Unit (m)"] = df["CompIA"].apply(lambda x: x if x > 0.2 else comp_minimo)
-            
-            st.info(f"Comprimento Padrão usado onde geometria falhou: {comp_minimo}m")
-            df_ed = st.data_editor(df, num_rows="dynamic", key="dutos_v5")
-            
-            df_ed["Perímetro"] = (2*df_ed["Largura"] + 2*df_ed["Altura"])/1000
-            df_ed["Total (m)"] = df_ed["Qtd"] * df_ed["Comp. Unit (m)"]
-            df_ed["Área (m²)"] = df_ed["Perímetro"] * df_ed["Total (m)"]
-            
-            fator = 1 + (perda_corte/100)
-            area = (df_ed["Área (m²)"] * fator).sum()
-            
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Área Total", f"{area:,.2f} m²")
-            c2.metric("Peso (~5.6kg/m²)", f"{area*5.6:,.0f} kg")
-            isol = f"{area:,.2f} m²" if tipo_isolamento != "Sem Isolamento" else "-"
-            c3.metric("Isolamento", isol)
-            st.dataframe(df_ed)
-        else: st.warning("Nenhum duto encontrado na lista filtrada.")
+            try:
+                df = pd.DataFrame(d["DUTOS"], columns=["Largura","Altura","Qtd","CompIA"])
+                for c in df.columns: df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
+                
+                df["Comp. Unit (m)"] = df["CompIA"].apply(lambda x: x if x > 0.2 else comp_minimo)
+                
+                df_ed = st.data_editor(df, num_rows="dynamic", key="dutos_v6")
+                
+                df_ed["Perímetro"] = (2*df_ed["Largura"] + 2*df_ed["Altura"])/1000
+                df_ed["Total (m)"] = df_ed["Qtd"] * df_ed["Comp. Unit (m)"]
+                df_ed["Área (m²)"] = df_ed["Perímetro"] * df_ed["Total (m)"]
+                
+                fator = 1 + (perda_corte/100)
+                area = (df_ed["Área (m²)"] * fator).sum()
+                
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Área Total", f"{area:,.2f} m²")
+                c2.metric("Peso (~5.6kg/m²)", f"{area*5.6:,.0f} kg")
+                isol = f"{area:,.2f} m²" if tipo_isolamento != "Sem Isolamento" else "-"
+                c3.metric("Isolamento", isol)
+                st.dataframe(df_ed)
+            except Exception as e:
+                st.error("Erro na tabela. Tente recarregar.")
+        else: st.warning("Nenhum duto encontrado.")
 
     with t2:
         if d["TERMINAIS"]: st.data_editor(pd.DataFrame(d["TERMINAIS"], columns=["Item","Qtd"]), num_rows="dynamic")
