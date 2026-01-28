@@ -8,3 +8,4 @@ ezdxf
 openpyxl
 openai
 extra-streamlit-components
+pymupdf
