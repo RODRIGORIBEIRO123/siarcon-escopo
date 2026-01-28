@@ -2,32 +2,44 @@ import streamlit as st
 import pandas as pd
 import utils_db
 from datetime import datetime
+import os
 
 st.set_page_config(page_title="Dashboard | SIARCON", page_icon="📊", layout="wide")
 
 # ============================================================================
-# CABEÇALHO COM LOGO
+# CABEÇALHO COM LOGO (Atualizado para Siarcon.png)
 # ============================================================================
 c_logo, c_tit = st.columns([1, 6])
 with c_logo:
-    try:
-        st.image("logo.png", width=120) # Certifique-se de ter um arquivo logo.png
-    except:
+    # Tenta carregar Siarcon.png. Se não achar, mostra texto.
+    if os.path.exists("Siarcon.png"):
+        st.image("Siarcon.png", width=150)
+    elif os.path.exists("siarcon.png"): # Tenta minúsculo por garantia
+        st.image("siarcon.png", width=150)
+    else:
         st.write("🏢 **SIARCON**")
 with c_tit:
     st.title("Gestão de Projetos")
 
 # ============================================================================
-# MAPEAMENTO DE PÁGINAS (Para o botão Editar funcionar)
+# MAPEAMENTO DE PÁGINAS (COM ACENTOS)
 # ============================================================================
+# Atenção: Renomeie os arquivos na pasta 'pages' para estes nomes exatos:
 PAGINAS_DISCIPLINAS = {
+    # Nomes Novos (Com Acento) -> Caminho do Arquivo
     "Dutos": "pages/1_Dutos.py",
-    "Hidraulica": "pages/2_Hidraulica.py",
-    "Eletrica": "pages/3_Eletrica.py",
-    "Automacao": "pages/4_Automacao.py",
+    "Hidráulica": "pages/2_Hidráulica.py",
+    "Elétrica": "pages/3_Elétrica.py",
+    "Automação": "pages/4_Automação.py",
     "TAB": "pages/5_TAB.py",
-    "Movimentacoes": "pages/6_Movimentacoes.py",
-    "Cobre": "pages/7_Cobre.py"
+    "Movimentações": "pages/6_Movimentações.py",
+    "Cobre": "pages/7_Cobre.py",
+    
+    # Compatibilidade (Caso o banco tenha salvo sem acento)
+    "Hidraulica": "pages/2_Hidráulica.py",
+    "Eletrica": "pages/3_Elétrica.py",
+    "Automacao": "pages/4_Automação.py",
+    "Movimentacoes": "pages/6_Movimentações.py"
 }
 
 # ============================================================================
@@ -38,8 +50,13 @@ with st.expander("➕ CADASTRAR NOVO PROJETO", expanded=False):
     novo_cliente = c1.text_input("Nome do Cliente")
     nova_obra = c2.text_input("Nome da Obra")
     
-    disciplinas_disponiveis = list(PAGINAS_DISCIPLINAS.keys())
-    disciplinas_selecionadas = c3.multiselect("Disciplinas do Escopo:", options=disciplinas_disponiveis)
+    # Lista com acentos para ficar bonito no menu
+    opcoes_visualizacao = [
+        "Dutos", "Hidráulica", "Elétrica", "Automação", 
+        "TAB", "Movimentações", "Cobre"
+    ]
+    
+    disciplinas_selecionadas = c3.multiselect("Disciplinas do Escopo:", options=opcoes_visualizacao)
     
     if st.button("🚀 CRIAR PROJETOS", type="primary"):
         if not novo_cliente or not nova_obra or not disciplinas_selecionadas:
@@ -50,7 +67,7 @@ with st.expander("➕ CADASTRAR NOVO PROJETO", expanded=False):
                 dados_novo = {
                     '_id': f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{i}",
                     'status': 'Não Iniciado',
-                    'disciplina': disc,
+                    'disciplina': disc, # Salva com acento
                     'cliente': novo_cliente,
                     'obra': nova_obra,
                     'fornecedor': '',
@@ -64,7 +81,7 @@ with st.expander("➕ CADASTRAR NOVO PROJETO", expanded=False):
 st.divider()
 
 # ============================================================================
-# 2. KANBAN (LAYOUT INTOCADO - AGORA COM EDITAR)
+# 2. KANBAN (LAYOUT MANTIDO)
 # ============================================================================
 if st.button("🔄 Atualizar Quadro"):
     st.cache_data.clear(); st.rerun()
@@ -78,16 +95,16 @@ else:
     
     # Função auxiliar para desenhar o botão de editar
     def botao_editar(row):
-        # Botão pequeno de editar
         if st.button("✏️", key=f"edit_{row['_id']}", help="Editar Escopo"):
-            # Salva o ID na memória para a página ler
             st.session_state['id_projeto_editar'] = row['_id']
-            # Redireciona para a página da disciplina
-            pagina_destino = PAGINAS_DISCIPLINAS.get(row['disciplina'])
+            
+            disc_banco = row['disciplina']
+            pagina_destino = PAGINAS_DISCIPLINAS.get(disc_banco)
+            
             if pagina_destino:
                 st.switch_page(pagina_destino)
             else:
-                st.error("Página não encontrada.")
+                st.error(f"Página não encontrada: {disc_banco}. Verifique se renomeou o arquivo.")
 
     # --- COLUNA 1: NÃO INICIADO ---
     with col1:
@@ -166,4 +183,4 @@ else:
                 st.write(f"Cliente: {row['cliente']}")
                 st.success(f"Forn: {row['fornecedor']}")
                 st.write(f"Valor: {row['valor_total']}")
-                botao_editar(row) # Edição permitida em concluído também
+                botao_editar(row)
