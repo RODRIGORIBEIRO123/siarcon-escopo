@@ -35,120 +35,68 @@ def _ler_aba_como_df(nome_aba):
     sh = _conectar_gsheets()
     if not sh: return pd.DataFrame()
     try:
-        # Tenta achar a aba pelo nome exato, ou tenta variações
         try: ws = sh.worksheet(nome_aba)
         except: 
             if nome_aba == "Dados":
-                # Fallbacks para a aba de Configuração
                 for n in ["Página1", "Sheet1", "Config"]:
-                    try: 
-                        ws = sh.worksheet(n)
-                        break
+                    try: ws = sh.worksheet(n); break
                     except: pass
                 else: return pd.DataFrame()
             else: return pd.DataFrame()
-        
-        dados = ws.get_all_records()
-        return pd.DataFrame(dados)
+        return pd.DataFrame(ws.get_all_records())
     except: return pd.DataFrame()
 
 # ==================================================
-# 3. LEITURA DE ITENS (CATEGORIAS)
+# 3. LEITURA DE DADOS
 # ==================================================
 def carregar_opcoes():
-    """Lê itens técnicos e NRs da aba 'Dados' ou 'DUTOS' se configurado."""
     df = _ler_aba_como_df("Dados")
     opcoes = {'sms': NRS_PADRAO.copy()} 
-
     if not df.empty and 'Categoria' in df.columns and 'Item' in df.columns:
         df['Categoria'] = df['Categoria'].astype(str).str.lower().str.strip()
-        categorias = df['Categoria'].unique()
-        
-        for cat in categorias:
+        for cat in df['Categoria'].unique():
             itens = sorted(df[df['Categoria'] == cat]['Item'].unique().tolist())
-            if cat == 'sms':
-                opcoes['sms'] = sorted(list(set(opcoes['sms'] + itens)))
-            else:
-                opcoes[cat] = itens     
+            if cat == 'sms': opcoes['sms'] = sorted(list(set(opcoes['sms'] + itens)))
+            else: opcoes[cat] = itens     
     return opcoes
 
-# ==================================================
-# 4. LEITURA DE FORNECEDORES (INTELIGENTE)
-# ==================================================
 def listar_fornecedores():
-    """
-    Procura fornecedores na aba 'FORNECEDORES' (Col A=Nome, B=CNPJ)
-    Se não achar, procura na aba 'Dados' (Col C=Fornecedor, D=CNPJ)
-    """
     sh = _conectar_gsheets()
     if not sh: return []
-    
-    # 1. TENTA A ABA ESPECÍFICA 'FORNECEDORES'
     try:
         ws = sh.worksheet("FORNECEDORES")
-        # Assume que Coluna 1 é Nome, Coluna 2 é CNPJ
         vals = ws.get_all_values()
-        if len(vals) > 1: # Tem cabeçalho e dados
+        if len(vals) > 1:
             lista = []
-            # Pula cabeçalho (index 0)
             for row in vals[1:]:
-                if row[0]: # Se tem nome
-                    cnpj = row[1] if len(row) > 1 else ""
-                    lista.append({'Fornecedor': row[0], 'CNPJ': cnpj})
+                if row[0]: lista.append({'Fornecedor': row[0], 'CNPJ': row[1] if len(row) > 1 else ""})
             return lista
-    except:
-        pass # Se der erro, tenta o método antigo
-
-    # 2. FALLBACK: TENTA A ABA 'Dados'
+    except: pass
     df = _ler_aba_como_df("Dados")
     if not df.empty and 'Fornecedor' in df.columns:
         return df[['Fornecedor', 'CNPJ']].dropna(subset=['Fornecedor']).drop_duplicates().to_dict('records')
-    
     return []
 
 # ==================================================
-# 5. ESCRITA (CADASTROS)
-# ==================================================
-def aprender_novo_item(categoria, novo_item):
-    sh = _conectar_gsheets()
-    if not sh: return False
-    try:
-        try: ws = sh.worksheet("Dados")
-        except: ws = sh.add_worksheet("Dados", 100, 10)
-        ws.append_row([categoria.lower(), novo_item, "", ""])
-        return True
-    except: return False
-
-def cadastrar_fornecedor_db(nome, cnpj):
-    sh = _conectar_gsheets()
-    if not sh: return False
-    
-    # Tenta salvar na aba FORNECEDORES se ela existir
-    try:
-        ws = sh.worksheet("FORNECEDORES")
-        ws.append_row([nome, cnpj])
-        return True
-    except:
-        # Se não, salva na aba Dados
-        try:
-            ws = sh.worksheet("Dados")
-            ws.append_row(["", "", nome, cnpj])
-            return True
-        except: 
-            return False
-
-# ==================================================
-# 6. REGISTRO DE PROJETOS (RECRIAR ABA SE PRECISAR)
+# 4. FUNÇÕES DO PROJETO (DASHBOARD)
 # ==================================================
 def listar_todos_projetos():
     df = _ler_aba_como_df("Projetos")
-    cols_esperadas = ['_id', 'status', 'disciplina', 'cliente', 'obra', 'fornecedor', 'valor_total', 'data_inicio']
-    
-    if df.empty: return pd.DataFrame(columns=cols_esperadas)
-    for col in cols_esperadas:
-        if col not in df.columns: df[col] = ""
+    cols = ['_id', 'status', 'disciplina', 'cliente', 'obra', 'fornecedor', 'valor_total', 'data_inicio']
+    if df.empty: return pd.DataFrame(columns=cols)
+    for c in cols: 
+        if c not in df.columns: df[c] = ""
     if '_id' in df.columns: df['_id'] = df['_id'].astype(str)
     return df
+
+def buscar_projeto_por_id(id_projeto):
+    """Busca os dados completos de um projeto pelo ID."""
+    df = listar_todos_projetos()
+    if df.empty: return None
+    projeto = df[df['_id'] == str(id_projeto)]
+    if not projeto.empty:
+        return projeto.iloc[0].to_dict()
+    return None
 
 def atualizar_status_projeto(id_projeto, novo_status):
     sh = _conectar_gsheets()
@@ -165,6 +113,30 @@ def atualizar_status_projeto(id_projeto, novo_status):
     except: pass
     return False
 
+# ==================================================
+# 5. ESCRITA
+# ==================================================
+def aprender_novo_item(categoria, novo_item):
+    sh = _conectar_gsheets()
+    if not sh: return False
+    try:
+        try: ws = sh.worksheet("Dados")
+        except: ws = sh.add_worksheet("Dados", 100, 10)
+        ws.append_row([categoria.lower(), novo_item, "", ""])
+        return True
+    except: return False
+
+def cadastrar_fornecedor_db(nome, cnpj):
+    sh = _conectar_gsheets()
+    if not sh: return False
+    try:
+        ws = sh.worksheet("FORNECEDORES")
+        ws.append_row([nome, cnpj])
+        return True
+    except:
+        try: ws = sh.worksheet("Dados"); ws.append_row(["", "", nome, cnpj]); return True
+        except: return False
+
 def registrar_projeto(dados):
     sh = _conectar_gsheets()
     if not sh: return False
@@ -173,7 +145,7 @@ def registrar_projeto(dados):
         except: 
             ws = sh.add_worksheet("Projetos", 100, 20)
             ws.append_row(['_id', 'status', 'disciplina', 'cliente', 'obra', 'fornecedor', 'valor_total', 'data_inicio'])
-
+        
         headers = ws.row_values(1)
         if not headers: 
             headers = ['_id', 'status', 'disciplina', 'cliente', 'obra', 'fornecedor', 'valor_total', 'data_inicio']
@@ -181,8 +153,18 @@ def registrar_projeto(dados):
 
         if '_id' not in dados: dados['_id'] = datetime.now().strftime("%Y%m%d%H%M%S")
 
+        # Se o projeto já existe (edição), atualizamos a linha. Se não, criamos nova.
+        cell = None
+        try: cell = ws.find(str(dados['_id']))
+        except: pass
+
         row_data = []
         for h in headers: row_data.append(str(dados.get(h, "")))
-        ws.append_row(row_data)
+
+        if cell: # Atualizar linha existente
+            for i, val in enumerate(row_data):
+                ws.update_cell(cell.row, i+1, val)
+        else: # Inserir nova linha
+            ws.append_row(row_data)
         return True
     except: return False
