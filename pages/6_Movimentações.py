@@ -5,6 +5,10 @@ import io
 from datetime import date
 import utils_db
 
+if 'logado' not in st.session_state or not st.session_state['logado']:
+    st.warning("🔒 Acesso negado. Por favor, faça login no Dashboard.")
+    st.stop()
+    
 # ============================================================================
 # 🚨 CONFIGURAÇÃO ESPECÍFICA: MOVIMENTAÇÕES
 # ============================================================================
