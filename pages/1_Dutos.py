@@ -5,17 +5,16 @@ import io
 from datetime import date
 import utils_db
 
-# ============================================================================
-# 🚨 MUDE AQUI O NOME E A LISTA ESPECÍFICA DO ARQUIVO
-# ============================================================================
-DISCIPLINA_ATUAL = "Hidraulica" # <--- Ex: "Dutos", "Eletrica", "Automacao"
-
+# --- CONFIGURAÇÃO: DUTOS ---
+DISCIPLINA_ATUAL = "Dutos"
 ITENS_MATRIZ = [
-    "Tubulações", "Válvulas", "Bombas", "Suportes", "Isolamento", "Pintura", "Comissionamento"
+    "Fabricação de Dutos", "Montagem de Dutos", "Isolamento Térmico",
+    "Suportes e Fixações", "Grelhas e Difusores", "Consumíveis",
+    "Andaimes/Plataformas", "Projetos Executivos", "ART/RRT"
 ]
-# ============================================================================
 
-st.set_page_config(page_title=f"Escopo {DISCIPLINA_ATUAL}", page_icon="📝", layout="wide")
+st.set_page_config(page_title="Escopo Dutos", page_icon="❄️", layout="wide")
+# --- INÍCIO DO CORPO DO CÓDIGO (COPIAR PARA TODOS OS ARQUIVOS) ---
 
 # --- CARGA DE DADOS ---
 if 'opcoes_db' not in st.session_state or st.sidebar.button("🔄 Forçar Recarga"):
@@ -23,8 +22,7 @@ if 'opcoes_db' not in st.session_state or st.sidebar.button("🔄 Forçar Recarg
         st.cache_data.clear()
         st.session_state['opcoes_db'] = utils_db.carregar_opcoes()
 
-# --- DEFINE AS CHAVES DE CATEGORIA PARA O BANCO ---
-# Isso garante que Hidraulica não veja itens de Dutos
+# --- DEFINE AS CHAVES DE CATEGORIA PARA O BANCO (SEPARAÇÃO POR DISCIPLINA) ---
 cat_tecnica_db = f"tecnico_{DISCIPLINA_ATUAL.lower()}"  # Ex: tecnico_hidraulica
 cat_qualidade_db = f"qualidade_{DISCIPLINA_ATUAL.lower()}" # Ex: qualidade_hidraulica
 
@@ -128,8 +126,13 @@ with tab2:
     
     st.divider()
     st.subheader("Controle de Qualidade")
+    # Busca itens de qualidade específicos desta disciplina
+    lista_qual = opcoes.get(cat_qualidade_db, [])
+    # Se for Dutos, mantém compatibilidade
+    if DISCIPLINA_ATUAL == "Dutos": lista_qual = list(set(lista_qual + opcoes.get('qualidade', [])))
+
     k_qual = f"qual_{DISCIPLINA_ATUAL.lower()}"
-    itens_qual = st.multiselect("Selecione Itens:", sorted(opcoes.get(cat_qualidade_db, [])), key=k_qual)
+    itens_qual = st.multiselect("Selecione Itens:", sorted(lista_qual), key=k_qual)
     
     c_add_q, c_vz = st.columns(2)
     novo_qual = c_add_q.text_input("Novo Item Qualidade (DB):", key=f"new_q_{k_qual}")
