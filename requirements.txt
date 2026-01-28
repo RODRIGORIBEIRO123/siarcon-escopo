@@ -6,3 +6,4 @@ python-docx
 pdfplumber
 ezdxf
 openpyxl
+openai
