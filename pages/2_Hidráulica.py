@@ -6,7 +6,7 @@ from datetime import date
 import utils_db
 
 # --- CONFIGURAÇÃO: HIDRÁULICA ---
-DISCIPLINA_ATUAL = "Hidraulica"
+DISCIPLINA_ATUAL = "Hidráulica"
 ITENS_MATRIZ = [
     "Tubulações e Conexões", "Válvulas e Registros", "Bombas e Equipamentos",
     "Suportes e Fixações", "Isolamento Térmico", "Pintura e Identificação",
