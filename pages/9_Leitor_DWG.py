@@ -22,7 +22,7 @@ st.markdown("""
 **Status:** Motor Geométrico Ativo.
 1. **Dutos:** Medição real (Wall Matcher) com classificação ABNT 16401.
 2. **Filtros:** Remove grelhas (final '25' ou tag 'AWG').
-3. **Memorial:** Gera planilha Excel.
+3. **Memorial:** Gera planilha Excel completa.
 """)
 
 # ============================================================================
@@ -346,6 +346,18 @@ if 'res_dutos' in st.session_state:
                 })
             
             df_mem = pd.DataFrame(lista_memorial)
+            
+            # --- TOTAIS GERAIS (Recolocados conforme solicitado) ---
+            total_peso = df_mem["Peso (kg)"].sum()
+            total_area = df_mem["Área (m²)"].sum()
+            
+            st.divider()
+            k1, k2, k3 = st.columns(3)
+            k1.metric("Peso Total (Chapa)", f"{total_peso:,.1f} kg")
+            k2.metric("Área de Dutos", f"{total_area:,.2f} m²")
+            iso_val = f"{total_area:,.2f} m²" if tipo_isolamento != "Sem Isolamento" else "-"
+            k3.metric("Isolamento Térmico", iso_val)
+            st.divider()
             
             # Resumo por Bitola
             df_resumo = df_mem.groupby("Bitola (MSG)")["Peso (kg)"].sum().reset_index()
