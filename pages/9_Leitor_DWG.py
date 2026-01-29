@@ -6,6 +6,7 @@ import tempfile
 import os
 import re
 import math
+import io
 from openai import OpenAI
 from collections import Counter
 
@@ -14,13 +15,14 @@ if 'logado' not in st.session_state or not st.session_state['logado']:
     st.warning("🔒 Acesso negado. Faça login no Dashboard.")
     st.stop()
 
-st.set_page_config(page_title="Leitor DXF (Geometria + Filtro)", page_icon="📐", layout="wide")
+st.set_page_config(page_title="Leitor DXF (Memorial)", page_icon="📐", layout="wide")
 
-st.title("📐 Leitor Técnico DXF - Medição Geométrica Real")
+st.title("📐 Leitor Técnico DXF - Memorial de Cálculo")
 st.markdown("""
 **Status:** Motor Geométrico Ativo.
 1. **Dutos:** O sistema procura as paredes do duto baseadas na largura escrita (ex: 500) e mede o comprimento real.
 2. **Grelhas:** Medidas terminadas em '25' (ex: 425x125) são automaticamente separadas como terminais.
+3. **Memorial:** Gera planilha com bitola de chapa e peso por trecho.
 """)
 
 # ============================================================================
@@ -92,7 +94,7 @@ def limpar_parsear(txt_raw):
     return None, None, t
 
 # ============================================================================
-# 3. MOTOR GEOMÉTRICO (CORRIGIDO: ValueError)
+# 3. MOTOR GEOMÉTRICO
 # ============================================================================
 def get_segmentos(e):
     segs = []
@@ -108,8 +110,7 @@ def get_segmentos(e):
         elif e.dxftype() == 'LWPOLYLINE':
             pts = e.get_points()
             for i in range(len(pts)-1):
-                # --- CORREÇÃO DO ERRO ---
-                # ezdxf retorna 5 valores. Pegamos só os 2 primeiros (x,y)
+                # Correção LWPOLYLINE (Pega só X,Y)
                 p1 = pts[i][:2]
                 p2 = pts[i+1][:2]
                 
@@ -222,18 +223,14 @@ def processar(doc, layers_duto, raio, padrao):
                 # É Duto -> Medir Geometria
                 comp_m, status = medir_duto_geom(msp, obj, l, a, layers_duto, raio)
                 
-                if comp_m > 0:
-                    val = comp_m
-                    orig = "Medido (Geo)"
-                else:
-                    val = padrao
-                    orig = "Estimado (Padrão)"
-                    
+                val_final = comp_m if comp_m > 0 else padrao
+                orig = "Medido (Auto)" if comp_m > 0 else "Estimado (Padrão)"
+                
                 dutos.append({
-                    "Largura": l, "Altura": a, "Comp. (m)": val,
+                    "Largura": l, "Altura": a, "Comp. (m)": val_final,
                     "Origem": orig, "Tag": t
                 })
-                logs.append(f"✅ Duto: {t} -> {val:.2f}m ({status})")
+                logs.append(f"✅ Duto: {t} -> {val_final:.2f}m ({status})")
         else:
             # Texto sem medida clara -> IA
             if t and any(c.isalpha() for c in t):
@@ -299,7 +296,7 @@ if uploaded_dxf:
         limpar_temp(tmp)
 
 # ============================================================================
-# 6. RESULTADOS
+# 6. RESULTADOS E MEMORIAL
 # ============================================================================
 if 'res_dutos' in st.session_state:
     dutos = st.session_state['res_dutos']
@@ -310,37 +307,82 @@ if 'res_dutos' in st.session_state:
     
     with t1:
         if dutos:
-            df = pd.DataFrame(dutos)
+            # --- PROCESSAMENTO DO MEMORIAL DE CÁLCULO ---
+            lista_memorial = []
             
-            # KPI Sucesso
-            n_med = df[df['Origem'].str.contains("Medido")].shape[0]
-            perc = (n_med/len(df))*100 if len(df)>0 else 0
+            for item in dutos:
+                larg = item['Largura']
+                alt = item['Altura']
+                comp = item['Comp. (m)']
+                
+                # Regra de Bitola (Padrão Baixa Pressão SMACNA/ABNT)
+                maior_lado = max(larg, alt)
+                bitola = 26
+                peso_m2 = 4.2 # Peso aprox aço galv #26
+                
+                if maior_lado <= 300: 
+                    bitola = 26; peso_m2 = 4.20
+                elif maior_lado <= 750: 
+                    bitola = 24; peso_m2 = 5.40
+                elif maior_lado <= 1500: 
+                    bitola = 22; peso_m2 = 6.80
+                elif maior_lado <= 2000: 
+                    bitola = 20; peso_m2 = 8.60
+                else: 
+                    bitola = 18; peso_m2 = 11.00
+                
+                # Cálculo de Área e Peso do Trecho
+                perimetro = (2*larg + 2*alt) / 1000
+                area_trecho = perimetro * comp * (1 + perda_corte/100)
+                peso_trecho = area_trecho * peso_m2
+                
+                lista_memorial.append({
+                    "Tag Original": item['Tag'],
+                    "Largura (mm)": larg,
+                    "Altura (mm)": alt,
+                    "Comprimento (m)": comp,
+                    "Área (m²)": area_trecho,
+                    "Bitola (MSG)": f"#{bitola}",
+                    "Peso Unit (kg)": peso_trecho
+                })
+
+            df_mem = pd.DataFrame(lista_memorial)
+            
+            # Tabela Resumo (Agrupado por Bitola)
+            df_resumo = df_mem.groupby("Bitola (MSG)")["Peso Unit (kg)"].sum().reset_index()
+            df_resumo.rename(columns={"Peso Unit (kg)": "Peso Total (kg)"}, inplace=True)
+            
+            # --- EXIBIÇÃO NA TELA ---
+            # KPI
+            n_med = pd.DataFrame(dutos)[pd.DataFrame(dutos)['Origem'].str.contains("Medido")].shape[0]
+            perc = (n_med/len(dutos))*100 if len(dutos)>0 else 0
             
             c1, c2 = st.columns(2)
-            c1.metric("Trechos Duto", len(df))
-            c2.metric("Sucesso Geometria", f"{perc:.1f}%", help="Se 0%, verifique o Layer selecionado ou Raio de Busca.")
+            c1.metric("Trechos Duto", len(dutos))
+            c2.metric("Sucesso Geometria", f"{perc:.1f}%")
             
-            # Tabela
-            df_view = df.groupby(['Largura', 'Altura', 'Origem']).agg(
-                Qtd=('Tag', 'count'), Comp_Total=('Comp. (m)', 'sum')
-            ).reset_index()
+            st.markdown("### 📊 Resumo de Pesos por Bitola")
+            st.dataframe(df_resumo.style.format({"Peso Total (kg)": "{:.1f}"}), use_container_width=True)
             
-            st.markdown("### 📋 Quantitativo de Dutos (Sem Grelhas)")
-            df_ed = st.data_editor(
-                df_view, use_container_width=True,
-                column_config={"Comp_Total": st.column_config.NumberColumn(format="%.2f m")}
+            st.markdown("### 📋 Memorial Detalhado (Preview)")
+            st.dataframe(df_mem.head(50).style.format({
+                "Largura (mm)": "{:.0f}", "Altura (mm)": "{:.0f}", 
+                "Comprimento (m)": "{:.2f}", "Área (m²)": "{:.2f}", "Peso Unit (kg)": "{:.2f}"
+            }))
+            
+            # --- GERAR EXCEL ---
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                df_mem.to_excel(writer, sheet_name='Memorial Detalhado', index=False)
+                df_resumo.to_excel(writer, sheet_name='Resumo de Cargas', index=False)
+                
+            st.download_button(
+                label="📥 Baixar Planilha Memorial (.xlsx)",
+                data=output.getvalue(),
+                file_name="Memorial_Dutos_SiArCon.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
-            
-            # Totais
-            df_ed['Perímetro'] = (2*df_ed['Largura'] + 2*df_ed['Altura'])/1000
-            df_ed['Área'] = df_ed['Perímetro'] * df_ed['Comp_Total'] * (1+perda_corte/100)
-            tot_a = df_ed['Área'].sum()
-            
-            st.divider()
-            k1, k2, k3 = st.columns(3)
-            k1.metric("Área Total", f"{tot_a:,.2f} m²")
-            k2.metric("Peso", f"{tot_a*5.6:,.0f} kg")
-            k3.metric("Isolamento", f"{tot_a:,.2f} m²" if tipo_isolamento!="Sem Isolamento" else "-")
+
         else:
             st.warning("Nenhum duto encontrado.")
 
