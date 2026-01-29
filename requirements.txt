@@ -9,3 +9,4 @@ openpyxl
 openai
 extra-streamlit-components
 pymupdf
+openyxl
