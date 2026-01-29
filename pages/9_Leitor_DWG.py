@@ -15,13 +15,13 @@ if 'logado' not in st.session_state or not st.session_state['logado']:
     st.warning("🔒 Acesso negado. Faça login no Dashboard.")
     st.stop()
 
-st.set_page_config(page_title="Leitor DXF (ABNT 16401)", page_icon="📐", layout="wide")
+st.set_page_config(page_title="Leitor DXF (Filtro Vazão)", page_icon="📐", layout="wide")
 
 st.title("📐 Leitor Técnico DXF - ABNT 16401")
 st.markdown("""
-**Status:** Motor Geométrico Ativo.
-1. **Dutos:** Medição real (Wall Matcher) com classificação ABNT 16401.
-2. **Filtros:** Remove grelhas (final '25' ou tag 'AWG').
+**Status:** Motor Geométrico + Filtro de Vazão.
+1. **Filtro de Vazão:** (Opcional) Só considera duto se tiver indicação `(1200)`.
+2. **Dutos:** Medição real (Wall Matcher).
 3. **Memorial:** Gera planilha Excel completa.
 """)
 
@@ -31,15 +31,20 @@ st.markdown("""
 with st.sidebar:
     st.header("⚙️ Configurações")
     
-    # Tolerância geométrica
     st.info("ℹ️ Raio de Busca: Distância máx do texto até a linha.")
     raio_busca = st.number_input("Raio de Busca (Unidades CAD)", value=2.0, help="2.0 para Metros, 2000 para Milímetros.")
-    
-    # Fallback
-    comp_padrao = st.number_input("Comp. Padrão (Se falhar geometria)", value=1.10)
+    comp_padrao = st.number_input("Comp. Padrão (Fallback)", value=1.10)
     
     st.divider()
-    # Agora a classe de pressão afeta a bitola
+    st.markdown("### 🎯 Filtros de Precisão")
+    
+    # NOVO FILTRO AQUI
+    exigir_vazao = st.checkbox("Exigir indicação de Vazão (...)", value=True, 
+                               help="Se marcado, só lerá dutos que tenham a vazão entre parênteses. Ex: '600x400 (1200)'. Ignora medidas soltas.")
+    
+    termos_ignorar = st.text_area("Ignorar Itens com (Tags):", value="DAMPER, VCD, REGISTRO, FILTRO, AWG")
+    
+    st.divider()
     classe_pressao = st.selectbox("Classe de Pressão (ABNT 16401)", 
                                   ["Classe A (Baixa)", "Classe B (Média)", "Classe C (Alta)"])
     
@@ -67,11 +72,9 @@ def limpar_temp(path):
 
 def extrair_todos_textos(msp):
     lista = []
-    # Textos
     for e in msp.query('TEXT MTEXT'):
         txt = e.dxf.text if e.dxftype() == 'TEXT' else e.text
         if txt: lista.append({'texto': txt, 'obj': e})
-    # Blocos (Atributos)
     for e in msp.query('INSERT'):
         if e.attribs:
             for a in e.attribs:
@@ -79,18 +82,32 @@ def extrair_todos_textos(msp):
                 if t: lista.append({'texto': t, 'obj': a})
     return lista
 
-def limpar_parsear(txt_raw):
-    # Limpa MTEXT
-    t = re.sub(r'\\[ACFHQTW].*?;', '', txt_raw).replace('{','').replace('}','').strip().upper()
-    # Regex 1.300x700
+def limpar_parsear(txt_raw, lista_negativa, usar_filtro_vazao):
+    # Limpa MTEXT e quebras de linha viram espaço
+    t = re.sub(r'\\[ACFHQTW].*?;', '', txt_raw)
+    t = re.sub(r'\\P|\\N', ' ', t) # Transforma enter em espaço
+    t = t.replace('{','').replace('}','').strip().upper()
+    
+    # 1. Filtro de Palavras Negativas
+    for termo in lista_negativa:
+        if termo.strip() and termo.strip() in t:
+            return None, None, t 
+
+    # 2. Filtro de Vazão (NOVO)
+    # Se a opção estiver marcada, OBRIGATORIAMENTE tem que ter parenteses no texto
+    if usar_filtro_vazao:
+        if "(" not in t or ")" not in t:
+            return None, None, t # Retorna como resto/ignorado
+
+    # 3. Regex de Medida
     m = re.search(r'([\d\.]+)\s*[xX*]\s*([\d\.]+)', t)
     if m:
         try:
             l_str = m.group(1)
             a_str = m.group(2)
-            # Remove ponto milhar se > 50
             l_val = float(l_str.replace('.','')) if '.' in l_str and len(l_str)>4 else float(l_str)
             a_val = float(a_str.replace('.','')) if '.' in a_str and len(a_str)>4 else float(a_str)
+            
             if l_val > 50 and a_val > 50:
                 return l_val, a_val, t
         except: pass
@@ -109,7 +126,6 @@ def get_segmentos(e):
             if l > 0:
                 ang = math.degrees(math.atan2(p2[1]-p1[1], p2[0]-p1[0])) % 180
                 segs.append({'p1':p1, 'p2':p2, 'len':l, 'ang':ang})
-                
         elif e.dxftype() == 'LWPOLYLINE':
             pts = e.get_points()
             for i in range(len(pts)-1):
@@ -126,7 +142,8 @@ def get_segmentos(e):
 def dist_paralela(s1, s2):
     try:
         mx, my = (s1['p1'][0]+s1['p2'][0])/2, (s1['p1'][1]+s1['p2'][1])/2
-        x1, y1 = s2['p1']; x2, y2 = s2['p2']
+        x1, y1 = s2['p1'][0], s2['p1'][1]
+        x2, y2 = s2['p2'][0], s2['p2'][1]
         A = y1-y2; B = x2-x1; C = x1*y2 - x2*y1
         denom = math.hypot(A, B)
         if denom == 0: return float('inf')
@@ -159,9 +176,7 @@ def medir_duto_geom(msp, texto_obj, w_target, h_target, layers, raio):
         s1 = candidatos[i]
         for j in range(i+1, len(candidatos)):
             s2 = candidatos[j]
-            
             if abs(s1['ang'] - s2['ang']) > 5 and abs(s1['ang'] - s2['ang']) < 175: continue
-            
             dist = dist_paralela(s1, s2)
             if dist < 0.001: continue
             
@@ -169,7 +184,6 @@ def medir_duto_geom(msp, texto_obj, w_target, h_target, layers, raio):
                 w_t = w_target * esc
                 h_t = h_target * esc
                 tol_w, tol_h = w_t * 0.05, h_t * 0.05
-                
                 match_w = abs(dist - w_t) < tol_w
                 match_h = abs(dist - h_t) < tol_h
                 
@@ -181,38 +195,36 @@ def medir_duto_geom(msp, texto_obj, w_target, h_target, layers, raio):
                     comp_real = comp_cad * f_metro
                     if comp_real > melhor_comp:
                         melhor_comp = comp_real
-                        tipo = "Largura" if match_w else "Altura"
-                        match_info = f"Medido p/ {tipo} (Escala {esc})"
+                        match_info = f"Medido (Esc {esc})"
                         
     return melhor_comp, match_info
 
 # ============================================================================
 # 4. PROCESSAMENTO
 # ============================================================================
-def processar(doc, layers_duto, raio, padrao):
+def processar(doc, layers_duto, raio, padrao, blacklist_str, usar_vazao):
     msp = doc.modelspace()
     dutos = []
     restos = []
     logs = []
     
+    blacklist = [x.strip().upper() for x in blacklist_str.split(',') if x.strip()]
     lista = extrair_todos_textos(msp)
     
     for item in lista:
-        l, a, t = limpar_parsear(item['texto'])
+        # Passa o parametro booleano usar_vazao
+        l, a, t = limpar_parsear(item['texto'], blacklist, usar_vazao)
         obj = item['obj']
         
         if l:
-            # --- FILTRO 1: GRELHA POR MEDIDA (Termina em 25) ---
-            eh_grelha_medida = str(int(l)).endswith('25') or str(int(a)).endswith('25')
+            # Filtro Grelha (Final 25)
+            eh_grelha = str(int(l)).endswith('25') or str(int(a)).endswith('25')
             
-            # --- FILTRO 2: GRELHA POR TAG (Contém 'AWG') ---
-            eh_grelha_tag = "AWG" in t
-            
-            if eh_grelha_medida or eh_grelha_tag:
+            if eh_grelha:
                 restos.append(t)
-                logs.append(f"💨 Grelha detectada: {t}")
+                logs.append(f"💨 Grelha (Final 25): {t}")
             else:
-                # É Duto -> Medir Geometria
+                # Duto
                 comp_m, status = medir_duto_geom(msp, obj, l, a, layers_duto, raio)
                 val_final = comp_m if comp_m > 0 else padrao
                 orig = "Medido (Auto)" if comp_m > 0 else "Estimado (Padrão)"
@@ -232,7 +244,6 @@ def ia_class(lista):
     if not lista: return {}
     key = st.secrets.get("openai", {}).get("api_key")
     if not key: return {}
-    
     client = OpenAI(api_key=key)
     c = Counter(lista)
     p = "\n".join([f"{k} (x{v})" for k,v in c.most_common(200)])
@@ -241,8 +252,6 @@ def ia_class(lista):
     Analise HVAC. SAÍDA CSV (;):
     ---TERMINAIS---
     Item;Qtd
-    AWG 385x330;1
-    Grelha 425x125;10
     ---EQUIPAMENTOS---
     Tag;Tipo;Detalhe;Qtd
     ---ELETRICA---
@@ -278,8 +287,8 @@ if uploaded_dxf:
         sel = st.multiselect("Layer Paredes:", layers, default=[layers[idx[0]]] if idx else None)
         
         if st.button("🚀 Processar", type="primary"):
-            with st.spinner("Medindo geometria..."):
-                dutos, restos, logs = processar(doc, sel, raio_busca, comp_padrao)
+            with st.spinner("Analisando..."):
+                dutos, restos, logs = processar(doc, sel, raio_busca, comp_padrao, termos_ignorar, exigir_vazao)
                 st.session_state['res_dutos'] = dutos
                 st.session_state['res_logs'] = logs
                 st.session_state['res_ia'] = ia_class(restos) if restos else {}
@@ -287,111 +296,87 @@ if uploaded_dxf:
         limpar_temp(tmp)
 
 # ============================================================================
-# 6. RESULTADOS & MEMORIAL
+# 6. RESULTADOS
 # ============================================================================
 if 'res_dutos' in st.session_state:
     dutos = st.session_state['res_dutos']
     ia = st.session_state.get('res_ia', {})
     logs = st.session_state.get('res_logs', [])
     
-    t1, t2, t3, t4, t5 = st.tabs(["🌪️ Dutos", "💨 Terminais", "⚙️ Equipamentos", "⚡ Elétrica", "🔍 Diagnóstico"])
+    t1, t2, t3, t4, t5 = st.tabs(["🌪️ Dutos", "💨 Terminais", "⚙️ Equipamentos", "⚡ Elétrica", "🔍 Log"])
     
     with t1:
         if dutos:
-            # --- CÁLCULO DE PESOS E BITOLAS (ABNT 16401) ---
             lista_memorial = []
-            
             for item in dutos:
                 larg = item['Largura']
                 alt = item['Altura']
                 comp = item['Comp. (m)']
                 maior_lado = max(larg, alt)
                 
-                # Definição de Bitola por Classe de Pressão
-                bitola = 26
-                peso_m2 = 4.2
-                
-                if "Classe A" in classe_pressao: # Baixa (ABNT Padrão)
+                bitola = 26; peso_m2 = 4.2
+                if "Classe A" in classe_pressao:
                     if maior_lado <= 300: bitola=26; peso_m2=4.2
                     elif maior_lado <= 750: bitola=24; peso_m2=5.4
                     elif maior_lado <= 1500: bitola=22; peso_m2=6.8
                     elif maior_lado <= 2100: bitola=20; peso_m2=8.6
                     else: bitola=18; peso_m2=11.0
-                    
-                elif "Classe B" in classe_pressao: # Média (Mais rígida)
-                    if maior_lado <= 750: bitola=24; peso_m2=5.4 # Elimina #26
+                elif "Classe B" in classe_pressao:
+                    if maior_lado <= 750: bitola=24; peso_m2=5.4
                     elif maior_lado <= 1500: bitola=22; peso_m2=6.8
                     elif maior_lado <= 2100: bitola=20; peso_m2=8.6
                     else: bitola=18; peso_m2=11.0
-                    
-                else: # Classe C (Alta)
-                    if maior_lado <= 1000: bitola=22; peso_m2=6.8 # Começa na #22
+                else: 
+                    if maior_lado <= 1000: bitola=22; peso_m2=6.8
                     elif maior_lado <= 2100: bitola=20; peso_m2=8.6
                     else: bitola=18; peso_m2=11.0
                 
-                # Cálculo
                 perimetro = (2*larg + 2*alt) / 1000
                 area_trecho = perimetro * comp * (1 + perda_corte/100)
                 peso_trecho = area_trecho * peso_m2
                 
                 lista_memorial.append({
-                    "Tag": item['Tag'],
-                    "Largura (mm)": larg,
-                    "Altura (mm)": alt,
-                    "Comprimento (m)": comp,
-                    "Bitola (MSG)": f"#{bitola}",
-                    "Área (m²)": area_trecho,
-                    "Peso (kg)": peso_trecho,
-                    "Origem": item['Origem']
+                    "Tag": item['Tag'], "Largura (mm)": larg, "Altura (mm)": alt,
+                    "Comprimento (m)": comp, "Bitola (MSG)": f"#{bitola}",
+                    "Área (m²)": area_trecho, "Peso (kg)": peso_trecho, "Origem": item['Origem']
                 })
             
             df_mem = pd.DataFrame(lista_memorial)
             
-            # --- TOTAIS GERAIS (Recolocados conforme solicitado) ---
-            total_peso = df_mem["Peso (kg)"].sum()
-            total_area = df_mem["Área (m²)"].sum()
+            # --- TOTAIS ---
+            tot_p = df_mem["Peso (kg)"].sum()
+            tot_a = df_mem["Área (m²)"].sum()
             
             st.divider()
             k1, k2, k3 = st.columns(3)
-            k1.metric("Peso Total (Chapa)", f"{total_peso:,.1f} kg")
-            k2.metric("Área de Dutos", f"{total_area:,.2f} m²")
-            iso_val = f"{total_area:,.2f} m²" if tipo_isolamento != "Sem Isolamento" else "-"
-            k3.metric("Isolamento Térmico", iso_val)
+            k1.metric("Peso Total (Chapa)", f"{tot_p:,.1f} kg")
+            k2.metric("Área Dutos", f"{tot_a:,.2f} m²")
+            iso_val = f"{tot_a:,.2f} m²" if tipo_isolamento != "Sem Isolamento" else "-"
+            k3.metric("Isolamento", iso_val)
             st.divider()
             
-            # Resumo por Bitola
             df_resumo = df_mem.groupby("Bitola (MSG)")["Peso (kg)"].sum().reset_index()
             df_resumo["Peso (kg)"] = df_resumo["Peso (kg)"].map('{:.1f}'.format)
             
-            # --- EXIBIÇÃO ---
+            # KPI Sucesso
             n_med = df_mem[df_mem['Origem'].str.contains("Medido")].shape[0]
             perc = (n_med/len(df_mem))*100 if len(df_mem)>0 else 0
+            st.caption(f"Sucesso Geometria: {perc:.1f}%")
             
-            c1, c2 = st.columns(2)
-            c1.metric("Trechos", len(df_mem))
-            c2.metric("Sucesso Geometria", f"{perc:.1f}%")
-            
-            st.markdown(f"### 📊 Resumo de Carga ({classe_pressao})")
+            st.markdown(f"### 📊 Resumo ({classe_pressao})")
             st.dataframe(df_resumo, use_container_width=True)
             
-            st.markdown("### 📋 Memorial Descritivo")
+            st.markdown("### 📋 Memorial")
             st.dataframe(df_mem.style.format({
-                "Largura (mm)":"{:.0f}", "Altura (mm)":"{:.0f}", 
-                "Comprimento (m)":"{:.2f}", "Área (m²)":"{:.2f}", "Peso (kg)":"{:.2f}"
+                "Largura (mm)":"{:.0f}", "Altura (mm)":"{:.0f}", "Comprimento (m)":"{:.2f}", 
+                "Área (m²)":"{:.2f}", "Peso (kg)":"{:.2f}"
             }))
             
-            # --- EXCEL DOWNLOAD (OpenPyXL) ---
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                df_mem.to_excel(writer, sheet_name='Memorial Detalhado', index=False)
-                df_resumo.to_excel(writer, sheet_name='Resumo de Peso', index=False)
-                
-            st.download_button(
-                label="📥 Baixar Planilha Memorial (.xlsx)",
-                data=output.getvalue(),
-                file_name="Memorial_Dutos_ABNT.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
+                df_mem.to_excel(writer, sheet_name='Memorial', index=False)
+                df_resumo.to_excel(writer, sheet_name='Resumo', index=False)
+            st.download_button("📥 Excel Memorial", output.getvalue(), "Memorial_Dutos.xlsx")
         else:
             st.warning("Nenhum duto encontrado.")
 
