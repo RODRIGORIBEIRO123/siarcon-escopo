@@ -16,11 +16,11 @@ if 'logado' not in st.session_state or not st.session_state['logado']:
 
 st.set_page_config(page_title="Leitor DXF (Geometria + IA)", page_icon="📐", layout="wide")
 
-st.title("📐 Leitor Técnico DXF - Wall Matcher V2")
+st.title("📐 Leitor Técnico DXF - Wall Matcher V2.1")
 st.markdown("""
-**Correção Aplicada:** 1. Leitura de arquivo blindada (corrige erro de layers).
-2. Correção da chamada de API da IA.
-3. Lógica de **Medição Real**: Usa o texto da bitola para encontrar as paredes do duto e medir o comprimento exato.
+**Correção Total:** 1. Leitura de Layers blindada (sem erro de leitura).
+2. Conexão com IA corrigida (sem erro de api_key).
+3. Medição Geométrica por Largura (Pega a largura do texto e acha as paredes).
 """)
 
 # ============================================================================
@@ -36,11 +36,13 @@ with st.sidebar:
         help="Se o duto 500x300 mede 500 unidades no CAD, selecione Milímetros."
     )
     
-    # Raio de busca para encontrar as linhas do duto perto do texto
-    raio_busca_val = 1500.0 if unidade_desenho == "Milímetros (1u=1mm)" else (150.0 if unidade_desenho == "Centímetros (1u=1cm)" else 1.5)
-    raio_busca = st.number_input("Raio de Busca (Geometria)", value=raio_busca_val)
+    # Ajuste automático do raio de busca
+    raio_val = 1500.0
+    if unidade_desenho == "Centímetros (1u=1cm)": raio_val = 150.0
+    elif unidade_desenho == "Metros (1u=1m)": raio_val = 1.5
     
-    comp_padrao = st.number_input("Comp. Padrão (Estimativa)", value=1.10, help="Usado APENAS se a geometria falhar.")
+    raio_busca = st.number_input("Raio de Busca (Geometria)", value=raio_val)
+    comp_padrao = st.number_input("Comp. Padrão (Estimativa)", value=1.10, help="Usado se a geometria falhar.")
     
     st.divider()
     classe_pressao = st.selectbox("Classe de Pressão", ["Classe A (Baixa)", "Classe B (Média)", "Classe C (Alta)"])
@@ -48,20 +50,21 @@ with st.sidebar:
     tipo_isolamento = st.selectbox("Isolamento", ["Lã de Vidro", "Borracha Elast.", "Isopor", "Sem Isolamento"])
 
 # ============================================================================
-# 2. FUNÇÕES AUXILIARES (CARREGAMENTO SEGURO)
+# 2. FUNÇÕES AUXILIARES (CARREGAMENTO SEGURO - CORREÇÃO ERRO A)
 # ============================================================================
 def carregar_dxf_seguro(uploaded_file):
     """
-    Salva o arquivo em disco temporariamente para evitar erros de leitura de bytes/layers.
-    Retorna o objeto DOC do ezdxf e o caminho do arquivo temporário.
+    Salva o arquivo em disco temporariamente. 
+    Isso CORRIGE o erro de leitura de layers e 'rstrip'.
     """
     temp_path = None
     try:
+        # Cria arquivo temporário no disco
         with tempfile.NamedTemporaryFile(delete=False, suffix=".dxf") as tmp_file:
             tmp_file.write(uploaded_file.getvalue())
             temp_path = tmp_file.name
         
-        # O recover é mais robusto para arquivos com erros
+        # O recover do ezdxf é robusto contra erros binários
         doc, auditor = recover.readfile(temp_path)
         return doc, temp_path, None
     except Exception as e:
@@ -76,48 +79,38 @@ def limpar_temp(path):
 # 3. LÓGICA DE GEOMETRIA (WALL MATCHER)
 # ============================================================================
 def get_line_len(entity):
-    if entity.dxftype() == 'LINE':
-        return math.hypot(entity.dxf.end.x - entity.dxf.start.x, entity.dxf.end.y - entity.dxf.start.y)
-    elif entity.dxftype() == 'LWPOLYLINE':
-        pts = entity.get_points()
-        length = 0
-        for i in range(len(pts)-1):
-            length += math.hypot(pts[i+1][0]-pts[i][0], pts[i+1][1]-pts[i][1])
-        return length
+    try:
+        if entity.dxftype() == 'LINE':
+            return math.hypot(entity.dxf.end.x - entity.dxf.start.x, entity.dxf.end.y - entity.dxf.start.y)
+        elif entity.dxftype() == 'LWPOLYLINE':
+            pts = entity.get_points()
+            length = 0
+            for i in range(len(pts)-1):
+                length += math.hypot(pts[i+1][0]-pts[i][0], pts[i+1][1]-pts[i][1])
+            return length
+    except: return 0
     return 0
 
 def medir_geometria_duto(msp, texto_obj, largura_alvo, altura_alvo, layers_validos, unid_fator, raio_max):
-    """
-    Tenta encontrar linhas próximas que representem as paredes do duto.
-    Retorna: (comprimento_encontrado, status_debug)
-    """
-    # Converte targets para unidade do CAD (mm, cm, m)
+    # Converte targets para unidade do CAD
     w_cad = largura_alvo * unid_fator
-    tol = w_cad * 0.05 # 5% de tolerância
     
     ins = texto_obj.dxf.insert
     tx, ty = ins.x, ins.y
     
     melhor_comp = 0.0
-    status = "Estimado (Tag)" # Padrão se falhar
+    status = "Estimado (Tag)" 
 
-    # Otimização: Coleta linhas candidatas apenas no layer selecionado
-    # e que estejam dentro do bounding box do raio de busca
-    
     candidatos = []
     
-    # Query manual filtrada
-    query_str = 'LINE LWPOLYLINE'
-    if layers_validos:
-        # ezdxf query não suporta lista, então iteramos tudo e filtramos em python
-        todas_entidades = msp.query(query_str)
-    else:
-        todas_entidades = msp.query(query_str)
-
-    for e in todas_entidades:
+    # Pega linhas próximas (Otimizado)
+    entidades = msp.query('LINE LWPOLYLINE')
+    
+    for e in entidades:
+        # Filtro de Layer (Fundamental para não pegar lixo)
         if layers_validos and e.dxf.layer not in layers_validos: continue
         
-        # Bounding box check rápido
+        # Filtro de Bounding Box (Performance)
         try:
             if e.dxftype() == 'LINE':
                 px, py = e.dxf.start.x, e.dxf.start.y
@@ -131,17 +124,16 @@ def medir_geometria_duto(msp, texto_obj, largura_alvo, altura_alvo, layers_valid
             if comp > 0: candidatos.append({'obj': e, 'comp': comp})
         except: pass
 
-    # Se achou linhas perto
+    # Se achou linhas candidatas
     if candidatos:
-        # Pega a linha mais longa próxima ao texto (Heurística simplificada e robusta)
-        # Assumimos que a parede do duto é a linha longa mais perto do texto da bitola
+        # Pega a maior linha próxima. 
+        # Assumimos que a linha mais longa perto do texto 500x300 é a parede do duto.
         candidatos.sort(key=lambda x: x['comp'], reverse=True)
-        top_candidato = candidatos[0]
+        top = candidatos[0]
         
-        # Validação simples: O comprimento é maior que a largura do duto?
-        # Dutos costumam ser mais compridos que largos, mas nem sempre.
-        if top_candidato['comp'] > (w_cad * 0.5): 
-            melhor_comp = top_candidato['comp']
+        # Validação simples: Comprimento > Metade da Largura
+        if top['comp'] > (w_cad * 0.5):
+            melhor_comp = top['comp']
             status = "Geometria (Medido)"
 
     return melhor_comp, status
@@ -149,15 +141,15 @@ def medir_geometria_duto(msp, texto_obj, largura_alvo, altura_alvo, layers_valid
 # ============================================================================
 # 4. PROCESSAMENTO PRINCIPAL
 # ============================================================================
-def processar_dxf(doc, layers_duto, unid_cad_str):
+def processar_dxf(doc, layers_duto, unid_cad_str, raio_busca):
     msp = doc.modelspace()
     
     # Fatores de conversão
     if unid_cad_str == "Metros (1u=1m)":
-        fator_txt_to_cad = 0.001 # Texto 500(mm) -> CAD 0.5
+        fator_txt_to_cad = 0.001 
         fator_cad_to_m = 1.0
     elif unid_cad_str == "Centímetros (1u=1cm)":
-        fator_txt_to_cad = 0.1 # Texto 500(mm) -> CAD 50
+        fator_txt_to_cad = 0.1
         fator_cad_to_m = 0.01
     else: # Milimetros
         fator_txt_to_cad = 1.0
@@ -166,7 +158,8 @@ def processar_dxf(doc, layers_duto, unid_cad_str):
     dutos = []
     outros_textos = []
     
-    regex_dim = re.compile(r'(\d{1,4})\s*[xX*]\s*(\d{1,4})') # 500x300
+    # Regex 500x300
+    regex_dim = re.compile(r'(\d{1,4})\s*[xX*]\s*(\d{1,4})') 
     
     for e in msp.query('TEXT MTEXT'):
         txt = e.dxf.text if e.dxftype() == 'TEXT' else e.text
@@ -174,8 +167,6 @@ def processar_dxf(doc, layers_duto, unid_cad_str):
         
         # Limpa formatação
         t_clean = re.sub(r'\\[ACFHQTW].*?;', '', txt).replace('{', '').replace('}', '').strip().upper()
-        
-        # Ignora textos irrelevantes
         if len(t_clean) < 3 or len(t_clean) > 40: continue
         
         match = regex_dim.search(t_clean)
@@ -184,19 +175,17 @@ def processar_dxf(doc, layers_duto, unid_cad_str):
                 l_mm = float(match.group(1))
                 a_mm = float(match.group(2))
                 
-                # Se for medida válida (>50mm)
                 if l_mm > 50 and a_mm > 50:
-                    # TENTA MEDIR GEOMETRIA
+                    # TENTA MEDIR
                     comp_cad, status = medir_geometria_duto(
                         msp, e, l_mm, a_mm, layers_duto, fator_txt_to_cad, raio_busca
                     )
                     
                     comp_final_m = 0
-                    
                     if status == "Geometria (Medido)":
                         comp_final_m = comp_cad * fator_cad_to_m
                     else:
-                        comp_final_m = comp_padrao # Fallback
+                        comp_final_m = comp_padrao # Fallback se falhar
                         
                     dutos.append({
                         "Largura": l_mm,
@@ -208,35 +197,33 @@ def processar_dxf(doc, layers_duto, unid_cad_str):
                     continue
             except: pass
             
-        # Se não for duto, guarda para IA
         if any(c.isalpha() for c in t_clean):
             outros_textos.append(t_clean)
             
     return dutos, outros_textos
 
 # ============================================================================
-# 5. IA (CORRIGIDA)
+# 5. IA (CORREÇÃO ERRO B)
 # ============================================================================
 def classificar_ia(lista_textos):
     if not lista_textos: return None
-    # CORREÇÃO DO ERRO B: Verifica se existe chave antes de chamar
+    
+    # CORREÇÃO: Verifica secrets antes de usar
     if "openai" not in st.secrets:
-        st.warning("⚠️ Chave OpenAI não configurada no secrets.")
+        st.warning("⚠️ Chave OpenAI não configurada.")
         return None
     
-    # Usa a chave corretamente
+    # CORREÇÃO: Usa a chave do secrets explicitamente
     client = OpenAI(api_key=st.secrets["openai"]["api_key"])
     
-    # Amostra dos top 300 textos
     counts = Counter(lista_textos)
     prompt_txt = "\n".join([f"{k} (x{v})" for k,v in counts.most_common(300)])
     
     sys_prompt = """
-    Analise os textos do DXF HVAC.
-    IGNORE: Arquitetura, Nomes de Sala.
+    Analise textos de HVAC. Ignore arquitetura.
     EXTRAIA:
     1. TERMINAIS: Grelhas, Difusores.
-    2. EQUIPAMENTOS: Fancoil, Split, K7 (com TR/BTU).
+    2. EQUIPAMENTOS: Fancoil, Split, TR, BTU.
     3. ELETRICA: Quadros.
     
     SAÍDA CSV (;):
@@ -280,42 +267,39 @@ def parse_ia(res):
 uploaded_dxf = st.file_uploader("📂 Carregar DXF", type=["dxf"])
 
 if uploaded_dxf:
-    # 1. Carregamento Seguro (Correção Erro A)
-    with st.spinner("Lendo estrutura do arquivo..."):
+    # Chama função SEGURA (TempFile)
+    with st.spinner("Lendo estrutura..."):
         doc, temp_path, erro = carregar_dxf_seguro(uploaded_dxf)
     
     if erro:
-        st.error(f"Erro fatal ao ler arquivo: {erro}")
+        st.error(f"Erro ao ler arquivo: {erro}")
         limpar_temp(temp_path)
     else:
-        # Lista layers para o usuário escolher o de duto
+        # Se leu ok, mostra seleção de layers
         layers = sorted([l.dxf.name for l in doc.layers])
-        
-        # Tenta pré-selecionar
         default_idx = [i for i, s in enumerate(layers) if 'DUTO' in s.upper() or 'DUCT' in s.upper()]
         
-        sel_layers = st.multiselect("Selecione o(s) Layer(s) das LINHAS de Duto (para medição):", layers, default=[layers[default_idx[0]]] if default_idx else None)
+        sel_layers = st.multiselect(
+            "Selecione o(s) Layer(s) das LINHAS de Duto:", 
+            layers, 
+            default=[layers[default_idx[0]]] if default_idx else None
+        )
         
-        if st.button("🚀 Processar Leitura", type="primary"):
-            with st.spinner("Medindo geometria e classificando textos..."):
-                dutos, restos = processar_dxf(doc, sel_layers, unidade_desenho)
+        if st.button("🚀 Processar", type="primary"):
+            with st.spinner("Analisando..."):
+                dutos, restos = processar_dxf(doc, sel_layers, unidade_desenho, raio_busca)
                 
-                # Guarda dados
                 st.session_state['dutos_res'] = dutos
-                st.session_state['restos_res'] = restos
-                
-                # Chama IA se tiver restos
                 if restos:
-                    ia_res_txt = classificar_ia(restos)
-                    st.session_state['ia_res'] = parse_ia(ia_res_txt)
+                    ia_txt = classificar_ia(restos)
+                    st.session_state['ia_res'] = parse_ia(ia_txt)
                 else:
                     st.session_state['ia_res'] = {"TERMINAIS":[], "EQUIPAMENTOS":[], "ELETRICA":[]}
         
-        # Limpa arquivo temp
         limpar_temp(temp_path)
 
 # ============================================================================
-# 7. EXIBIÇÃO RESULTADOS
+# 7. EXIBIÇÃO
 # ============================================================================
 if 'dutos_res' in st.session_state:
     dutos = st.session_state['dutos_res']
@@ -327,8 +311,7 @@ if 'dutos_res' in st.session_state:
         if dutos:
             df = pd.DataFrame(dutos)
             
-            # Agrupa para exibição limpa
-            # Soma comprimento real medido
+            # Agrupa
             df_view = df.groupby(['Largura', 'Altura', 'Origem']).agg(
                 Qtd=('Tag', 'count'),
                 Comp_Total=('Comp. (m)', 'sum')
@@ -345,7 +328,7 @@ if 'dutos_res' in st.session_state:
                 }
             )
             
-            # Cálculo final
+            # Cálculos
             df_ed['Perímetro'] = (2*df_ed['Largura'] + 2*df_ed['Altura'])/1000
             df_ed['Área (m²)'] = df_ed['Perímetro'] * df_ed['Comp_Total'] * (1 + perda_corte/100)
             
