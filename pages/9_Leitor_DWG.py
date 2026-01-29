@@ -15,13 +15,13 @@ if 'logado' not in st.session_state or not st.session_state['logado']:
     st.warning("🔒 Acesso negado. Faça login no Dashboard.")
     st.stop()
 
-st.set_page_config(page_title="Leitor DXF (Filtro Vazão)", page_icon="📐", layout="wide")
+st.set_page_config(page_title="Leitor DXF (Final)", page_icon="📐", layout="wide")
 
 st.title("📐 Leitor Técnico DXF - ABNT 16401")
 st.markdown("""
-**Status:** Motor Geométrico + Filtro de Vazão.
-1. **Filtro de Vazão:** (Opcional) Só considera duto se tiver indicação `(1200)`.
-2. **Dutos:** Medição real (Wall Matcher).
+**Status:** Motor Geométrico Ativo.
+1. **Dutos:** Medição real (Wall Matcher) com classificação ABNT 16401.
+2. **Filtros:** Remove grelhas (final '25' ou tag 'AWG').
 3. **Memorial:** Gera planilha Excel completa.
 """)
 
@@ -38,9 +38,8 @@ with st.sidebar:
     st.divider()
     st.markdown("### 🎯 Filtros de Precisão")
     
-    # NOVO FILTRO AQUI
     exigir_vazao = st.checkbox("Exigir indicação de Vazão (...)", value=True, 
-                               help="Se marcado, só lerá dutos que tenham a vazão entre parênteses. Ex: '600x400 (1200)'. Ignora medidas soltas.")
+                               help="Só considera duto se tiver indicação de vazão entre parênteses ex: (1200).")
     
     termos_ignorar = st.text_area("Ignorar Itens com (Tags):", value="DAMPER, VCD, REGISTRO, FILTRO, AWG")
     
@@ -83,23 +82,18 @@ def extrair_todos_textos(msp):
     return lista
 
 def limpar_parsear(txt_raw, lista_negativa, usar_filtro_vazao):
-    # Limpa MTEXT e quebras de linha viram espaço
     t = re.sub(r'\\[ACFHQTW].*?;', '', txt_raw)
-    t = re.sub(r'\\P|\\N', ' ', t) # Transforma enter em espaço
+    t = re.sub(r'\\P|\\N', ' ', t)
     t = t.replace('{','').replace('}','').strip().upper()
     
-    # 1. Filtro de Palavras Negativas
     for termo in lista_negativa:
         if termo.strip() and termo.strip() in t:
             return None, None, t 
 
-    # 2. Filtro de Vazão (NOVO)
-    # Se a opção estiver marcada, OBRIGATORIAMENTE tem que ter parenteses no texto
     if usar_filtro_vazao:
         if "(" not in t or ")" not in t:
-            return None, None, t # Retorna como resto/ignorado
+            return None, None, t
 
-    # 3. Regex de Medida
     m = re.search(r'([\d\.]+)\s*[xX*]\s*([\d\.]+)', t)
     if m:
         try:
@@ -107,7 +101,6 @@ def limpar_parsear(txt_raw, lista_negativa, usar_filtro_vazao):
             a_str = m.group(2)
             l_val = float(l_str.replace('.','')) if '.' in l_str and len(l_str)>4 else float(l_str)
             a_val = float(a_str.replace('.','')) if '.' in a_str and len(a_str)>4 else float(a_str)
-            
             if l_val > 50 and a_val > 50:
                 return l_val, a_val, t
         except: pass
@@ -212,17 +205,16 @@ def processar(doc, layers_duto, raio, padrao, blacklist_str, usar_vazao):
     lista = extrair_todos_textos(msp)
     
     for item in lista:
-        # Passa o parametro booleano usar_vazao
         l, a, t = limpar_parsear(item['texto'], blacklist, usar_vazao)
         obj = item['obj']
         
         if l:
-            # Filtro Grelha (Final 25)
-            eh_grelha = str(int(l)).endswith('25') or str(int(a)).endswith('25')
+            # Filtro Grelha (Final 25 ou AWG)
+            eh_grelha = str(int(l)).endswith('25') or str(int(a)).endswith('25') or "AWG" in t
             
             if eh_grelha:
                 restos.append(t)
-                logs.append(f"💨 Grelha (Final 25): {t}")
+                logs.append(f"💨 Grelha detectada: {t}")
             else:
                 # Duto
                 comp_m, status = medir_duto_geom(msp, obj, l, a, layers_duto, raio)
@@ -287,7 +279,7 @@ if uploaded_dxf:
         sel = st.multiselect("Layer Paredes:", layers, default=[layers[idx[0]]] if idx else None)
         
         if st.button("🚀 Processar", type="primary"):
-            with st.spinner("Analisando..."):
+            with st.spinner("Medindo geometria..."):
                 dutos, restos, logs = processar(doc, sel, raio_busca, comp_padrao, termos_ignorar, exigir_vazao)
                 st.session_state['res_dutos'] = dutos
                 st.session_state['res_logs'] = logs
@@ -296,14 +288,14 @@ if uploaded_dxf:
         limpar_temp(tmp)
 
 # ============================================================================
-# 6. RESULTADOS
+# 6. RESULTADOS & MEMORIAL
 # ============================================================================
 if 'res_dutos' in st.session_state:
     dutos = st.session_state['res_dutos']
     ia = st.session_state.get('res_ia', {})
     logs = st.session_state.get('res_logs', [])
     
-    t1, t2, t3, t4, t5 = st.tabs(["🌪️ Dutos", "💨 Terminais", "⚙️ Equipamentos", "⚡ Elétrica", "🔍 Log"])
+    t1, t2, t3, t4, t5 = st.tabs(["🌪️ Dutos", "💨 Terminais", "⚙️ Equipamentos", "⚡ Elétrica", "🔍 Diagnóstico"])
     
     with t1:
         if dutos:
@@ -342,29 +334,32 @@ if 'res_dutos' in st.session_state:
                 })
             
             df_mem = pd.DataFrame(lista_memorial)
+            df_resumo = df_mem.groupby("Bitola (MSG)")["Peso (kg)"].sum().reset_index()
             
-            # --- TOTAIS ---
+            # --- DASHBOARD (RESTORED) ---
+            k1, k2, k3, k4 = st.columns(4)
+            
+            # Totais
             tot_p = df_mem["Peso (kg)"].sum()
             tot_a = df_mem["Área (m²)"].sum()
-            
-            st.divider()
-            k1, k2, k3 = st.columns(3)
-            k1.metric("Peso Total (Chapa)", f"{tot_p:,.1f} kg")
-            k2.metric("Área Dutos", f"{tot_a:,.2f} m²")
             iso_val = f"{tot_a:,.2f} m²" if tipo_isolamento != "Sem Isolamento" else "-"
-            k3.metric("Isolamento", iso_val)
-            st.divider()
             
-            df_resumo = df_mem.groupby("Bitola (MSG)")["Peso (kg)"].sum().reset_index()
-            df_resumo["Peso (kg)"] = df_resumo["Peso (kg)"].map('{:.1f}'.format)
-            
-            # KPI Sucesso
+            # KPI Geometria
             n_med = df_mem[df_mem['Origem'].str.contains("Medido")].shape[0]
             perc = (n_med/len(df_mem))*100 if len(df_mem)>0 else 0
-            st.caption(f"Sucesso Geometria: {perc:.1f}%")
+            
+            # Cores do Delta
+            cor_geo = "normal" if perc > 80 else ("off" if perc > 50 else "inverse")
+            
+            k1.metric("Peso Total (Chapa)", f"{tot_p:,.1f} kg")
+            k2.metric("Área Dutos", f"{tot_a:,.2f} m²")
+            k3.metric("Isolamento", iso_val)
+            k4.metric("% Sucesso Geometria", f"{perc:.1f}%", delta="Precisão da Leitura", delta_color=cor_geo)
+            
+            st.divider()
             
             st.markdown(f"### 📊 Resumo ({classe_pressao})")
-            st.dataframe(df_resumo, use_container_width=True)
+            st.dataframe(df_resumo.style.format({"Peso (kg)": "{:.1f}"}), use_container_width=True)
             
             st.markdown("### 📋 Memorial")
             st.dataframe(df_mem.style.format({
