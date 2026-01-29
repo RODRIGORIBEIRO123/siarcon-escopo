@@ -14,12 +14,12 @@ if 'logado' not in st.session_state or not st.session_state['logado']:
     st.warning("🔒 Acesso negado. Faça login no Dashboard.")
     st.stop()
 
-st.set_page_config(page_title="Leitor DXF (Híbrido)", page_icon="📐", layout="wide")
+st.set_page_config(page_title="Leitor DXF (Auto-Scale)", page_icon="📐", layout="wide")
 
-st.title("📐 Leitor Técnico DXF - Modo Híbrido")
+st.title("📐 Leitor Técnico DXF - Medição Real (Auto-Scale)")
 st.markdown("""
-**Correção Aplicada:** 1. **Regex Flexível:** Lê formatos como `1.300x700`, `500 x 300` e `500X300`.
-2. **Fallback Automático:** Se não conseguir medir as linhas do desenho (geometria), o sistema usa o **Comprimento Padrão** para não zerar o orçamento.
+**Correção Aplicada:** O sistema agora testa automaticamente se o desenho está em metros, centímetros ou milímetros para cada duto.
+Se ele encontrar duas linhas paralelas com a largura correta (ex: 500, 50 ou 0.5), ele mede o **comprimento real** do trecho.
 """)
 
 # ============================================================================
@@ -28,17 +28,10 @@ st.markdown("""
 with st.sidebar:
     st.header("⚙️ Configurações")
     
-    unidade_desenho = st.selectbox(
-        "Unidade do CAD:", 
-        ["Milímetros (1u=1mm)", "Centímetros (1u=1cm)", "Metros (1u=1m)"],
-        index=0
-    )
+    st.info("ℹ️ O Raio de Busca define quão longe o texto pode estar das linhas do duto.")
+    raio_busca = st.number_input("Raio de Busca (Unidades CAD)", value=2.0, help="Aumente se o texto estiver longe do duto. Tente 2.0 (m) ou 2000 (mm).")
     
-    # Tolerâncias
-    raio_busca_val = 1500.0 if "Milímetros" in unidade_desenho else (150.0 if "Centímetros" in unidade_desenho else 1.5)
-    raio_busca = st.number_input("Raio de Busca (Geometria)", value=raio_busca_val, help="Distância máx do texto até a linha do duto.")
-    
-    comp_padrao = st.number_input("Comp. Padrão (Estimativa)", value=1.10, help="Usado quando a geometria falha.")
+    comp_padrao = st.number_input("Comp. Padrão (Fallback)", value=1.10, help="Usado APENAS se não encontrarmos as paredes do duto.")
     
     st.divider()
     classe_pressao = st.selectbox("Classe de Pressão", ["Classe A", "Classe B", "Classe C"])
@@ -46,7 +39,7 @@ with st.sidebar:
     tipo_isolamento = st.selectbox("Isolamento", ["Lã de Vidro", "Borracha Elast.", "Isopor", "Sem Isolamento"])
 
 # ============================================================================
-# 2. FUNÇÕES AUXILIARES
+# 2. FUNÇÕES GEOMÉTRICAS (AUTO-SCALE)
 # ============================================================================
 def carregar_dxf_seguro(uploaded_file):
     temp_path = None
@@ -64,174 +57,209 @@ def limpar_temp(path):
         try: os.remove(path)
         except: pass
 
-def limpar_texto_cad(texto_raw):
-    """Remove formatação MTEXT do AutoCAD (\\A1; \\P etc)"""
-    if not texto_raw: return ""
-    # Remove códigos de controle
-    t = re.sub(r'\\[ACFHQTW].*?;', '', texto_raw) # \A1;
-    t = re.sub(r'\\P|\\N', ' ', t) # Quebra de linha
-    t = t.replace('{', '').replace('}', '') # Chaves
-    return t.strip().upper()
-
-def parse_medida(texto_limpo):
-    """
-    Tenta extrair Largura e Altura de strings sujas.
-    Aceita: 1.300x700, 500 x 300, 500*300
-    """
-    # Regex 'Gulosa': Pega (numeros+pontos) X (numeros+pontos)
-    match = re.search(r'([\d\.]+)\s*[xX*]\s*([\d\.]+)', texto_limpo)
-    if match:
-        try:
-            l_str = match.group(1).replace('.', '') # Remove ponto de milhar (1.300 -> 1300)
-            a_str = match.group(2).replace('.', '')
-            
-            l_val = float(l_str)
-            a_val = float(a_str)
-            
-            # Validação básica de HVAC (ninguém projeta duto < 50mm)
-            if l_val >= 50 and a_val >= 50:
-                return l_val, a_val
-        except: pass
-    return None, None
-
-# ============================================================================
-# 3. MOTOR DE GEOMETRIA (SIMPLIFICADO E ROBUSTO)
-# ============================================================================
-def get_len(e):
+def get_segmentos(e):
+    """Retorna lista de segmentos de linha [(p1, p2, ang, len)]"""
+    segs = []
     try:
         if e.dxftype() == 'LINE':
-            return math.hypot(e.dxf.end.x - e.dxf.start.x, e.dxf.end.y - e.dxf.start.y)
+            p1 = (e.dxf.start.x, e.dxf.start.y)
+            p2 = (e.dxf.end.x, e.dxf.end.y)
+            dx, dy = p2[0]-p1[0], p2[1]-p1[1]
+            l = math.hypot(dx, dy)
+            if l > 0:
+                ang = math.degrees(math.atan2(dy, dx)) % 180
+                segs.append({'p1':p1, 'p2':p2, 'len':l, 'ang':ang})
         elif e.dxftype() == 'LWPOLYLINE':
             pts = e.get_points()
-            l = 0
             for i in range(len(pts)-1):
-                l += math.hypot(pts[i+1][0]-pts[i][0], pts[i+1][1]-pts[i][1])
-            return l
-    except: return 0
-    return 0
+                p1, p2 = pts[i], pts[i+1]
+                dx, dy = p2[0]-p1[0], p2[1]-p1[1]
+                l = math.hypot(dx, dy)
+                if l > 0:
+                    ang = math.degrees(math.atan2(dy, dx)) % 180
+                    segs.append({'p1':p1, 'p2':p2, 'len':l, 'ang':ang})
+    except: pass
+    return segs
 
-def tentar_medir_geometria(msp, texto_dxf, largura_alvo, layers_validos, fator_conv, raio):
-    """Retorna (Comprimento Medido, Sucesso)"""
-    w_cad = largura_alvo * fator_conv
+def dist_segmentos_paralelos(s1, s2):
+    """Retorna distância entre dois segmentos paralelos"""
+    # Ponto médio de s1
+    mx, my = (s1['p1'][0]+s1['p2'][0])/2, (s1['p1'][1]+s1['p2'][1])/2
     
-    ins = texto_dxf.dxf.insert
+    # Reta s2: Ax + By + C = 0
+    x1, y1 = s2['p1']
+    x2, y2 = s2['p2']
+    A = y1 - y2
+    B = x2 - x1
+    C = x1*y2 - x2*y1
+    
+    denom = math.hypot(A, B)
+    if denom == 0: return float('inf')
+    return abs(A*mx + B*my + C) / denom
+
+def medir_duto_auto_scale(msp, texto_obj, largura_alvo, altura_alvo, layers_validos, raio):
+    """
+    Tenta encontrar paredes paralelas espaçadas por Largura ou Altura.
+    Testa escalas: 1.0 (mm), 0.1 (cm), 0.01, 0.001 (m).
+    """
+    ins = texto_obj.dxf.insert
     tx, ty = ins.x, ins.y
     
-    melhor_comp = 0.0
-    sucesso = False
-    
-    # Coleta linhas próximas (Bounding Box)
-    # Para performance, não iteramos tudo se houver muitos objetos
-    entidades = msp.query('LINE LWPOLYLINE')
-    
+    # 1. Coleta linhas próximas (Bounding Box)
     candidatos = []
-    for e in entidades:
+    
+    # Busca Otimizada: Itera apenas primitivas de linha
+    for e in msp.query('LINE LWPOLYLINE'):
         if layers_validos and e.dxf.layer not in layers_validos: continue
         
+        # Check Bounding Box Rápido
         try:
-            # Check distância Manhattan rápido
             if e.dxftype() == 'LINE': px, py = e.dxf.start.x, e.dxf.start.y
             else: px, py = e.get_points()[0][0], e.get_points()[0][1]
             
             if abs(px - tx) > raio or abs(py - ty) > raio: continue
             
-            l = get_len(e)
-            if l > 0: candidatos.append(l)
+            segs = get_segmentos(e)
+            candidatos.extend(segs)
         except: pass
         
-    # Heurística: Se acharmos uma linha cujo comprimento é maior que a metade da largura,
-    # assumimos que é a parede. (Dutos costumam ser compridos).
-    if candidatos:
-        candidatos.sort(reverse=True)
-        top_len = candidatos[0]
-        
-        # Se a linha mais longa perto do texto for razoável, usamos ela
-        if top_len > (w_cad * 0.4): # Tolerância de 40% da largura
-            melhor_comp = top_len
-            sucesso = True
+    if len(candidatos) < 2: return 0.0, "Sem linhas próximas"
+
+    melhor_comp = 0.0
+    match_info = "Não medido"
+    
+    # Escalas possíveis para testar (Texto vs Desenho)
+    # Ex: Texto 500. Desenho pode ser 500, 50, 5 ou 0.5
+    escalas = [1.0, 0.1, 0.01, 0.001]
+    
+    # 2. Compara Pares
+    found = False
+    for i in range(len(candidatos)):
+        if found: break
+        s1 = candidatos[i]
+        for j in range(i+1, len(candidatos)):
+            s2 = candidatos[j]
             
-    return melhor_comp, sucesso
+            # Check Paralelismo (tolerância 5 graus)
+            ang_diff = abs(s1['ang'] - s2['ang'])
+            if ang_diff > 5 and ang_diff < 175: continue
+            
+            # Distância entre paredes
+            dist = dist_segmentos_paralelos(s1, s2)
+            if dist <= 0.001: continue
+            
+            # Testa contra Largura e Altura em várias escalas
+            for esc in escalas:
+                w_test = largura_alvo * esc
+                h_test = altura_alvo * esc
+                
+                # Tolerância de 5% na medida
+                tol_w = w_test * 0.05
+                tol_h = h_test * 0.05
+                
+                is_width = abs(dist - w_test) < tol_w
+                is_height = abs(dist - h_test) < tol_h
+                
+                if is_width or is_height:
+                    # BINGO! Achamos paredes paralelas na distância certa
+                    comp_medio_cad = (s1['len'] + s2['len']) / 2
+                    
+                    # Converte esse comprimento CAD para METROS Reais
+                    # Se esc=1.0 (mm), então CAD=mm -> /1000
+                    # Se esc=0.001 (m), então CAD=m -> /1
+                    fator_para_metro = 1.0
+                    if esc == 1.0: fator_para_metro = 0.001 # mm
+                    elif esc == 0.1: fator_para_metro = 0.01 # cm
+                    elif esc == 0.01: fator_para_metro = 0.1 # dm
+                    elif esc == 0.001: fator_para_metro = 1.0 # m
+                    
+                    comp_real_m = comp_medio_cad * fator_para_metro
+                    
+                    # Salva o melhor (mais longo) encontrado
+                    if comp_real_m > melhor_comp:
+                        melhor_comp = comp_real_m
+                        tipo_dim = "L" if is_width else "A"
+                        match_info = f"Medido por {tipo_dim} (Escala {esc})"
+                        # Não damos break aqui pois pode haver um par melhor (ex: duto mais longo)
+                        
+    if melhor_comp > 0:
+        return melhor_comp, match_info
+    
+    return 0.0, "Geometria não casou"
 
 # ============================================================================
-# 4. PROCESSAMENTO PRINCIPAL
+# 3. PROCESSAMENTO PRINCIPAL
 # ============================================================================
-def processar_dxf(doc, layers_duto, unid_str, raio, padrao_estimado):
+def processar_dxf(doc, layers_duto, raio, padrao_estimado):
     msp = doc.modelspace()
     
-    # Fatores
-    if "Metros" in unid_str:
-        fator_txt_cad = 0.001
-        fator_cad_m = 1.0
-    elif "Centímetros" in unid_str:
-        fator_txt_cad = 0.1
-        fator_cad_m = 0.01
-    else: # mm
-        fator_txt_cad = 1.0
-        fator_cad_m = 0.001
-        
     dutos = []
     restos = []
-    debug_log = []
+    log_debug = []
     
-    total_txt = 0
+    # Regex flexível: 500x300, 1.300x700
+    reg = re.compile(r'(\d{1,4}(?:\.\d{3})*|\d+)\s*[xX*]\s*(\d{1,4}(?:\.\d{3})*|\d+)')
+    
+    count_txt = 0
     
     for e in msp.query('TEXT MTEXT'):
-        raw = e.dxf.text if e.dxftype() == 'TEXT' else e.text
-        if not raw: continue
+        txt = e.dxf.text if e.dxftype() == 'TEXT' else e.text
+        if not txt: continue
         
-        t_clean = limpar_texto_cad(raw)
+        # Limpa
+        t_clean = re.sub(r'\\[ACFHQTW].*?;', '', txt).replace('{','').replace('}','').strip().upper()
         if len(t_clean) < 3: continue
+        count_txt += 1
         
-        total_txt += 1
-        
-        # 1. Tenta identificar DUTO (Regex)
-        largura, altura = parse_medida(t_clean)
-        
-        if largura and altura:
-            # TENTA MEDIR GEOMETRIA
-            comp_cad, sucesso_geo = tentar_medir_geometria(
-                msp, e, largura, layers_duto, fator_txt_cad, raio
-            )
-            
-            comp_final_m = 0.0
-            origem = ""
-            
-            if sucesso_geo:
-                comp_final_m = comp_cad * fator_cad_m
-                origem = "Medido (Geometria)"
-            else:
-                # FALLBACK: Se falhar a geometria, usa estimativa!
-                comp_final_m = padrao_estimado
-                origem = "Estimado (Padrão)"
+        match = reg.search(t_clean)
+        if match:
+            try:
+                l_raw = float(match.group(1).replace('.',''))
+                a_raw = float(match.group(2).replace('.',''))
                 
-            dutos.append({
-                "Largura": largura,
-                "Altura": altura,
-                "Comp. (m)": comp_final_m,
-                "Origem": origem,
-                "Tag": t_clean
-            })
-            debug_log.append(f"✅ DUTO: {t_clean} -> {largura}x{altura} | {origem} ({comp_final_m:.2f}m)")
-        else:
-            # Se não for duto, guarda pra IA
-            if any(c.isalpha() for c in t_clean):
-                restos.append(t_clean)
-                debug_log.append(f"❓ RESTO: {t_clean}")
-            else:
-                debug_log.append(f"🗑️ IGNORADO: {t_clean}")
-                
-    return dutos, restos, debug_log, total_txt
+                if l_raw > 50 and a_raw > 50:
+                    # AUTO-SCALE MEASURE
+                    comp_m, status = medir_duto_auto_scale(
+                        msp, e, l_raw, a_raw, layers_duto, raio
+                    )
+                    
+                    origem = ""
+                    final_val = 0.0
+                    
+                    if comp_m > 0:
+                        final_val = comp_m
+                        origem = "Medido (Auto)"
+                        log_debug.append(f"✅ {t_clean}: {status} -> {final_val:.2f}m")
+                    else:
+                        final_val = padrao_estimado
+                        origem = "Estimado (Padrão)"
+                        log_debug.append(f"⚠️ {t_clean}: Falha geo -> Usando {final_val}m")
+                        
+                    dutos.append({
+                        "Largura": l_raw,
+                        "Altura": a_raw,
+                        "Comp. (m)": final_val,
+                        "Origem": origem,
+                        "Tag": t_clean
+                    })
+                    continue
+            except: pass
+        
+        if any(c.isalpha() for c in t_clean):
+            restos.append(t_clean)
+            
+    return dutos, restos, log_debug
 
 # ============================================================================
-# 5. IA
+# 4. IA
 # ============================================================================
 def classificar_ia(lista):
     if not lista: return {}
     if "openai" not in st.secrets: return {}
-    
     client = OpenAI(api_key=st.secrets["openai"]["api_key"])
-    counts = Counter(lista)
-    p_txt = "\n".join([f"{k} (x{v})" for k,v in counts.most_common(200)])
+    
+    c = Counter(lista)
+    p = "\n".join([f"{k} (x{v})" for k,v in c.most_common(200)])
     
     sys = """
     Analise HVAC. SAÍDA CSV (;):
@@ -243,8 +271,7 @@ def classificar_ia(lista):
     Tag;Desc;Qtd
     """
     try:
-        r = client.chat.completions.create(model="gpt-4o", messages=[{"role":"system","content":sys},{"role":"user","content":p_txt}], temperature=0)
-        
+        r = client.chat.completions.create(model="gpt-4o", messages=[{"role":"system","content":sys},{"role":"user","content":p}], temperature=0)
         res = {"TERMINAIS":[], "EQUIPAMENTOS":[], "ELETRICA":[]}
         curr = None
         for l in r.choices[0].message.content.split('\n'):
@@ -256,7 +283,7 @@ def classificar_ia(lista):
     except: return {}
 
 # ============================================================================
-# 6. UI
+# 5. UI
 # ============================================================================
 uploaded_dxf = st.file_uploader("📂 Carregar DXF", type=["dxf"])
 
@@ -267,30 +294,32 @@ if uploaded_dxf:
         st.error(f"Erro: {erro}")
         limpar_temp(temp_path)
     else:
-        # Seleção de Layer Opcional
+        # Seleção de Layer OBRIGATÓRIA para funcionar bem
         layers = sorted([l.dxf.name for l in doc.layers])
         def_idx = [i for i,s in enumerate(layers) if 'DUT' in s.upper() or 'DUCT' in s.upper()]
         
-        st.info("Passo 1: Selecione o Layer das Paredes (Opcional, mas melhora a geometria).")
+        st.info("Passo 1: Selecione o Layer onde estão as linhas do duto.")
         sel_layers = st.multiselect("Layer Paredes:", layers, default=[layers[def_idx[0]]] if def_idx else None)
         
-        if st.button("🚀 Processar Arquivo", type="primary"):
-            with st.spinner("Analisando textos e geometria..."):
-                dutos, restos, logs, total_lidos = processar_dxf(doc, sel_layers, unidade_desenho, raio_busca, comp_padrao)
-                
-                st.session_state['res_dutos'] = dutos
-                st.session_state['res_logs'] = logs
-                st.session_state['total_lidos'] = total_lidos
-                
-                if restos:
-                    st.session_state['res_ia'] = classificar_ia(restos)
-                else:
-                    st.session_state['res_ia'] = {}
+        if st.button("🚀 Processar (Auto-Scale)", type="primary"):
+            if not sel_layers:
+                st.error("Selecione o layer das paredes! Sem isso a medição geométrica não funciona.")
+            else:
+                with st.spinner("Testando escalas e medindo dutos..."):
+                    dutos, restos, logs = processar_dxf(doc, sel_layers, raio_busca, comp_padrao)
+                    
+                    st.session_state['res_dutos'] = dutos
+                    st.session_state['res_logs'] = logs
+                    
+                    if restos:
+                        st.session_state['res_ia'] = classificar_ia(restos)
+                    else:
+                        st.session_state['res_ia'] = {}
         
         limpar_temp(temp_path)
 
 # ============================================================================
-# 7. RESULTADOS
+# 6. RESULTADOS
 # ============================================================================
 if 'res_dutos' in st.session_state:
     dutos = st.session_state['res_dutos']
@@ -303,15 +332,22 @@ if 'res_dutos' in st.session_state:
         if dutos:
             df = pd.DataFrame(dutos)
             
-            # Agrupa
+            # KPI
+            n_medido = df[df['Origem'].str.contains("Medido")].shape[0]
+            n_tot = df.shape[0]
+            perc = (n_medido/n_tot)*100
+            
+            k1, k2 = st.columns(2)
+            k1.metric("Trechos Identificados", n_tot)
+            k2.metric("Medidos Geometricamente", f"{perc:.1f}%", help="Se estiver baixo, verifique o Raio de Busca ou se selecionou o Layer correto.")
+            
+            # Tabela
             df_view = df.groupby(['Largura', 'Altura', 'Origem']).agg(
                 Qtd=('Tag', 'count'),
                 Comp_Total=('Comp. (m)', 'sum')
             ).reset_index()
             
-            st.markdown(f"### 📋 Resultado ({len(dutos)} trechos identificados)")
-            
-            # Editor
+            st.markdown("### 📋 Quantitativo")
             df_ed = st.data_editor(
                 df_view,
                 use_container_width=True,
@@ -322,22 +358,20 @@ if 'res_dutos' in st.session_state:
                 }
             )
             
-            # Totais
+            # Cálculo Final
             df_ed['Perímetro'] = (2*df_ed['Largura'] + 2*df_ed['Altura'])/1000
             df_ed['Área'] = df_ed['Perímetro'] * df_ed['Comp_Total'] * (1+perda_corte/100)
             
-            tot_area = df_ed['Área'].sum()
-            tot_peso = tot_area * 5.6
+            tot_a = df_ed['Área'].sum()
+            tot_p = tot_a * 5.6
             
             st.divider()
             c1, c2, c3 = st.columns(3)
-            c1.metric("Área Total", f"{tot_area:,.2f} m²")
-            c2.metric("Peso Total", f"{tot_peso:,.0f} kg")
-            c3.metric("Isolamento", f"{tot_area:,.2f} m²" if tipo_isolamento != "Sem Isolamento" else "-")
-            
+            c1.metric("Área Total", f"{tot_a:,.2f} m²")
+            c2.metric("Peso", f"{tot_p:,.0f} kg")
+            c3.metric("Isolamento", f"{tot_a:,.2f} m²" if tipo_isolamento!="Sem Isolamento" else "-")
         else:
-            st.error("Nenhum duto encontrado!")
-            st.info("Verifique a aba '🔍 Diagnóstico' para ver o que o robô leu no arquivo.")
+            st.error("Nenhum duto encontrado.")
 
     with t2:
         if ia.get("TERMINAIS"): st.data_editor(pd.DataFrame(ia["TERMINAIS"], columns=["Item","Qtd"]), use_container_width=True)
@@ -350,6 +384,5 @@ if 'res_dutos' in st.session_state:
         else: st.info("Vazio")
         
     with t5:
-        st.markdown("### Log de Leitura do Robô")
-        st.write(f"Total de Textos Lidos: {st.session_state.get('total_lidos', 0)}")
-        st.text_area("Log Bruto", "\n".join(logs), height=400)
+        st.markdown("### Log do Robô")
+        st.text_area("Log", "\n".join(logs), height=400)
