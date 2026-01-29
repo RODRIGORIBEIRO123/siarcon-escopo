@@ -15,13 +15,14 @@ if 'logado' not in st.session_state or not st.session_state['logado']:
     st.warning("🔒 Acesso negado. Faça login no Dashboard.")
     st.stop()
 
-st.set_page_config(page_title="Leitor DXF (Memorial)", page_icon="📐", layout="wide")
+st.set_page_config(page_title="Leitor DXF (ABNT 16401)", page_icon="📐", layout="wide")
 
-st.title("📐 Leitor Técnico DXF - Memorial de Cálculo")
+st.title("📐 Leitor Técnico DXF - ABNT 16401")
 st.markdown("""
 **Status:** Motor Geométrico Ativo.
-1. **Dutos:** Medição real baseada na geometria das paredes (Wall Matcher).
-2. **Memorial:** Gera planilha com classificação de chapa e peso total.
+1. **Dutos:** Medição real (Wall Matcher) com classificação ABNT 16401.
+2. **Filtros:** Remove grelhas (final '25' ou tag 'AWG').
+3. **Memorial:** Gera planilha Excel.
 """)
 
 # ============================================================================
@@ -30,13 +31,18 @@ st.markdown("""
 with st.sidebar:
     st.header("⚙️ Configurações")
     
+    # Tolerância geométrica
     st.info("ℹ️ Raio de Busca: Distância máx do texto até a linha.")
     raio_busca = st.number_input("Raio de Busca (Unidades CAD)", value=2.0, help="2.0 para Metros, 2000 para Milímetros.")
     
-    comp_padrao = st.number_input("Comp. Padrão (Fallback)", value=1.10)
+    # Fallback
+    comp_padrao = st.number_input("Comp. Padrão (Se falhar geometria)", value=1.10)
     
     st.divider()
-    classe_pressao = st.selectbox("Classe de Pressão", ["Classe A", "Classe B", "Classe C"])
+    # Agora a classe de pressão afeta a bitola
+    classe_pressao = st.selectbox("Classe de Pressão (ABNT 16401)", 
+                                  ["Classe A (Baixa)", "Classe B (Média)", "Classe C (Alta)"])
+    
     perda_corte = st.number_input("% Perda / Corte", value=10.0)
     tipo_isolamento = st.selectbox("Isolamento", ["Lã de Vidro", "Borracha Elast.", "Isopor", "Sem Isolamento"])
 
@@ -107,7 +113,7 @@ def get_segmentos(e):
         elif e.dxftype() == 'LWPOLYLINE':
             pts = e.get_points()
             for i in range(len(pts)-1):
-                p1 = pts[i][:2] # Correção LWPOLYLINE
+                p1 = pts[i][:2] 
                 p2 = pts[i+1][:2]
                 dx, dy = p2[0]-p1[0], p2[1]-p1[1]
                 l = math.hypot(dx, dy)
@@ -196,14 +202,17 @@ def processar(doc, layers_duto, raio, padrao):
         obj = item['obj']
         
         if l:
-            # Filtro Grelha
-            eh_grelha = str(int(l)).endswith('25') or str(int(a)).endswith('25')
+            # --- FILTRO 1: GRELHA POR MEDIDA (Termina em 25) ---
+            eh_grelha_medida = str(int(l)).endswith('25') or str(int(a)).endswith('25')
             
-            if eh_grelha:
+            # --- FILTRO 2: GRELHA POR TAG (Contém 'AWG') ---
+            eh_grelha_tag = "AWG" in t
+            
+            if eh_grelha_medida or eh_grelha_tag:
                 restos.append(t)
                 logs.append(f"💨 Grelha detectada: {t}")
             else:
-                # Duto
+                # É Duto -> Medir Geometria
                 comp_m, status = medir_duto_geom(msp, obj, l, a, layers_duto, raio)
                 val_final = comp_m if comp_m > 0 else padrao
                 orig = "Medido (Auto)" if comp_m > 0 else "Estimado (Padrão)"
@@ -232,6 +241,8 @@ def ia_class(lista):
     Analise HVAC. SAÍDA CSV (;):
     ---TERMINAIS---
     Item;Qtd
+    AWG 385x330;1
+    Grelha 425x125;10
     ---EQUIPAMENTOS---
     Tag;Tipo;Detalhe;Qtd
     ---ELETRICA---
@@ -287,26 +298,36 @@ if 'res_dutos' in st.session_state:
     
     with t1:
         if dutos:
-            # --- CÁLCULO DE PESOS E BITOLAS ---
+            # --- CÁLCULO DE PESOS E BITOLAS (ABNT 16401) ---
             lista_memorial = []
             
             for item in dutos:
                 larg = item['Largura']
                 alt = item['Altura']
                 comp = item['Comp. (m)']
-                
-                # Bitolas (Tabela SMACNA Baixa Pressão)
                 maior_lado = max(larg, alt)
-                if maior_lado <= 300: 
-                    bitola = 26; peso_m2 = 4.2
-                elif maior_lado <= 750: 
-                    bitola = 24; peso_m2 = 5.4
-                elif maior_lado <= 1500: 
-                    bitola = 22; peso_m2 = 6.8
-                elif maior_lado <= 2000: 
-                    bitola = 20; peso_m2 = 8.6
-                else: 
-                    bitola = 18; peso_m2 = 11.0
+                
+                # Definição de Bitola por Classe de Pressão
+                bitola = 26
+                peso_m2 = 4.2
+                
+                if "Classe A" in classe_pressao: # Baixa (ABNT Padrão)
+                    if maior_lado <= 300: bitola=26; peso_m2=4.2
+                    elif maior_lado <= 750: bitola=24; peso_m2=5.4
+                    elif maior_lado <= 1500: bitola=22; peso_m2=6.8
+                    elif maior_lado <= 2100: bitola=20; peso_m2=8.6
+                    else: bitola=18; peso_m2=11.0
+                    
+                elif "Classe B" in classe_pressao: # Média (Mais rígida)
+                    if maior_lado <= 750: bitola=24; peso_m2=5.4 # Elimina #26
+                    elif maior_lado <= 1500: bitola=22; peso_m2=6.8
+                    elif maior_lado <= 2100: bitola=20; peso_m2=8.6
+                    else: bitola=18; peso_m2=11.0
+                    
+                else: # Classe C (Alta)
+                    if maior_lado <= 1000: bitola=22; peso_m2=6.8 # Começa na #22
+                    elif maior_lado <= 2100: bitola=20; peso_m2=8.6
+                    else: bitola=18; peso_m2=11.0
                 
                 # Cálculo
                 perimetro = (2*larg + 2*alt) / 1000
@@ -338,7 +359,7 @@ if 'res_dutos' in st.session_state:
             c1.metric("Trechos", len(df_mem))
             c2.metric("Sucesso Geometria", f"{perc:.1f}%")
             
-            st.markdown("### 📊 Resumo de Carga (kg)")
+            st.markdown(f"### 📊 Resumo de Carga ({classe_pressao})")
             st.dataframe(df_resumo, use_container_width=True)
             
             st.markdown("### 📋 Memorial Descritivo")
@@ -347,9 +368,8 @@ if 'res_dutos' in st.session_state:
                 "Comprimento (m)":"{:.2f}", "Área (m²)":"{:.2f}", "Peso (kg)":"{:.2f}"
             }))
             
-            # --- EXCEL DOWNLOAD ---
+            # --- EXCEL DOWNLOAD (OpenPyXL) ---
             output = io.BytesIO()
-            # Uso 'openpyxl' para evitar erro se XlsxWriter não estiver instalado
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 df_mem.to_excel(writer, sheet_name='Memorial Detalhado', index=False)
                 df_resumo.to_excel(writer, sheet_name='Resumo de Peso', index=False)
@@ -357,7 +377,7 @@ if 'res_dutos' in st.session_state:
             st.download_button(
                 label="📥 Baixar Planilha Memorial (.xlsx)",
                 data=output.getvalue(),
-                file_name="Memorial_Dutos.xlsx",
+                file_name="Memorial_Dutos_ABNT.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
         else:
