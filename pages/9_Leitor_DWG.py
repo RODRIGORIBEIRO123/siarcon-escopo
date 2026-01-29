@@ -1,329 +1,308 @@
 import streamlit as st
 import ezdxf
 from ezdxf import recover
-import pandas as pd
-import os
-import tempfile
-import openai
-import json
-import io
-import re
 import math
-import numpy as np
+import pandas as pd
+import tempfile
+import os
+import re
+from openai import OpenAI
+from collections import Counter
 
 # --- 🔒 SEGURANÇA ---
 if 'logado' not in st.session_state or not st.session_state['logado']:
     st.warning("🔒 Acesso negado. Faça login no Dashboard.")
     st.stop()
 
-st.set_page_config(page_title="Leitor DXF (Smart Measure)", page_icon="📐", layout="wide")
+st.set_page_config(page_title="Leitor DXF (Geometria Real)", page_icon="📏", layout="wide")
 
-st.title("📐 Leitor de Dutos Inteligente (V21)")
+st.title("📏 Leitor Técnico DXF - Medição por Geometria")
 st.markdown("""
-**Novo Algoritmo de Medição:**
-O sistema usa a medida do texto (ex: **500**x300) para encontrar as paredes do duto desenhadas com essa largura e medir o comprimento exato do trecho até a próxima conexão.
+**Algoritmo Avançado "Wall Matcher":**
+O sistema usa a **Largura do Texto (ex: 500)** para encontrar as linhas paralelas do desenho que correspondem a essa medida e calcula o comprimento real do trecho.
 """)
 
 # ============================================================================
 # 1. CONFIGURAÇÕES
 # ============================================================================
 with st.sidebar:
-    st.header("⚙️ Calibração")
+    st.header("⚙️ Configurações")
     
     # Fundamental para a lógica funcionar
     unidade_desenho = st.selectbox(
         "Unidade do Desenho CAD:", 
-        ["Milímetros (1u=1mm)", "Centímetros (1u=1cm)", "Metros (1u=1m)"], 
+        ["Milímetros (1u=1mm)", "Centímetros (1u=1cm)", "Metros (1u=1m)"],
         index=0,
-        help="Se a cota diz 500 e a distância no CAD é 500, use Milímetros."
+        help="Se o duto 500x300 mede 500 unidades no CAD, selecione Milímetros."
     )
     
-    st.info("Ajuste de Tolerância:")
-    tolerancia_largura = st.slider("Tolerância na Largura (%)", 1, 20, 10, help="Quanto o desenho pode variar da medida escrita? (Ex: Texto 500, Desenho 505).")
+    # Tolerância de desenho (desenhistas nunca são exatos)
+    tolerancia_desenho = st.number_input(
+        "Tolerância de Desenho (mm):", 
+        value=5.0, 
+        help="Se a linha tiver 502mm e o texto 500mm, considera igual."
+    )
+
+    raio_busca = st.number_input(
+        "Raio de Busca (mm):", 
+        value=1500, 
+        step=500,
+        help="Distância máxima do texto até a parede do duto."
+    )
     
     st.divider()
-    st.subheader("🛡️ Travas")
-    raio_busca = st.number_input("Raio de Busca (mm)", value=1500)
-    
-    st.subheader("📋 NBR 16401")
-    classe_pressao = st.selectbox("Classe Pressão", ["Classe A (Baixa)", "Classe B (Média)", "Classe C (Alta)"])
+    classe_pressao = st.selectbox("Classe de Pressão", ["Classe A (Baixa)", "Classe B (Média)", "Classe C (Alta)"])
     perda_corte = st.number_input("% Perda / Corte", value=10.0)
     tipo_isolamento = st.selectbox("Isolamento", ["Lã de Vidro", "Borracha Elast.", "Isopor", "Sem Isolamento"])
 
 # ============================================================================
-# 2. MOTOR GEOMÉTRICO AVANÇADO (Detecta Paredes Paralelas)
+# 2. FUNÇÕES GEOMÉTRICAS (MATEMÁTICA VETORIAL)
 # ============================================================================
-def get_midpoint(p1, p2):
-    return ((p1[0]+p2[0])/2, (p1[1]+p2[1])/2)
 
-def dist_sq(p1, p2):
-    return (p1[0]-p2[0])**2 + (p1[1]-p2[1])**2
+def pt_dist(p1, p2):
+    return math.hypot(p2[0]-p1[0], p2[1]-p1[1])
 
-def get_line_angle(start, end):
-    return math.degrees(math.atan2(end.y - start.y, end.x - start.x)) % 180
+def get_line_props(line):
+    """Retorna inicio, fim, angulo (graus) e comprimento"""
+    s, e = line.dxf.start, line.dxf.end
+    dx, dy = e.x - s.x, e.y - s.y
+    ang = math.degrees(math.atan2(dy, dx)) % 180 # Normaliza 0-180
+    return s, e, ang, math.hypot(dx, dy)
 
-def get_line_length(start, end):
-    return math.hypot(end.x - start.x, end.y - start.y)
+def distancia_ponto_reta(px, py, x1, y1, x2, y2):
+    # Distância mínima de um ponto a um segmento de reta
+    # (Simplificado para distância perpendicular infinita para checar afastamento)
+    # A*x + B*y + C = 0
+    # A = y1-y2, B = x2-x1, C = x1*y2 - x2*y1
+    a = y1 - y2
+    b = x2 - x1
+    c = x1 * y2 - x2 * y1
+    return abs(a*px + b*py + c) / math.hypot(a, b)
 
-def ler_geometria_inteligente(msp, coords_texto, dimensoes_texto, layers_duto, escala_unidade):
+def medir_duto_pela_largura(msp, texto_obj, largura_alvo, altura_alvo, layers_validos, unid_fator):
     """
-    Tenta encontrar linhas paralelas espaçadas pela largura ou altura do duto.
+    O CÉREBRO: Procura linhas paralelas espaçadas por 'largura_alvo' ou 'altura_alvo'.
     """
-    linhas_candidatas = []
+    # Converte alvos para unidade do CAD
+    # Se CAD é mm: 500 -> 500. Se CAD é cm: 500 -> 50.
+    w_cad = largura_alvo * unid_fator
+    h_cad = altura_alvo * unid_fator
+    tol = tolerancia_desenho * unid_fator
     
-    # 1. Coletar linhas próximas na layer certa
-    for e in msp.query('LINE'):
-        if e.dxf.layer in layers_duto:
-            mid = get_midpoint(e.dxf.start, e.dxf.end)
-            # Check de raio rápido
-            if abs(mid[0] - coords_texto[0]) > raio_busca: continue
-            if abs(mid[1] - coords_texto[1]) > raio_busca: continue
-            
-            d = math.hypot(mid[0]-coords_texto[0], mid[1]-coords_texto[1])
-            if d <= raio_busca:
-                linhas_candidatas.append(e)
-
-    if not linhas_candidatas: return 0.0, "Nenhuma linha perto"
-
-    # 2. Tentar casar Largura ou Altura com pares de linhas paralelas
-    # Converter dimensões do texto para unidade do CAD
-    dims_no_cad = [d / escala_unidade for d in dimensoes_texto] # ex: [500, 300]
+    # Coordenadas do texto
+    ins = texto_obj.dxf.insert
+    tx, ty = ins.x, ins.y
     
     melhor_comprimento = 0.0
-    match_encontrado = False
+    tipo_encontrado = "Não achou"
 
-    # Compara linha A com linha B
+    # Coleta linhas próximas (Bounding Box simples para otimizar)
+    linhas_candidatas = []
+    
+    # O ideal seria query espacial, mas vamos iterar filtrando por layer
+    query = f'LINE LWPOLYLINE'
+    
+    for e in msp.query(query):
+        # Filtro de Layer (Ignora arquitetura se layer for selecionado)
+        if layers_validos and e.dxf.layer not in layers_validos: continue
+        
+        # Pega geometria básica
+        if e.dxftype() == 'LINE':
+            s, end, ang, comp = get_line_props(e)
+            # Filtro de proximidade (Manhattan distance)
+            if abs(s.x - tx) > raio_busca and abs(end.x - tx) > raio_busca: continue
+            if abs(s.y - ty) > raio_busca and abs(end.y - ty) > raio_busca: continue
+            
+            linhas_candidatas.append({'obj': e, 'ang': ang, 'comp': comp, 's': s, 'e': end})
+            
+        elif e.dxftype() == 'LWPOLYLINE':
+            # Explode polilinha em segmentos virtuais
+            pts = e.get_points()
+            for i in range(len(pts)-1):
+                p1, p2 = pts[i], pts[i+1]
+                dx, dy = p2[0]-p1[0], p2[1]-p1[1]
+                ang = math.degrees(math.atan2(dy, dx)) % 180
+                comp = math.hypot(dx, dy)
+                
+                # Check proximidade
+                if abs(p1[0] - tx) > raio_busca and abs(p2[0] - tx) > raio_busca: continue
+                if abs(p1[1] - ty) > raio_busca and abs(p2[1] - ty) > raio_busca: continue
+                
+                linhas_candidatas.append({'obj': e, 'ang': ang, 'comp': comp, 's': p1, 'e': p2})
+
+    # Agora a mágica: Busca PARES de linhas paralelas
+    # Complexidade O(N^2) local -> aceitável para N < 100 candidatos
     for i in range(len(linhas_candidatas)):
         l1 = linhas_candidatas[i]
-        ang1 = get_line_angle(l1.dxf.start, l1.dxf.end)
-        len1 = get_line_length(l1.dxf.start, l1.dxf.end)
-        
         for j in range(i + 1, len(linhas_candidatas)):
             l2 = linhas_candidatas[j]
-            ang2 = get_line_angle(l2.dxf.start, l2.dxf.end)
-            len2 = get_line_length(l2.dxf.start, l2.dxf.end)
             
-            # Devem ser paralelas (angulo proximo)
-            if abs(ang1 - ang2) > 5: continue
+            # 1. São paralelas? (Diferença de ângulo < 5 graus)
+            diff_ang = abs(l1['ang'] - l2['ang'])
+            if diff_ang > 5 and diff_ang < 175: continue 
             
-            # Calcula distancia entre as linhas paralelas
-            # Pega mid de L1 e projeta em L2? Simplificação: Distancia entre centros
-            mid1 = get_midpoint(l1.dxf.start, l1.dxf.end)
-            mid2 = get_midpoint(l2.dxf.start, l2.dxf.end)
-            dist_entre_linhas = math.hypot(mid1[0]-mid2[0], mid1[1]-mid2[1])
+            # 2. Distância entre elas bate com a Largura ou Altura?
+            # Pega o ponto médio de L1 e mede distância até a reta L2
+            mid1_x = (l1['s'][0] + l1['e'][0])/2
+            mid1_y = (l1['s'][1] + l1['e'][1])/2
             
-            # Verifica se essa distancia bate com Largura ou Altura (com tolerância)
-            for d_target in dims_no_cad:
-                min_val = d_target * (1 - (tolerancia_largura/100))
-                max_val = d_target * (1 + (tolerancia_largura/100))
+            try:
+                dist_paredes = distancia_ponto_reta(mid1_x, mid1_y, l2['s'][0], l2['s'][1], l2['e'][0], l2['e'][1])
+            except: continue # Divisão por zero em pontos iguais
+            
+            match_w = abs(dist_paredes - w_cad) <= tol
+            match_h = abs(dist_paredes - h_cad) <= tol
+            
+            if match_w or match_h:
+                # BINGO! Achamos as paredes.
+                # O comprimento do duto é a média do comprimento das paredes
+                # (Ou o maximo, para ser conservador)
+                comp_medido = max(l1['comp'], l2['comp'])
                 
-                if min_val <= dist_entre_linhas <= max_val:
-                    # BINGO! Achamos as paredes do duto.
-                    # O comprimento do trecho é a média do comprimento das paredes
-                    comp_medio = (len1 + len2) / 2
-                    if comp_medio > melhor_comprimento:
-                        melhor_comprimento = comp_medio
-                        match_encontrado = True
-    
-    if match_encontrado:
-        return melhor_comprimento, "Geometria Casada (Paredes)"
-    
-    # 3. Fallback: Se não achou paredes paralelas, pega a linha mais longa próxima (Eixo)
-    # Assume que a linha mais longa perto do texto é o eixo ou uma parede isolada
-    max_len = 0
-    for l in linhas_candidatas:
-        c = get_line_length(l.dxf.start, l.dxf.end)
-        if c > max_len: max_len = c
-        
-    return max_len, "Linha Simples (Maior Prox.)"
+                # Vamos somar ao total (se tivermos sorte de pegar segmentos continuos, somamos)
+                # Neste algoritmo simplificado, pegamos o maior par encontrado.
+                if comp_medido > melhor_comprimento:
+                    melhor_comprimento = comp_medido
+                    dim_match = largura_alvo if match_w else altura_alvo
+                    tipo_encontrado = f"Paredes dist={int(dim_match)}"
 
+    return melhor_comprimento, tipo_encontrado
 
 # ============================================================================
-# 3. INTELIGÊNCIA ARTIFICIAL + GEOMETRIA
+# 3. PROCESSAMENTO
 # ============================================================================
-def processar_ia_com_geo(texto_limpo, dicionario_geo, msp, layers_duto, unid_cad):
-    if not api_key: return None
-
-    # Fatores
-    escala = 1.0
-    if "Milímetros" in unid_cad: escala = 0.001
-    elif "Centímetros" in unid_cad: escala = 0.01
-
-    prompt = f"""
-    Engenheiro HVAC. Analise texto DXF (separado por ' | ').
+def extrair_dutos_com_logica_largura(file_bytes, layers_duto_sel, unid_cad_sel):
+    temp_path = tempfile.NamedTemporaryFile(delete=False, suffix=".dxf").name
+    with open(temp_path, "wb") as f: f.write(file_bytes)
     
-    1. IGNORE VAZÕES entre parênteses "(1500)".
-    2. EXTRAIA DIMENSÕES "Largura x Altura" (ex: 500x400).
-    3. EXTRAIA EQUIPAMENTOS (Fancoil, Split, Grelha).
-
-    SAÍDA JSON:
-    {{
-        "dutos": [{{ "dimensao_original": "500x400", "largura_mm": 500, "altura_mm": 400 }}],
-        "equipamentos": [{{ "item": "Nome", "quantidade": 1 }}]
-    }}
-    """
-
     try:
-        response = openai.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": prompt},
-                {"role": "user", "content": f"Texto:\n{texto_limpo[:60000]}"} 
-            ],
-            temperature=0.0,
-            response_format={"type": "json_object"}
-        )
-        ai_data = json.loads(response.choices[0].message.content)
+        try: doc = ezdxf.readfile(temp_path)
+        except: doc, aud = recover.readfile(temp_path)
+        msp = doc.modelspace()
         
-        # PÓS-PROCESSAMENTO GEOMÉTRICO
-        lista_dutos = ai_data.get("dutos", [])
+        # Fator de conversão (Unidade Escolhida -> Unidade do CAD)
+        # Se CAD é mm, fator é 1. Se CAD é m, mas texto diz 500(mm), fator é 0.001
+        # Assumindo que o TEXTO é sempre mm (padrão HVAC)
+        fator_dim_para_cad = 1.0
+        if unid_cad_sel == "Metros (m)": fator_dim_para_cad = 0.001
+        elif unid_cad_sel == "Centímetros (cm)": fator_dim_para_cad = 0.1
         
-        for d in lista_dutos:
-            dim_str = d.get("dimensao_original", "")
-            w = d.get("largura_mm", 0)
-            h = d.get("altura_mm", 0)
+        dutos_finais = []
+        
+        # Regex para pegar dimensão (1.300x700 ou 500x300)
+        reg_dim = re.compile(r'(\d{1,3}(?:\.\d{3})*|\d+)\s*[xX]\s*(\d{1,3}(?:\.\d{3})*|\d+)')
+        
+        count_textos = 0
+        for e in msp.query('TEXT MTEXT'):
+            txt = e.dxf.text if e.dxftype() == 'TEXT' else e.text
+            if not txt: continue
+            t_clean = txt.strip().upper()
             
-            # Encontrar texto no desenho
-            # Procura texto exato ou aproximado
-            coords = None
-            key_ia = dim_str.replace('.','').replace(' ','').strip()
-            
-            for g in dicionario_geo['textos']:
-                key_cad = g['txt'].replace('.','').replace(' ','').strip()
-                if key_ia in key_cad:
-                    coords = g['pos']
-                    break
-            
-            if coords and w > 0:
-                # Chama a nova função de Paredes Paralelas
-                comp_cad, status = ler_geometria_inteligente(msp, coords, [w, h], layers_duto, 1.0 if "Milímetros" in unid_cad else (1000 if "Metros" in unid_cad else 10))
+            match = reg_dim.search(t_clean)
+            if match:
+                l_str = match.group(1).replace('.', '')
+                a_str = match.group(2).replace('.', '')
+                l_mm = float(l_str)
+                a_mm = float(a_str)
                 
-                # Converte para Metros
-                d['comprimento_m'] = comp_cad * escala
-                d['nota'] = status
-            else:
-                d['comprimento_m'] = 0
-                d['nota'] = "Texto não localizado"
-
-        return ai_data
-
+                if l_mm > 50 and a_mm > 50:
+                    # Aplica o "Wall Matcher"
+                    comp_cad, tipo_match = medir_duto_pela_largura(msp, e, l_mm, a_mm, layers_duto_sel, fator_dim_para_cad)
+                    
+                    # Converte comp do CAD para Metros
+                    comp_m = 0
+                    if unid_cad_sel == "Milímetros (mm)": comp_m = comp_cad / 1000
+                    elif unid_cad_sel == "Centímetros (cm)": comp_m = comp_cad / 100
+                    else: comp_m = comp_cad
+                    
+                    dutos_finais.append({
+                        "Largura": l_mm,
+                        "Altura": a_mm,
+                        "Comp. Geo (m)": comp_m,
+                        "Tag": t_clean,
+                        "Debug": tipo_match
+                    })
+                    count_textos += 1
+                    
+        return dutos_finais, f"Analisados {count_textos} textos de bitola."
+        
     except Exception as e:
-        return {"erro": str(e)}
+        return [], str(e)
+    finally:
+        if os.path.exists(temp_path): os.remove(temp_path)
 
 # ============================================================================
-# 4. INTERFACE E RESULTADOS
+# 4. INTERFACE
 # ============================================================================
 uploaded_dxf = st.file_uploader("📂 Carregar DXF", type=["dxf"])
 
-def listar_layers(doc):
-    return sorted(list(set([layer.dxf.name for layer in doc.layers])))
-
-# ... (Funções de Excel e Bitola NBR mantidas do anterior, omitidas aqui para brevidade mas devem estar no arquivo) ...
-def calcular_peso_chapa(bitola):
-    pesos = {26: 4.00, 24: 5.60, 22: 6.80, 20: 8.40, 18: 10.50}
-    return pesos.get(int(bitola), 6.0)
-
-def definir_bitola_nbr(maior_lado_mm, classe_txt):
-    if "Classe A" in classe_txt: return 24 if maior_lado_mm <= 750 else 22 if maior_lado_mm <= 1200 else 20
-    elif "Classe B" in classe_txt: return 24 if maior_lado_mm <= 600 else 22 if maior_lado_mm <= 1000 else 20
-    else: return 24 if maior_lado_mm <= 250 else 22 if maior_lado_mm <= 500 else 20
-
-def gerar_excel_final(df_dutos, df_equip, resumo):
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        if not df_dutos.empty: df_dutos.to_excel(writer, sheet_name='Dutos', index=False)
-        if not df_equip.empty: df_equip.to_excel(writer, sheet_name='Equipamentos', index=False)
-    output.seek(0)
-    return output
-
 if uploaded_dxf:
-    with st.spinner("Lendo arquivo..."):
-        # Salva temp
-        path_temp = tempfile.NamedTemporaryFile(delete=False, suffix=".dxf").name
-        uploaded_dxf.seek(0)
-        with open(path_temp, "wb") as f: f.write(uploaded_dxf.getbuffer())
+    # 1. Leitura inicial de Layers para o usuário escolher
+    # (Reusando função segura de leitura básica)
+    try:
+        content_str = uploaded_dxf.getvalue().decode("cp1252", errors='ignore')
+        doc_pre = ezdxf.read(io.StringIO(content_str))
+        layers_all = sorted(list(set([l.dxf.name for l in doc_pre.layers])))
+    except:
+        layers_all = []
+
+    if layers_all:
+        st.info("Para a medição geométrica funcionar, selecione o Layer onde estão as LINHAS dos dutos.")
+        sel_layer = st.multiselect("Layer(s) de Dutos:", layers_all)
         
-        try:
-            try: doc = ezdxf.readfile(path_temp)
-            except: doc, auditor = recover.readfile(path_temp)
-            
-            msp = doc.modelspace()
-            all_layers = listar_layers(doc)
-            
-            # SELETORES
-            c1, c2 = st.columns(2)
-            sel_layers_duto = c1.multiselect("Layer das LINHAS de Dutos:", all_layers)
-            sel_layers_equip = c2.multiselect("Layer de BLOCOS (Equip):", all_layers)
-            
-            # EXTRAÇÃO
-            raw_text = []
-            geo_dict = {'textos': []}
-            
-            for e in msp.query('TEXT MTEXT'):
-                t = str(e.dxf.text).strip()
-                if len(t) > 2 and "LAYER" not in t.upper():
-                    raw_text.append(t)
-                    geo_dict['textos'].append({'txt': t, 'pos': (e.dxf.insert.x, e.dxf.insert.y)})
-            
-            if sel_layers_equip:
-                for b in msp.query('INSERT'):
-                    if b.dxf.layer in sel_layers_equip:
-                         raw_text.append(b.dxf.name)
-
-            st.info(f"Textos lidos: {len(raw_text)}")
-
-            if st.button("🚀 Calcular (Medição por Paredes)", type="primary"):
-                if not sel_layers_duto or not api_key:
-                    st.error("Selecione Layers e API Key.")
-                else:
-                    with st.spinner("Procurando paredes paralelas conforme largura dos dutos..."):
-                        txt_join = " | ".join(raw_text)
-                        dados = processar_ia(txt_join, geo_dict, msp, raio_busca, sel_layers_duto, sel_layers_equip, unidade_desenho, 1.0)
+        if st.button("🚀 Calcular (Algoritmo Geométrico)", type="primary"):
+            if not sel_layer:
+                st.error("Selecione pelo menos um layer.")
+            else:
+                with st.spinner("Medindo paredes dos dutos..."):
+                    lista, log = extrair_dutos_com_logica_largura(uploaded_dxf, sel_layer, unidade_desenho)
+                    
+                    if lista:
+                        df = pd.DataFrame(lista)
                         
-                        if "erro" in dados: st.error(dados['erro'])
-                        else:
-                            st.session_state['res_geo'] = dados
-                            st.rerun()
+                        # --- AGRUPAMENTO E CÁLCULOS FINAIS ---
+                        # Agrupa por dimensão, somando o comprimento medido
+                        # E contando quantas peças (tags) achou
+                        df_g = df.groupby(['Largura', 'Altura']).agg(
+                            Qtd_Pecas=('Tag', 'count'),
+                            Comp_Medido=('Comp. Geo (m)', 'sum'),
+                            Exemplo_Debug=('Debug', 'first')
+                        ).reset_index()
+                        
+                        # Lógica Híbrida:
+                        # Se o comp. medido for muito baixo (geo falhou), usa estimativa por peça
+                        # Se o comp. medido for bom, usa ele.
+                        def definir_comp_final(row):
+                            # Se a média por peça for < 0.5m, provavelmente a geometria falhou
+                            media = row['Comp_Medido'] / row['Qtd_Pecas']
+                            if media < 0.3: 
+                                return row['Qtd_Pecas'] * 1.10 # Fallback (Estimado)
+                            return row['Comp_Medido'] # Geometria (Real)
 
-        except Exception as e: st.error(f"Erro: {e}")
-        finally: 
-            if os.path.exists(path_temp): os.remove(path_temp)
+                        df_g['Comp. Final (m)'] = df_g.apply(definir_comp_final, axis=1)
+                        df_g['Origem'] = df_g.apply(lambda x: "Geometria" if x['Comp_Medido']/x['Qtd_Pecas'] > 0.3 else "Estimado (Tag)", axis=1)
+                        
+                        # Cálculos de Área e Peso
+                        df_g['Perímetro'] = (2*df_g['Largura'] + 2*df_g['Altura'])/1000
+                        df_g['Área (m²)'] = df_g['Perímetro'] * df_g['Comp. Final (m)'] * (1 + perda_corte/100)
+                        
+                        # --- EXIBIÇÃO ---
+                        area_tot = df_g['Área (m²)'].sum()
+                        peso_tot = area_tot * 5.6
+                        
+                        c1, c2, c3 = st.columns(3)
+                        c1.metric("Peso Total", f"{peso_tot:,.0f} kg")
+                        c2.metric("Área Total", f"{area_tot:,.2f} m²")
+                        c3.metric("Itens Lidos", int(df_g['Qtd_Pecas'].sum()))
+                        
+                        tab1, tab2 = st.tabs(["Resumo", "Detalhamento Individual"])
+                        with tab1:
+                            st.dataframe(df_g, use_container_width=True)
+                        with tab2:
+                            st.dataframe(df) # Mostra item a item para debug
+                            
+                    else:
+                        st.warning("Nenhuma etiqueta de duto (ex: 500x300) encontrada.")
 
-if 'res_geo' in st.session_state:
-    d = st.session_state['res_geo']
-    t1, t2, t3, t4 = st.tabs(["🌪️ Dutos","💨 Terminais","⚙️ Equips","⚡ Elétrica"])
-    
-    with t1:
-        if d["dutos"]:
-            df = pd.DataFrame(d["dutos"])
-            # Filtra e converte
-            for c in ["largura_mm", "altura_mm", "comprimento_m"]: 
-                 if c in df.columns: df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
-            
-            # TABELA EDITÁVEL
-            st.info("Valide os comprimentos medidos pelo robô.")
-            df_ed = st.data_editor(df, num_rows="dynamic")
-            
-            # CÁLCULOS FINAIS
-            df_ed["Perímetro"] = (2*df_ed["largura_mm"] + 2*df_ed["altura_mm"])/1000
-            df_ed["Área (m²)"] = df_ed["Perímetro"] * df_ed["comprimento_m"]
-            
-            # Bitolas
-            df_ed["Bitola"] = df_ed["largura_mm"].apply(lambda x: definir_bitola_nbr(x, classe_pressao))
-            df_ed["Peso (kg)"] = df_ed.apply(lambda r: r["Área (m²)"] * calcular_peso_chapa(r["Bitola"]), axis=1)
-            
-            fator = 1 + (perda_corte/100)
-            tot_area = (df_ed["Área (m²)"] * fator).sum()
-            tot_peso = (df_ed["Peso (kg)"] * fator).sum()
-            
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Área Total", f"{tot_area:,.2f} m²")
-            c2.metric("Peso Total", f"{tot_peso:,.0f} kg")
-            c3.metric("Isolamento", f"{tot_area:,.2f} m²" if tipo_isolamento != "Sem Isolamento" else "-")
-            
-            # Excel
-            xlsx = gerar_excel_final(df_ed, pd.DataFrame(d.get("equipamentos", [])), {"Peso": tot_peso})
-            st.download_button("📥 Baixar Excel", xlsx, "Levantamento_V21.xlsx")
-            
-    with t3:
-        if d["equipamentos"]: st.dataframe(pd.DataFrame(d["equipamentos"]))
+    else:
+        st.error("Erro ao ler layers do arquivo.")
