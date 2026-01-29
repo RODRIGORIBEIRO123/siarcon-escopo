@@ -14,12 +14,12 @@ if 'logado' not in st.session_state or not st.session_state['logado']:
     st.warning("🔒 Acesso negado. Faça login no Dashboard.")
     st.stop()
 
-st.set_page_config(page_title="Leitor DXF (Profundo)", page_icon="📐", layout="wide")
+st.set_page_config(page_title="Leitor DXF (Corrigido)", page_icon="📐", layout="wide")
 
-st.title("📐 Leitor Técnico DXF - Varredura Profunda")
+st.title("📐 Leitor Técnico DXF - Correção Geométrica")
 st.markdown("""
-**Correção Aplicada:** O sistema agora lê **Blocos e Atributos** (comuns em tags de projeto), além de Textos simples.
-A medição geométrica continua testando automaticamente a escala (m/cm/mm).
+**Correção Aplicada:** Tratamento de Polilinhas complexas (LWPOLYLINE) que causavam erro de descompactação.
+Agora o sistema lê apenas as coordenadas X/Y e ignora larguras e curvaturas.
 """)
 
 # ============================================================================
@@ -39,7 +39,7 @@ with st.sidebar:
     tipo_isolamento = st.selectbox("Isolamento", ["Lã de Vidro", "Borracha Elast.", "Isopor", "Sem Isolamento"])
 
 # ============================================================================
-# 2. FUNÇÕES DE EXTRAÇÃO (VARREDURA PROFUNDA)
+# 2. FUNÇÕES DE EXTRAÇÃO
 # ============================================================================
 def carregar_dxf_seguro(uploaded_file):
     temp_path = None
@@ -58,67 +58,53 @@ def limpar_temp(path):
         except: pass
 
 def extrair_todos_textos(msp):
-    """
-    Extrai textos de: TEXT, MTEXT e INSERT (Blocos com Atributos).
-    Retorna lista de dicionários: {'texto': str, 'obj': entity}
-    """
+    """Lê TEXT, MTEXT e ATRIBUTOS dentro de Blocos."""
     lista_textos = []
     
-    # 1. Textos Normais
+    # 1. Textos Soltos
     for e in msp.query('TEXT MTEXT'):
         txt = e.dxf.text if e.dxftype() == 'TEXT' else e.text
-        if txt:
-            lista_textos.append({'texto': txt, 'obj': e})
+        if txt: lista_textos.append({'texto': txt, 'obj': e})
             
-    # 2. Atributos dentro de Blocos (INSERT)
+    # 2. Atributos em Blocos
     for e in msp.query('INSERT'):
         if e.attribs:
             for attrib in e.attribs:
                 txt = attrib.dxf.text
-                if txt:
-                    lista_textos.append({'texto': txt, 'obj': attrib})
+                if txt: lista_textos.append({'texto': txt, 'obj': attrib})
                     
     return lista_textos
 
 def limpar_e_parsear(texto_raw):
-    """
-    Limpa formatação CAD e tenta extrair 500x300 ou 1.300x700.
-    """
-    # Limpa códigos MTEXT
+    """Limpa string e extrai LARGURA x ALTURA."""
+    # Remove formatação MTEXT
     t = re.sub(r'\\[ACFHQTW].*?;', '', texto_raw).replace('{', '').replace('}', '').strip().upper()
     
-    # Regex robusta para 1.300x700 ou 500x300
-    # Captura grupos de digitos e pontos
+    # Regex para pegar medidas (1.300x700 ou 500x300)
     match = re.search(r'([\d\.]+)\s*[xX*]\s*([\d\.]+)', t)
     
     if match:
         try:
-            # Remove ponto de milhar APENAS se fizer sentido
-            # Ex: 1.300 -> 1300.  Mas 1.5 (metro) -> 1.5
             l_str = match.group(1)
             a_str = match.group(2)
             
-            # Função auxiliar para converter string numérica
-            def to_float(s):
-                if s.count('.') == 1 and len(s.split('.')[1]) == 3: # Ex: 1.300
-                    return float(s.replace('.', ''))
-                return float(s)
-
-            # Para HVAC, geralmente medidas são inteiras em mm (500, 1300)
-            # Vamos assumir remoção de ponto se resultar em valor > 50
-            l_val = float(l_str.replace('.', ''))
-            a_val = float(a_str.replace('.', ''))
+            # Remove ponto se for milhar (ex: 1.300 -> 1300)
+            # Regra: Se tiver ponto e result > 50mm, remove ponto.
+            l_val = float(l_str.replace('.', '')) if '.' in l_str and len(l_str) > 4 else float(l_str)
+            a_val = float(a_str.replace('.', '')) if '.' in a_str and len(a_str) > 4 else float(a_str)
             
+            # Validação HVAC (Dutos > 50mm)
             if l_val > 50 and a_val > 50:
-                return l_val, a_val, t # Retorna valores limpos e o texto original limpo
+                return l_val, a_val, t
         except: pass
         
     return None, None, t
 
 # ============================================================================
-# 3. MOTOR GEOMÉTRICO (AUTO-SCALE)
+# 3. MOTOR GEOMÉTRICO (CORRIGIDO)
 # ============================================================================
 def get_segmentos(e):
+    """Quebra linhas e polilinhas em segmentos simples."""
     segs = []
     try:
         if e.dxftype() == 'LINE':
@@ -128,10 +114,15 @@ def get_segmentos(e):
             if l > 0:
                 ang = math.degrees(math.atan2(p2[1]-p1[1], p2[0]-p1[0])) % 180
                 segs.append({'p1':p1, 'p2':p2, 'len':l, 'ang':ang})
+                
         elif e.dxftype() == 'LWPOLYLINE':
             pts = e.get_points()
             for i in range(len(pts)-1):
-                p1, p2 = pts[i], pts[i+1]
+                # --- CORREÇÃO AQUI ---
+                # Pega apenas os 2 primeiros valores (x, y) e ignora o resto
+                p1 = pts[i][:2]
+                p2 = pts[i+1][:2]
+                
                 dx, dy = p2[0]-p1[0], p2[1]-p1[1]
                 l = math.hypot(dx, dy)
                 if l > 0:
@@ -141,27 +132,39 @@ def get_segmentos(e):
     return segs
 
 def dist_paralela(s1, s2):
-    mx, my = (s1['p1'][0]+s1['p2'][0])/2, (s1['p1'][1]+s1['p2'][1])/2
-    x1, y1 = s2['p1']; x2, y2 = s2['p2']
-    A = y1-y2; B = x2-x1; C = x1*y2 - x2*y1
-    denom = math.hypot(A, B)
-    if denom == 0: return float('inf')
-    return abs(A*mx + B*my + C) / denom
+    """Calcula distância entre segmentos paralelos."""
+    try:
+        # Desempacota explicitamente apenas X,Y
+        mx, my = (s1['p1'][0]+s1['p2'][0])/2, (s1['p1'][1]+s1['p2'][1])/2
+        x1, y1 = s2['p1'][0], s2['p1'][1]
+        x2, y2 = s2['p2'][0], s2['p2'][1]
+        
+        A = y1 - y2
+        B = x2 - x1
+        C = x1*y2 - x2*y1
+        
+        denom = math.hypot(A, B)
+        if denom == 0: return float('inf')
+        return abs(A*mx + B*my + C) / denom
+    except: return float('inf')
 
 def medir_duto(msp, texto_obj, w_target, h_target, layers, raio):
+    """Tenta medir o comprimento pelas paredes paralelas."""
     ins = texto_obj.dxf.insert
     tx, ty = ins.x, ins.y
     
     # Coleta Candidatos
     candidatos = []
-    # Itera sobre geometrias LINE e LWPOLYLINE
     for e in msp.query('LINE LWPOLYLINE'):
         if layers and e.dxf.layer not in layers: continue
         
-        # Check Bounding Box
         try:
             if e.dxftype()=='LINE': px, py = e.dxf.start.x, e.dxf.start.y
-            else: px, py = e.get_points()[0][0], e.get_points()[0][1]
+            else: 
+                # Pega ponto inicial da polilinha com segurança
+                pts = e.get_points()
+                px, py = pts[0][0], pts[0][1]
+                
             if abs(px-tx) > raio or abs(py-ty) > raio: continue
             candidatos.extend(get_segmentos(e))
         except: pass
@@ -178,7 +181,7 @@ def medir_duto(msp, texto_obj, w_target, h_target, layers, raio):
         for j in range(i+1, len(candidatos)):
             s2 = candidatos[j]
             
-            # Paralelismo
+            # Paralelismo (5 graus tol)
             if abs(s1['ang'] - s2['ang']) > 5 and abs(s1['ang'] - s2['ang']) < 175: continue
             
             dist = dist_paralela(s1, s2)
@@ -195,8 +198,8 @@ def medir_duto(msp, texto_obj, w_target, h_target, layers, raio):
                     
                     # Converte para metros
                     f_metro = 1.0
-                    if esc == 1.0: f_metro = 0.001 # mm
-                    elif esc == 0.1: f_metro = 0.01 # cm
+                    if esc == 1.0: f_metro = 0.001 # mm -> m
+                    elif esc == 0.1: f_metro = 0.01 # cm -> m
                     
                     comp_real = comp_cad * f_metro
                     if comp_real > melhor_comp:
@@ -206,7 +209,7 @@ def medir_duto(msp, texto_obj, w_target, h_target, layers, raio):
     return melhor_comp, match_info
 
 # ============================================================================
-# 4. PROCESSAMENTO
+# 4. PROCESSAMENTO E IA
 # ============================================================================
 def processar(doc, layers_duto, raio, padrao):
     msp = doc.modelspace()
@@ -214,7 +217,6 @@ def processar(doc, layers_duto, raio, padrao):
     restos = []
     logs = []
     
-    # Usa a nova função de varredura profunda
     todos_textos = extrair_todos_textos(msp)
     
     for item in todos_textos:
@@ -224,7 +226,6 @@ def processar(doc, layers_duto, raio, padrao):
         largura, altura, t_limpo = limpar_e_parsear(txt_raw)
         
         if largura:
-            # Tenta Medir
             comp_m, status = medir_duto(msp, e, largura, altura, layers_duto, raio)
             
             val_final = comp_m if comp_m > 0 else padrao
@@ -244,12 +245,8 @@ def processar(doc, layers_duto, raio, padrao):
                 
     return dutos, restos, logs
 
-# ============================================================================
-# 5. IA
-# ============================================================================
 def ia_class(lista):
     if not lista: return {}
-    # Uso seguro da chave
     api_key = st.secrets.get("openai", {}).get("api_key")
     if not api_key: return {}
     
@@ -279,7 +276,7 @@ def ia_class(lista):
     except: return {}
 
 # ============================================================================
-# 6. UI
+# 5. UI
 # ============================================================================
 uploaded_dxf = st.file_uploader("📂 Carregar DXF", type=["dxf"])
 
@@ -297,7 +294,7 @@ if uploaded_dxf:
         sel_layers = st.multiselect("Layer Paredes:", layers, default=[layers[def_idx[0]]] if def_idx else None)
         
         if st.button("🚀 Processar", type="primary"):
-            with st.spinner("Varrendo Blocos, Textos e Geometria..."):
+            with st.spinner("Analisando Geometria Complexa..."):
                 dutos, restos, logs = processar(doc, sel_layers, raio_busca, comp_padrao)
                 
                 st.session_state['res_dutos'] = dutos
@@ -308,7 +305,7 @@ if uploaded_dxf:
         limpar_temp(temp_path)
 
 # ============================================================================
-# 7. EXIBIÇÃO
+# 6. RESULTADOS
 # ============================================================================
 if 'res_dutos' in st.session_state:
     dutos = st.session_state['res_dutos']
