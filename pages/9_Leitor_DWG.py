@@ -6,6 +6,7 @@ import tempfile
 import os
 import re
 import math
+from openai import OpenAI
 from collections import Counter
 
 # --- 🔒 SEGURANÇA ---
@@ -13,203 +14,256 @@ if 'logado' not in st.session_state or not st.session_state['logado']:
     st.warning("🔒 Acesso negado. Faça login no Dashboard.")
     st.stop()
 
-st.set_page_config(page_title="Leitor DXF (Contagem)", page_icon="🔢", layout="wide")
+st.set_page_config(page_title="Leitor DXF (Layout Oficial)", page_icon="📐", layout="wide")
 
-st.title("🔢 Leitor Estatístico de Dutos")
+st.title("📐 Leitor Técnico DXF")
 st.markdown("""
-**Abordagem Infalível:** Este método ignora as linhas desenhadas (que costumam dar erro) e foca 100% na leitura das **Etiquetas de Texto**.
-O sistema conta quantas peças de cada medida existem e multiplica pelo comprimento padrão de peça (ex: 1.10m).
+Esta ferramenta extrai quantitativos baseados na leitura das **Etiquetas de Texto** do projeto.
+A inteligência artificial classifica os itens nas abas corretas abaixo.
 """)
 
 # ============================================================================
-# 1. FUNÇÕES DE EXTRAÇÃO DE TEXTO (BLINDADAS)
+# 1. CONFIGURAÇÕES (MENU LATERAL)
 # ============================================================================
+with st.sidebar:
+    st.header("⚙️ Parâmetros de Cálculo")
+    
+    st.info("ℹ️ Cálculo de Dutos: Baseado na contagem de etiquetas x Comprimento Padrão.")
+    comp_padrao = st.number_input("Comp. Padrão da Peça (m)", value=1.10, step=0.10, help="Comprimento médio de um duto reto (ex: 1.10m para dobra de chapa).")
+    
+    st.divider()
+    classe_pressao = st.selectbox("Classe de Pressão", ["Classe A (Baixa)", "Classe B (Média)", "Classe C (Alta)"])
+    perda_corte = st.number_input("% Perda / Corte", value=10.0)
+    tipo_isolamento = st.selectbox("Isolamento", ["Lã de Vidro", "Borracha Elast.", "Isopor", "Sem Isolamento"])
 
-def limpar_texto_dxf(texto):
-    """Remove códigos de formatação do AutoCAD (ex: \\A1;500)"""
-    if not texto: return ""
-    # Remove códigos de controle como \A1; \C7; etc
-    t = re.sub(r'\\[ACFHQTW].*?;', '', texto)
-    # Remove chaves {}
-    t = t.replace('{', '').replace('}', '')
-    return t.strip().upper()
-
-def identificar_medida(texto):
+# ============================================================================
+# 2. MOTOR DE LEITURA (BLINDADO CONTRA ERROS BINÁRIOS)
+# ============================================================================
+def ler_textos_dxf_seguro(uploaded_file):
     """
-    Analisa se o texto é uma medida de duto.
-    Retorna: (Largura, Altura, Tipo) ou (0,0,None)
+    Usa arquivo temporário e 'recover' para ler qualquer DXF sem travar.
+    Retorna apenas a lista de textos limpos e contados.
     """
-    t = limpar_texto_dxf(texto)
-    
-    # 1. Tenta Padrão Retangular (500x300, 500 X 300, 500*300)
-    # Regex flexível para pegar números com x no meio
-    match_ret = re.search(r'^(\d+)\s*[xX*]\s*(\d+)$', t)
-    if match_ret:
-        l = float(match_ret.group(1))
-        h = float(match_ret.group(2))
-        return l, h, "Retangular"
-    
-    # 2. Tenta Padrão Circular (ø200, 200ø, diam 200)
-    # %%C é o código para símbolo de diâmetro no CAD
-    match_circ = re.search(r'([øØ]|%%C|DIAM\.?)\s*(\d+)', t)
-    match_circ_inv = re.search(r'(\d+)\s*([øØ]|%%C|DIAM\.?)', t)
-    
-    diam = 0
-    if match_circ: diam = float(match_circ.group(2))
-    elif match_circ_inv: diam = float(match_circ_inv.group(1))
-    
-    if diam > 0:
-        return diam, diam, "Circular"
-        
-    return 0, 0, None
-
-def ler_textos_dxf(uploaded_file):
-    """
-    Lê o DXF e extrai APENAS textos, ignorando geometria corrompida.
-    """
-    textos_validos = []
-    erros = []
+    textos_encontrados = []
     temp_path = None
     
     try:
-        # Salva temporário para evitar erro de buffer/rstrip
+        # Salva temporário (Evita erro de buffer/rstrip)
         with tempfile.NamedTemporaryFile(delete=False, suffix=".dxf") as tmp_file:
             tmp_file.write(uploaded_file.getvalue())
             temp_path = tmp_file.name
             
         # Usa recover para abrir até arquivo corrompido
         doc, auditor = recover.readfile(temp_path)
-        
-        if auditor.has_errors:
-            erros.append(f"O arquivo continha erros que foram corrigidos automaticamente.")
-
         msp = doc.modelspace()
         
-        # Varre apenas entidades de TEXTO
+        # Extrai Textos
         for e in msp.query('TEXT MTEXT'):
-            raw_text = e.dxf.text if e.dxftype() == 'TEXT' else e.text
-            
-            l, h, tipo = identificar_medida(raw_text)
-            if tipo:
-                textos_validos.append({
-                    'Texto Original': raw_text,
-                    'Largura': l,
-                    'Altura': h,
-                    'Tipo': tipo
-                })
+            raw = e.dxf.text if e.dxftype() == 'TEXT' else e.text
+            # Limpeza básica de códigos do AutoCAD
+            clean = re.sub(r'\\[ACFHQTW].*?;', '', raw).replace('{', '').replace('}', '').strip()
+            if len(clean) > 1 and len(clean) < 50: # Filtra lixo
+                textos_encontrados.append(clean)
                 
     except Exception as e:
-        erros.append(f"Erro Fatal: {str(e)}")
+        st.error(f"Erro na leitura do arquivo: {e}")
+        return None
     finally:
         if temp_path and os.path.exists(temp_path):
             try: os.remove(temp_path)
             except: pass
             
-    return textos_validos, erros
+    # Retorna contagem (ex: {'500x300': 10, 'FC-01': 2})
+    return Counter(textos_encontrados)
 
 # ============================================================================
-# 2. INTERFACE E CÁLCULOS
+# 3. INTELIGÊNCIA ARTIFICIAL (CLASSIFICAÇÃO)
 # ============================================================================
-
-with st.sidebar:
-    st.header("⚙️ Parâmetros de Obra")
+def classificar_com_ia(dicionario_contagem):
+    if "openai" not in st.secrets:
+        st.error("🚨 Chave OpenAI não configurada."); return None
     
-    st.info("Como não medimos as linhas, assumimos um comprimento padrão por etiqueta encontrada.")
-    comp_padrao_peca = st.number_input("Comp. Padrão da Peça (m)", value=1.10, step=0.05, help="Geralmente dutos retos têm 1.10m ou 1.20m.")
+    # Prepara o resumo para a IA (Top 400 itens mais frequentes)
+    texto_prompt = ""
+    for k, v in dicionario_contagem.most_common(400):
+        texto_prompt += f"TXT: '{k}' | QTD: {v}\n"
     
-    st.divider()
-    classe_pressao = st.selectbox("Classe Pressão", ["Classe A (Baixa)", "Classe B (Média)", "Classe C (Alta)"])
-    perda = st.number_input("% Perda / Corte", value=10.0)
-    isolamento = st.selectbox("Isolamento", ["Lã de Vidro", "Borracha Elast.", "Isopor", "Nenhum"])
+    client = OpenAI(api_key=st.secrets["openai"]["api_key"])
+    
+    prompt = """
+    Você é um Engenheiro de Orçamentos HVAC. 
+    Analise a lista de textos (TXT) e quantidades (QTD) extraídas de um DXF.
+    
+    SEU OBJETIVO: Separar em 4 categorias no formato CSV (ponto e vírgula).
+    
+    REGRAS:
+    1. DUTOS: Procure medidas (AxL ou ø). Ex: 500x300, 30x20, 200ø.
+    2. TERMINAIS: Grelhas, Difusores, Venezianas, Dampers.
+    3. EQUIPAMENTOS: Fancoil, Split, VRF, K7 (Extraia TR/BTU/HP se houver).
+    4. ELETRICA: Quadros, Painéis, Tomadas.
 
-# --- UPLOAD ---
-uploaded_dxf = st.file_uploader("📂 Carregar Projeto DXF", type=["dxf"])
+    SAÍDA OBRIGATÓRIA:
+    ---DUTOS---
+    Largura;Altura;Tipo;Qtd
+    500;300;Rect;10
+    200;200;Circ;5
+    
+    ---TERMINAIS---
+    Item;Qtd
+    Grelha Retorno 600x600;8
+    
+    ---EQUIPAMENTOS---
+    Tag;Tipo;Detalhes;Qtd
+    FC-01;Fancoil;5TR;2
+    
+    ---ELETRICA---
+    Tag;Desc;Qtd
+    Q-01;Quadro Força;1
+    """
+    
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": texto_prompt}
+            ],
+            temperature=0.0
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        st.error(f"Erro na IA: {e}")
+        return None
+
+def processar_resposta_ia(resposta):
+    blocos = {"DUTOS": [], "TERMINAIS": [], "EQUIPAMENTOS": [], "ELETRICA": []}
+    atual = None
+    if not resposta: return blocos
+    
+    for linha in resposta.split('\n'):
+        linha = linha.strip()
+        if "---DUTOS" in linha: atual = "DUTOS"; continue
+        if "---TERM" in linha: atual = "TERMINAIS"; continue
+        if "---EQUI" in linha: atual = "EQUIPAMENTOS"; continue
+        if "---ELET" in linha: atual = "ELETRICA"; continue
+        
+        if atual and ";" in linha and "Largura" not in linha and "Tag" not in linha:
+            blocos[atual].append(linha.split(';'))
+    return blocos
+
+# ============================================================================
+# 4. INTERFACE PRINCIPAL
+# ============================================================================
+uploaded_dxf = st.file_uploader("📂 Carregar Arquivo .DXF", type=["dxf"])
 
 if uploaded_dxf:
-    with st.spinner("Contando etiquetas de duto..."):
-        lista_itens, lista_erros = ler_textos_dxf(uploaded_dxf)
+    with st.spinner("Lendo arquivo (Modo Seguro)..."):
+        contagem = ler_textos_dxf_seguro(uploaded_dxf)
         
-    if lista_itens:
-        if lista_erros:
-            with st.expander("⚠️ Avisos de Leitura (Clique para ver)"):
-                for err in lista_erros: st.write(err)
+    if contagem:
+        st.success(f"✅ Arquivo Lido! {len(contagem)} textos únicos identificados.")
         
-        # Consolidação (Agrupar por medida igual)
-        df_raw = pd.DataFrame(lista_itens)
-        
-        # Cria uma coluna de identificação única (ex: "500x300 (Retangular)")
-        df_raw['Bitola'] = df_raw.apply(lambda x: f"{int(x['Largura'])}x{int(x['Altura'])}" if x['Tipo'] == 'Retangular' else f"ø{int(x['Largura'])}", axis=1)
-        
-        # Contagem
-        df_agrupado = df_raw.groupby(['Bitola', 'Largura', 'Altura', 'Tipo']).size().reset_index(name='Qtd Peças')
-        
-        st.success(f"Sucesso! Encontramos {len(df_raw)} etiquetas de medida no desenho.")
-        
-        # --- TABELA INTERATIVA (O CORAÇÃO DA SOLUÇÃO) ---
-        st.markdown("### 📋 Ajuste de Quantitativos")
-        st.caption("Confira as quantidades. O 'Comp. Unitário' pode ser editado se houver peças especiais.")
-        
-        # Adiciona coluna de comprimento unitário (Padrão vs Editável)
-        df_agrupado['Comp. Unit (m)'] = comp_padrao_peca
-        
-        # Configura editor
-        df_editado = st.data_editor(
-            df_agrupado,
-            column_config={
-                "Bitola": st.column_config.TextColumn("Bitola", disabled=True),
-                "Qtd Peças": st.column_config.NumberColumn("Qtd (Tags)", help="Quantas vezes o texto aparece no desenho"),
-                "Comp. Unit (m)": st.column_config.NumberColumn("Comp. Peça (m)", min_value=0.1, max_value=6.0, step=0.1),
-            },
-            hide_index=True,
-            use_container_width=True,
-            num_rows="dynamic"
-        )
-        
-        st.divider()
-        
-        # --- CÁLCULOS FINAIS ---
-        if not df_editado.empty:
-            try:
-                # 1. Calcula Perímetro
-                # Retangular: (2L + 2A) / 1000
-                # Circular: (Pi * D) / 1000
-                def calc_perimetro(row):
-                    if row['Tipo'] == 'Circular':
-                        return (math.pi * row['Largura']) / 1000
-                    else:
-                        return (2 * row['Largura'] + 2 * row['Altura']) / 1000
+        if st.button("🚀 Classificar e Calcular", type="primary"):
+            with st.spinner("A IA está organizando o orçamento..."):
+                res_ia = classificar_com_ia(contagem)
+                if res_ia:
+                    st.session_state['dados_orcamento'] = processar_resposta_ia(res_ia)
+                    st.rerun()
+
+# ============================================================================
+# 5. RESULTADOS (LAYOUT APROVADO)
+# ============================================================================
+if 'dados_orcamento' in st.session_state:
+    d = st.session_state['dados_orcamento']
+    
+    # Abas conforme solicitado
+    tab_dutos, tab_term, tab_equip, tab_elet = st.tabs([
+        "🌪️ Rede de Dutos", 
+        "💨 Terminais de Ar", 
+        "⚙️ Equipamentos", 
+        "⚡ Elétrica"
+    ])
+    
+    # --- ABA 1: DUTOS (COM CÁLCULOS E KPIS) ---
+    with tab_dutos:
+        if d["DUTOS"]:
+            # Cria DataFrame
+            df = pd.DataFrame(d["DUTOS"], columns=["Largura", "Altura", "Tipo", "Qtd Peças"])
+            
+            # Tratamento de erro numérico (Vital para não quebrar)
+            for col in ["Largura", "Altura", "Qtd Peças"]:
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+            
+            # Coluna de Comprimento Padrão (Editável)
+            df["Comp. Padrão (m)"] = comp_padrao
+            
+            # Tabela Editável
+            st.markdown("### 📋 Quantitativo de Dutos")
+            df_edit = st.data_editor(
+                df, 
+                num_rows="dynamic", 
+                use_container_width=True,
+                key="editor_dutos",
+                column_config={
+                    "Largura": st.column_config.NumberColumn("Largura (mm)", format="%d"),
+                    "Altura": st.column_config.NumberColumn("Altura (mm)", format="%d"),
+                    "Qtd Peças": st.column_config.NumberColumn("Qtd (Tags)"),
+                    "Comp. Padrão (m)": st.column_config.NumberColumn("Comp. Unit (m)", step=0.1)
+                }
+            )
+            
+            st.divider()
+            
+            # --- CÁLCULOS ---
+            # Perímetro (m)
+            df_calc = df_edit.copy()
+            # Lógica para Retangular vs Circular
+            # Se for circular, considera Largura como Diâmetro
+            df_calc['Perímetro (m)'] = df_calc.apply(
+                lambda row: (math.pi * row['Largura'] / 1000) if 'Circ' in str(row['Tipo']) 
+                else (2 * row['Largura'] + 2 * row['Altura']) / 1000, axis=1
+            )
+            
+            # Área (m²) = Perímetro * (Qtd * Comp. Padrão)
+            df_calc['Comp. Total (m)'] = df_calc['Qtd Peças'] * df_calc['Comp. Padrão (m)']
+            df_calc['Área (m²)'] = df_calc['Perímetro (m)'] * df_calc['Comp. Total (m)']
+            
+            # Totais
+            fator_perda = 1 + (perda_corte / 100)
+            area_total = (df_calc['Área (m²)'] * fator_perda).sum()
+            peso_total = area_total * 5.6 # Estimativa kg/m2
+            
+            # --- VISUAL DOS KPIs (No topo da aba, como pedido) ---
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Área Total (c/ Perda)", f"{area_total:,.2f} m²")
+            c2.metric("Peso Estimado", f"{peso_total:,.0f} kg")
+            val_iso = f"{area_total:,.2f} m²" if tipo_isolamento != "Sem Isolamento" else "-"
+            c3.metric("Isolamento", val_iso, delta=tipo_isolamento)
+            
+            # Exibe memória de cálculo detalhada se quiser
+            with st.expander("Ver Memória de Cálculo Detalhada"):
+                st.dataframe(df_calc[['Largura', 'Altura', 'Qtd Peças', 'Comp. Total (m)', 'Área (m²)']])
                 
-                df_calc = df_editado.copy()
-                df_calc['Perímetro (m)'] = df_calc.apply(calc_perimetro, axis=1)
-                
-                # 2. Calcula Comprimento Total da Rede
-                df_calc['Rede Total (m)'] = df_calc['Qtd Peças'] * df_calc['Comp. Unit (m)']
-                
-                # 3. Calcula Área
-                df_calc['Área Física (m²)'] = df_calc['Perímetro (m)'] * df_calc['Rede Total (m)']
-                
-                # 4. Totais
-                fator_perda = 1 + (perda/100)
-                area_total = (df_calc['Área Física (m²)'] * fator_perda).sum()
-                peso_total = area_total * 5.6 # Estimativa kg/m2
-                
-                # --- EXIBIÇÃO DE RESULTADOS ---
-                st.subheader("📊 Resultados Finais")
-                
-                c1, c2, c3, c4 = st.columns(4)
-                c1.metric("Área Total (c/ Perda)", f"{area_total:,.2f} m²", delta=f"{perda}% Perda")
-                c2.metric("Peso Estimado", f"{peso_total:,.0f} kg", help="Considerando média de 5.6 kg/m²")
-                c3.metric("Isolamento", f"{area_total:,.2f} m²" if isolamento != "Nenhum" else "-", delta=isolamento)
-                c4.metric("Peças Totais", f"{df_calc['Qtd Peças'].sum()} un")
-                
-                with st.expander("Ver Memória de Cálculo Detalhada"):
-                    st.dataframe(
-                        df_calc[['Bitola', 'Qtd Peças', 'Rede Total (m)', 'Área Física (m²)']],
-                        use_container_width=True
-                    )
-            except Exception as e:
-                st.error(f"Erro no cálculo: {e}")
-        
-    else:
-        st.warning("Não foram encontradas etiquetas de medida (ex: 500x300 ou ø200) no arquivo.")
-        st.info("Dica: Verifique se o arquivo DXF contém textos editáveis e não blocos explodidos em linhas.")
+        else:
+            st.info("Nenhum duto identificado automaticamente.")
+
+    # --- ABA 2: TERMINAIS ---
+    with tab_term:
+        if d["TERMINAIS"]:
+            df_t = pd.DataFrame(d["TERMINAIS"], columns=["Item", "Qtd"])
+            st.data_editor(df_t, num_rows="dynamic", use_container_width=True)
+        else: st.warning("Vazio")
+
+    # --- ABA 3: EQUIPAMENTOS ---
+    with tab_equip:
+        if d["EQUIPAMENTOS"]:
+            df_e = pd.DataFrame(d["EQUIPAMENTOS"], columns=["Tag", "Tipo", "Detalhes", "Qtd"])
+            st.data_editor(df_e, num_rows="dynamic", use_container_width=True)
+        else: st.warning("Vazio")
+
+    # --- ABA 4: ELÉTRICA ---
+    with tab_elet:
+        if d["ELETRICA"]:
+            df_el = pd.DataFrame(d["ELETRICA"], columns=["Tag", "Descrição", "Qtd"])
+            st.data_editor(df_el, num_rows="dynamic", use_container_width=True)
+        else: st.warning("Vazio")
