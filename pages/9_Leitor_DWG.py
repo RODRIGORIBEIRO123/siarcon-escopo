@@ -46,11 +46,7 @@ def limpar_valor_dimensao(valor_str):
     try:
         # Remove espaços
         v = valor_str.strip()
-        # Se tiver ponto e for maior que 3 digitos (ex: 1.300), remove o ponto
-        # Se for decimal real (ex: 1.5), mantem. 
-        # Lógica HVAC: Dutos geralmente são > 100mm. Se for < 10, é metro.
-        
-        # Remove ponto de milhar comum em CAD BR
+        # Remove ponto de milhar comum em CAD BR (ex: 1.300 vira 1300)
         v_limpo = v.replace('.', '')
         return float(v_limpo)
     except:
@@ -62,6 +58,7 @@ def extrair_dados_projeto(uploaded_file):
     
     temp_path = None
     try:
+        # Salva arquivo temporário para leitura segura
         with tempfile.NamedTemporaryFile(delete=False, suffix=".dxf") as tmp_file:
             tmp_file.write(uploaded_file.getvalue())
             temp_path = tmp_file.name
@@ -127,8 +124,9 @@ def extrair_dados_projeto(uploaded_file):
     except Exception as e:
         return [], [], f"Erro: {str(e)}"
     finally:
-        if temp_path and os.path.exists(temp_path): try: os.remove(temp_path)
-        except: pass
+        if temp_path and os.path.exists(temp_path):
+            try: os.remove(temp_path)
+            except: pass
 
     return dutos_encontrados, outros_textos, f"Varredura concluída em {total_lidos} textos."
 
