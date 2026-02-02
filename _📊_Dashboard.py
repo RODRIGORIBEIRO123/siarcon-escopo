@@ -1,156 +1,128 @@
 import streamlit as st
 import pandas as pd
-import utils_db
-from datetime import datetime, timedelta
-import os
 import time
-
-# Configuração da Página (DEVE SER A PRIMEIRA LINHA)
-st.set_page_config(page_title="SIARCON", page_icon="📊", layout="wide")
+from datetime import datetime
+import utils_db  # Seu arquivo de conexão com o banco
 
 # ============================================================================
-# 🔐 LÓGICA DE LOGIN (VERSÃO ESTÁVEL - SEM COOKIES)
+# 1. CONFIGURAÇÕES INICIAIS
 # ============================================================================
+st.set_page_config(page_title="Dashboard de Projetos", page_icon="📊", layout="wide")
+
+# Inicializa sessão de login se não existir
 if 'logado' not in st.session_state:
     st.session_state['logado'] = False
-if 'usuario_atual' not in st.session_state:
-    st.session_state['usuario_atual'] = ""
 
-# SE NÃO ESTIVER LOGADO, MOSTRA TELA DE LOGIN
+# Tela de Login Simples (Opcional - pode remover se já tiver outro sistema)
 if not st.session_state['logado']:
-    # Oculta sidebar na tela de login
-    st.markdown("""<style>[data-testid="stSidebar"] {display: none;}</style>""", unsafe_allow_html=True)
-
-    c_vazio1, c_login, c_vazio2 = st.columns([1, 1, 1])
-    
-    with c_login:
-        st.markdown("<br><br>", unsafe_allow_html=True)
-        # Tenta carregar o logo
-        if os.path.exists("Siarcon.png"):
-            st.image("Siarcon.png", width=200)
-        elif os.path.exists("siarcon.png"):
-            st.image("siarcon.png", width=200)
-        else:
-            st.header("🏢 SIARCON")
-            
-        st.markdown("### 🔒 Acesso Restrito")
-        st.markdown("Entre com suas credenciais.")
-        
-        usuario = st.text_input("Usuário")
-        senha = st.text_input("Senha", type="password")
-        
-        if st.button("Entrar 🚀", type="primary", use_container_width=True):
-            with st.spinner("Verificando..."):
-                sucesso, mensagem = utils_db.verificar_login(usuario, senha)
-                if sucesso:
-                    st.session_state['logado'] = True
-                    st.session_state['usuario_atual'] = mensagem
-                    st.success(f"Bem-vindo, {mensagem}!")
-                    time.sleep(0.5)
-                    st.rerun()
-                else:
-                    st.error(mensagem)
-    
-    st.stop() # Bloqueia o resto do código se não logar
+    col1, col2, col3 = st.columns([1,2,1])
+    with col2:
+        st.title("🔒 Acesso Restrito")
+        senha = st.text_input("Senha de Acesso", type="password")
+        if st.button("Entrar"):
+            if senha == "1234":  # Senha simples
+                st.session_state['logado'] = True
+                st.rerun()
+            else:
+                st.error("Senha incorreta")
+    st.stop()
 
 # ============================================================================
-# 🔓 ÁREA LOGADA (DASHBOARD)
+# 2. BARRA LATERAL - CADASTRO DE NOVO PROJETO
 # ============================================================================
-
-# -- CABEÇALHO --
-c_logo, c_tit, c_user = st.columns([1, 6, 2])
-with c_logo:
-    if os.path.exists("Siarcon.png"): st.image("Siarcon.png", width=120)
-    elif os.path.exists("siarcon.png"): st.image("siarcon.png", width=120)
-    else: st.write("🏢 **SIARCON**")
-with c_tit:
-    st.title("Gestão de Projetos")
-with c_user:
-    st.markdown(f"<div style='text-align: right;'>👤 <b>{st.session_state['usuario_atual']}</b></div>", unsafe_allow_html=True)
+with st.sidebar:
+    st.image("https://cdn-icons-png.flaticon.com/512/1087/1087815.png", width=50) # Ícone genérico
+    st.title("Siarcon Engenharia")
+    st.divider()
     
-    if st.button("Sair (Logout)", key="btn_logout"):
-        st.session_state['logado'] = False
-        st.session_state['usuario_atual'] = ""
+    st.header("➕ Novo Projeto")
+    
+    with st.form("form_novo_projeto", clear_on_submit=True):
+        # Campos fundamentais para o vínculo funcionar
+        cliente = st.text_input("Cliente:", placeholder="Ex: Farmacêutica XYZ")
+        obra = st.text_input("Nome da Obra/Projeto:", placeholder="Ex: Retrofit HVAC - Prédio A")
+        
+        c1, c2 = st.columns(2)
+        disciplina = c1.selectbox("Disciplina:", [
+            "Dutos", "Hidráulica", "Elétrica", 
+            "Automação", "TAB", "Movimentações", "Cobre"
+        ])
+        status = c2.selectbox("Status Inicial:", ["Não Iniciado", "Em Andamento"])
+        
+        responsavel = st.text_input("Responsável:", value="Engenharia")
+        prazo = st.date_input("Prazo de Entrega:")
+        
+        btn_criar = st.form_submit_button("🚀 Criar Projeto")
+        
+        if btn_criar:
+            if not cliente or not obra:
+                st.error("Preencha Cliente e Nome da Obra!")
+            else:
+                novo_projeto = {
+                    "data_criacao": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                    "cliente": cliente,   # Essencial para o filtro
+                    "obra": obra,         # Essencial para o título
+                    "disciplina": disciplina,
+                    "status": status,
+                    "responsavel": responsavel,
+                    "prazo": str(prazo)
+                }
+                
+                # Salva no banco
+                utils_db.salvar_projeto(novo_projeto)
+                
+                st.success("Projeto criado com sucesso!")
+                time.sleep(1)
+                st.rerun()
+
+    st.divider()
+    if st.button("🔄 Atualizar Painel"):
+        st.cache_data.clear()
         st.rerun()
 
-# --- MAPEAMENTO DE PÁGINAS ---
-PAGINAS_DISCIPLINAS = {
-    "Dutos": "pages/1_Dutos.py",
-    "Hidráulica": "pages/2_Hidráulica.py", "Hidraulica": "pages/2_Hidráulica.py",
-    "Elétrica": "pages/3_Elétrica.py", "Eletrica": "pages/3_Elétrica.py",
-    "Automação": "pages/4_Automação.py", "Automacao": "pages/4_Automação.py",
-    "TAB": "pages/5_TAB.py",
-    "Movimentações": "pages/6_Movimentações.py", "Movimentacoes": "pages/6_Movimentações.py",
-    "Cobre": "pages/7_Cobre.py"
-}
+# ============================================================================
+# 3. ÁREA PRINCIPAL - KANBAN
+# ============================================================================
+st.title("📊 Painel de Controle de Projetos")
 
-# --- 1. ÁREA DE CRIAÇÃO ---
-with st.expander("➕ CADASTRAR NOVO PROJETO", expanded=False):
-    c1, c2, c3 = st.columns([2, 2, 3])
-    novo_cliente = c1.text_input("Nome do Cliente")
-    nova_obra = c2.text_input("Nome da Obra")
-    
-    opcoes_visualizacao = ["Dutos", "Hidráulica", "Elétrica", "Automação", "TAB", "Movimentações", "Cobre"]
-    disciplinas_selecionadas = c3.multiselect("Disciplinas do Escopo:", options=opcoes_visualizacao)
-    
-    if st.button("🚀 CRIAR PROJETOS", type="primary"):
-        if not novo_cliente or not nova_obra or not disciplinas_selecionadas:
-            st.error("Preencha todos os campos.")
-        else:
-            count = 0
-            for i, disc in enumerate(disciplinas_selecionadas):
-                dados_novo = {
-                    '_id': f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{i}",
-                    'status': 'Não Iniciado',
-                    'disciplina': disc,
-                    'cliente': novo_cliente,
-                    'obra': nova_obra,
-                    'fornecedor': '',
-                    'valor_total': '',
-                    'data_inicio': datetime.now().strftime("%Y-%m-%d"),
-                    'criado_por': st.session_state['usuario_atual']
-                }
-                utils_db.registrar_projeto(dados_novo)
-                count += 1
-            st.success(f"{count} projetos criados!"); st.cache_data.clear(); st.rerun()
-
-st.divider()
-
-# --- 2. KANBAN ---
-if st.button("🔄 Atualizar Quadro"):
-    st.cache_data.clear(); st.rerun()
-
+# Carrega dados do banco
 df = utils_db.listar_todos_projetos()
 
 if df.empty:
-    st.info("Nenhum projeto encontrado.")
+    st.info("Nenhum projeto encontrado. Use a barra lateral para cadastrar o primeiro!")
 else:
-    col1, col2, col3, col4, col5 = st.columns(5)
+    # Filtros de visualização
+    col_filtro1, col_filtro2 = st.columns(2)
     
-    def botao_editar(row):
-        # --- DIAGNÓSTICO (Opcional: removemos depois) ---
-        # Se quiser ver os nomes das colunas na tela, descomente a linha abaixo:
-        # st.caption(f"Colunas disponíveis: {list(row.keys())}")
+    # Prepara lista de clientes para o filtro (Tratamento para evitar erro se coluna não existir)
+    lista_clientes = df['cliente'].unique() if 'cliente' in df.columns else []
+    filtro_cliente = col_filtro1.multiselect("Filtrar por Cliente:", options=lista_clientes)
+    
+    if filtro_cliente:
+        df = df[df['cliente'].isin(filtro_cliente)]
+
+    st.divider()
+
+    # --- FUNÇÃO DO BOTÃO (O CORAÇÃO DO SISTEMA) ---
+    def renderizar_botao_editar(row):
+        # Chave única para o botão não confundir
+        key_btn = f"btn_{row.get('_id', row.index)}"
         
-        if st.button("✏️", key=f"edit_{row.get('_id', 'novo')}", help="Editar Escopo"):
+        if st.button("✏️ Editar Escopo", key=key_btn, use_container_width=True):
+            # 1. Captura os dados com segurança (.get evita erro se a coluna faltar)
+            projeto_nome = row.get('obra', row.get('projeto', 'Sem Nome'))
+            cliente_nome = row.get('cliente', 'Cliente Não Informado')
+            projeto_id = row.get('_id')
+            disc_alvo = row.get('disciplina', 'Dutos')
+
+            # 2. Salva na Memória Global (Session State) -> É ISSO QUE AS OUTRAS PÁGINAS LEEM
+            st.session_state['projeto_ativo'] = projeto_nome
+            st.session_state['cliente_ativo'] = cliente_nome
+            st.session_state['id_projeto_editar'] = projeto_id
+            st.session_state['logado'] = True
             
-            # 1. TENTA PEGAR A OBRA (PRIORIDADE PARA 'obra')
-            # O .get() evita que o sistema trave se a coluna não existir
-            nome_obra = row.get('obra', row.get('projeto', 'Projeto Sem Nome'))
-            
-            # 2. TENTA PEGAR O CLIENTE
-            nome_cliente = row.get('cliente', 'Cliente Não Identificado')
-            
-            # 3. SALVA NA MEMÓRIA (SESSION STATE)
-            st.session_state['projeto_ativo'] = nome_obra
-            st.session_state['cliente_ativo'] = nome_cliente
-            st.session_state['id_projeto_editar'] = row.get('_id')
-            st.session_state['logado'] = True 
-            
-            # 4. REDIRECIONAMENTO
-            disc_banco = row.get('disciplina', 'Dutos') # Padrão Dutos se falhar
-            
-            PAGINAS = {
+            # 3. Define para onde ir
+            rotas = {
                 "Dutos": "pages/1_Dutos.py",
                 "Hidráulica": "pages/2_Hidráulica.py",
                 "Elétrica": "pages/3_Elétrica.py",
@@ -159,101 +131,41 @@ else:
                 "Movimentações": "pages/6_Movimentações.py",
                 "Cobre": "pages/7_Cobre.py"
             }
-
-            destino = PAGINAS.get(disc_banco)
             
-            if destino:
-                st.switch_page(destino)
+            destino = rotas.get(disc_alvo, "pages/1_Dutos.py") # Vai para Dutos se não achar
+            
+            # 4. Navega
+            st.switch_page(destino)
+
+    # --- DESENHO DO KANBAN ---
+    # Colunas de Status
+    cols = st.columns(4)
+    status_list = ["Não Iniciado", "Em Andamento", "Revisão", "Concluído"]
+    cores = {"Não Iniciado": "🔴", "Em Andamento": "🟡", "Revisão": "🟠", "Concluído": "🟢"}
+
+    for i, status_nome in enumerate(status_list):
+        with cols[i]:
+            st.markdown(f"### {cores[status_nome]} {status_nome}")
+            st.divider()
+            
+            # Filtra projetos deste status
+            # Verifica se a coluna status existe, senão assume 'Não Iniciado'
+            if 'status' in df.columns:
+                df_status = df[df['status'] == status_nome]
             else:
-                st.error(f"Página não encontrada para: {disc_banco}")
-            
-            PAGINAS = {
-                "Dutos": "pages/1_Dutos.py",
-                "Hidráulica": "pages/2_Hidráulica.py",
-                "Elétrica": "pages/3_Elétrica.py",
-                "Automação": "pages/4_Automação.py",
-                "TAB": "pages/5_TAB.py",
-                "Movimentações": "pages/6_Movimentações.py",
-                "Cobre": "pages/7_Cobre.py"
-            }
+                df_status = df if status_nome == "Não Iniciado" else pd.DataFrame()
 
-            destino = PAGINAS.get(disc_banco)
-            
-            if destino:
-                st.switch_page(destino)
-            else:
-                st.error(f"Página não encontrada para: {disc_banco}")
-        
-        if pagina_destino:
-            st.switch_page(pagina_destino)
-        else:
-            st.error(f"Página não encontrada para a disciplina: {disc_banco}")
-
-    # --- COLUNAS ---
-    with col1:
-        st.markdown("### 💤 Não Iniciado")
-        for idx, row in df[df['status'] == 'Não Iniciado'].iterrows():
-            with st.container(border=True):
-                c_tit, c_edit = st.columns([4, 1])
-                c_tit.write(f"**{row['disciplina']} | {row['obra']}**")
-                with c_edit: botao_editar(row)
-                st.caption(row['cliente'])
-                if st.button("Iniciar (Eng) ➡️", key=f"start_{row['_id']}"):
-                    utils_db.atualizar_status_projeto(row['_id'], "Em Elaboração")
-                    st.cache_data.clear(); st.rerun()
-
-    with col2:
-        st.markdown("### 👷 Engenharia")
-        st.caption("(Definição Técnica)")
-        for idx, row in df[df['status'] == 'Em Elaboração'].iterrows():
-            with st.container(border=True):
-                c_tit, c_edit = st.columns([4, 1])
-                c_tit.info(f"**{row['disciplina']} | {row['obra']}**")
-                with c_edit: botao_editar(row)
-                st.caption(row['cliente'])
-                if st.button("Validar (Obras) ➡️", key=f"to_obras_{row['_id']}"):
-                    utils_db.atualizar_status_projeto(row['_id'], "Em Análise Obras")
-                    st.cache_data.clear(); st.rerun()
-
-    with col3:
-        st.markdown("### 🏗️ Obras")
-        st.caption("(Validação Campo)")
-        for idx, row in df[df['status'] == 'Em Análise Obras'].iterrows():
-            with st.container(border=True):
-                c_tit, c_edit = st.columns([4, 1])
-                c_tit.warning(f"**{row['disciplina']} | {row['obra']}**")
-                with c_edit: botao_editar(row)
-                st.caption(row['cliente'])
-                c_v, c_i = st.columns(2)
-                if c_v.button("⬅️ Eng", key=f"bk_eng_{row['_id']}"):
-                    utils_db.atualizar_status_projeto(row['_id'], "Em Elaboração"); st.cache_data.clear(); st.rerun()
-                if c_i.button("Sup ➡️", key=f"go_sup_{row['_id']}"):
-                    utils_db.atualizar_status_projeto(row['_id'], "Em Cotação"); st.cache_data.clear(); st.rerun()
-
-    with col4:
-        st.markdown("### 💰 Suprimentos")
-        st.caption("(Cotação/Compra)")
-        for idx, row in df[df['status'] == 'Em Cotação'].iterrows():
-            with st.container(border=True):
-                c_tit, c_edit = st.columns([4, 1])
-                c_tit.error(f"**{row['disciplina']} | {row['obra']}**")
-                with c_edit: botao_editar(row)
-                st.caption(row['cliente'])
-                if row['fornecedor']: st.write(f"🏢 {row['fornecedor']}")
-                if row['valor_total']: st.write(f"💲 {row['valor_total']}")
-                c_v1, c_v2 = st.columns(2)
-                if c_v1.button("⬅️ Eng", key=f"r_eng_{row['_id']}"):
-                    utils_db.atualizar_status_projeto(row['_id'], "Em Elaboração"); st.cache_data.clear(); st.rerun()
-                if c_v2.button("⬅️ Obras", key=f"r_obr_{row['_id']}"):
-                    utils_db.atualizar_status_projeto(row['_id'], "Em Análise Obras"); st.cache_data.clear(); st.rerun()
-                if st.button("✅ Concluir", key=f"fin_{row['_id']}", type="primary"):
-                    utils_db.atualizar_status_projeto(row['_id'], "Concluído"); st.cache_data.clear(); st.rerun()
-
-    with col5:
-        st.markdown("### ✅ Concluído")
-        for idx, row in df[df['status'] == 'Concluído'].iterrows():
-            with st.expander(f"{row['disciplina']} | {row['obra']}"):
-                st.write(f"Cliente: {row['cliente']}")
-                st.success(f"Forn: {row['fornecedor']}")
-                st.write(f"Valor: {row['valor_total']}")
-                botao_editar(row)
+            for idx, row in df_status.iterrows():
+                # Card do Projeto
+                with st.container(border=True):
+                    # Tenta pegar 'obra', se não der pega 'projeto'
+                    titulo = row.get('obra', row.get('projeto', 'Sem Título'))
+                    cliente_txt = row.get('cliente', 'Sem Cliente')
+                    disc_txt = row.get('disciplina', '-')
+                    
+                    st.markdown(f"**{titulo}**")
+                    st.caption(f"🏢 {cliente_txt}")
+                    st.caption(f"🔧 {disc_txt}")
+                    
+                    # Chama o botão corrigido
+                    renderizar_botao_editar(row)
