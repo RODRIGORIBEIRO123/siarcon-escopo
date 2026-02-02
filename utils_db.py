@@ -18,8 +18,9 @@ NRS_PADRAO = [
 ]
 
 # ==================================================
-# 2. CONEXÃO
+# 2. CONEXÃO (OTIMIZADA COM CACHE)
 # ==================================================
+@st.cache_resource(ttl=600) # Cache por 10 minutos para não reconectar toda hora
 def _conectar_gsheets():
     try:
         if "gcp_service_account" not in st.secrets: return None
@@ -27,52 +28,56 @@ def _conectar_gsheets():
         if "private_key" in creds_dict:
             chave = creds_dict["private_key"]
             if "\n" not in chave: creds_dict["private_key"] = chave.replace("\\n", "\n")
+        
         gc = gspread.service_account_from_dict(creds_dict)
         return gc.open("DB_SIARCON") 
-    except: return None
+    except Exception as e:
+        print(f"Erro de conexão: {e}")
+        return None
 
 def _ler_aba_como_df(nome_aba):
     sh = _conectar_gsheets()
     if not sh: return pd.DataFrame()
     try:
-        try: ws = sh.worksheet(nome_aba)
+        try: 
+            ws = sh.worksheet(nome_aba)
         except: 
+            # Fallback para nomes padrão se a aba não existir
             if nome_aba == "Dados":
                 for n in ["Página1", "Sheet1", "Config"]:
                     try: ws = sh.worksheet(n); break
                     except: pass
                 else: return pd.DataFrame()
             else: return pd.DataFrame()
-        return pd.DataFrame(ws.get_all_records())
+        
+        data = ws.get_all_records()
+        return pd.DataFrame(data)
     except: return pd.DataFrame()
 
 # ==================================================
-# 3. AUTENTICAÇÃO (NOVO!)
+# 3. AUTENTICAÇÃO
 # ==================================================
 def verificar_login(usuario, senha):
-    """Verifica se usuario e senha existem na aba Usuarios."""
     sh = _conectar_gsheets()
     if not sh: return False, "Erro de conexão com o Banco de Dados."
     
     try:
         ws = sh.worksheet("Usuarios")
     except:
-        return False, "Aba 'Usuarios' não encontrada na planilha."
+        return False, "Aba 'Usuarios' não encontrada."
 
-    # Lê todos os usuários
     dados = ws.get_all_records()
     df_users = pd.DataFrame(dados)
     
     if df_users.empty: return False, "Nenhum usuário cadastrado."
     
-    # Converte para string para garantir comparação exata
-    df_users['Usuario'] = df_users['Usuario'].astype(str)
-    df_users['Senha'] = df_users['Senha'].astype(str)
+    # Conversão para string segura
+    df_users['Usuario'] = df_users['Usuario'].astype(str).str.strip()
+    df_users['Senha'] = df_users['Senha'].astype(str).str.strip()
     
-    usuario = str(usuario)
-    senha = str(senha)
+    usuario = str(usuario).strip()
+    senha = str(senha).strip()
     
-    # Busca usuario
     user_encontrado = df_users[
         (df_users['Usuario'] == usuario) & 
         (df_users['Senha'] == senha)
@@ -85,7 +90,7 @@ def verificar_login(usuario, senha):
         return False, "Usuário ou senha incorretos."
 
 # ==================================================
-# 4. LEITURA DE DADOS
+# 4. LEITURA DE DADOS AUXILIARES
 # ==================================================
 def carregar_opcoes():
     df = _ler_aba_como_df("Dados")
@@ -95,7 +100,7 @@ def carregar_opcoes():
         for cat in df['Categoria'].unique():
             itens = sorted(df[df['Categoria'] == cat]['Item'].unique().tolist())
             if cat == 'sms': opcoes['sms'] = sorted(list(set(opcoes['sms'] + itens)))
-            else: opcoes[cat] = itens     
+            else: opcoes[cat] = itens      
     return opcoes
 
 def listar_fornecedores():
@@ -107,23 +112,33 @@ def listar_fornecedores():
         if len(vals) > 1:
             lista = []
             for row in vals[1:]:
-                if row[0]: lista.append({'Fornecedor': row[0], 'CNPJ': row[1] if len(row) > 1 else ""})
+                # Verifica se tem pelo menos nome (coluna 0)
+                if row and row[0]: 
+                    cnpj = row[1] if len(row) > 1 else ""
+                    lista.append({'Fornecedor': row[0], 'CNPJ': cnpj})
             return lista
     except: pass
+    
+    # Fallback para aba Dados
     df = _ler_aba_como_df("Dados")
     if not df.empty and 'Fornecedor' in df.columns:
         return df[['Fornecedor', 'CNPJ']].dropna(subset=['Fornecedor']).drop_duplicates().to_dict('records')
     return []
 
 # ==================================================
-# 5. FUNÇÕES DO DASHBOARD
+# 5. FUNÇÕES DO DASHBOARD (PROJETOS)
 # ==================================================
 def listar_todos_projetos():
     df = _ler_aba_como_df("Projetos")
+    # Definição das colunas esperadas
     cols = ['_id', 'status', 'disciplina', 'cliente', 'obra', 'fornecedor', 'valor_total', 'data_inicio', 'criado_por']
+    
     if df.empty: return pd.DataFrame(columns=cols)
+    
+    # Cria colunas faltantes para evitar erros
     for c in cols: 
         if c not in df.columns: df[c] = ""
+        
     if '_id' in df.columns: df['_id'] = df['_id'].astype(str)
     return df
 
@@ -151,7 +166,7 @@ def atualizar_status_projeto(id_projeto, novo_status):
     return False
 
 # ==================================================
-# 6. ESCRITA
+# 6. ESCRITA E REGISTRO (CORRIGIDO PARA VELOCIDADE)
 # ==================================================
 def aprender_novo_item(categoria, novo_item):
     sh = _conectar_gsheets()
@@ -163,18 +178,11 @@ def aprender_novo_item(categoria, novo_item):
         return True
     except: return False
 
-def cadastrar_fornecedor_db(nome, cnpj):
-    sh = _conectar_gsheets()
-    if not sh: return False
-    try:
-        ws = sh.worksheet("FORNECEDORES")
-        ws.append_row([nome, cnpj])
-        return True
-    except:
-        try: ws = sh.worksheet("Dados"); ws.append_row(["", "", nome, cnpj]); return True
-        except: return False
-
 def registrar_projeto(dados):
+    """
+    Salva ou Atualiza um projeto.
+    IMPORTANTE: Colunas devem ser 'obra' e 'cliente', não 'projeto'.
+    """
     sh = _conectar_gsheets()
     if not sh: return False
     try:
@@ -184,22 +192,40 @@ def registrar_projeto(dados):
             ws.append_row(['_id', 'status', 'disciplina', 'cliente', 'obra', 'fornecedor', 'valor_total', 'data_inicio', 'criado_por'])
         
         headers = ws.row_values(1)
+        # Garante cabeçalho se estiver vazio
         if not headers: 
             headers = ['_id', 'status', 'disciplina', 'cliente', 'obra', 'fornecedor', 'valor_total', 'data_inicio', 'criado_por']
             ws.append_row(headers)
 
-        if '_id' not in dados: dados['_id'] = datetime.now().strftime("%Y%m%d%H%M%S")
+        # Gera ID se for novo
+        if '_id' not in dados or not dados['_id']: 
+            dados['_id'] = datetime.now().strftime("%Y%m%d%H%M%S")
 
+        # Prepara a linha de dados na ordem correta das colunas
+        row_data = []
+        for h in headers:
+            row_data.append(str(dados.get(h, "")))
+
+        # Verifica se já existe para atualizar
         cell = None
         try: cell = ws.find(str(dados['_id']))
         except: pass
 
-        row_data = []
-        for h in headers: row_data.append(str(dados.get(h, "")))
-
         if cell: 
-            for i, val in enumerate(row_data): ws.update_cell(cell.row, i+1, val)
+            # ATUALIZAÇÃO OTIMIZADA (Sem loop for update_cell)
+            # update_cell dentro de for é muito lento.
+            # Aqui atualizamos a linha inteira de uma vez.
+            
+            # gspread usa range no formato 'A2:H2'
+            # Calcula a letra da última coluna baseada no tamanho dos headers
+            num_cols = len(headers)
+            # Range inicia na coluna 1 (A) e vai até num_cols
+            ws.update(range_name=f"A{cell.row}", values=[row_data])
         else: 
+            # Inserção Nova
             ws.append_row(row_data)
+        
         return True
-    except: return False
+    except Exception as e: 
+        print(f"Erro ao salvar projeto: {e}")
+        return False
