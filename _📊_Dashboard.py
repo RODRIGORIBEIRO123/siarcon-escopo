@@ -2,25 +2,26 @@ import streamlit as st
 import pandas as pd
 import time
 from datetime import datetime
-import utils_db  # Seu arquivo de conexão com o banco
+import utils_db  # Certifique-se que este arquivo existe na mesma pasta
 
 # ============================================================================
 # 1. CONFIGURAÇÕES INICIAIS
 # ============================================================================
 st.set_page_config(page_title="Dashboard de Projetos", page_icon="📊", layout="wide")
 
-# Inicializa sessão de login se não existir
+# Inicializa variáveis de sessão essenciais
 if 'logado' not in st.session_state:
     st.session_state['logado'] = False
 
-# Tela de Login Simples (Opcional - pode remover se já tiver outro sistema)
+# (Opcional) Tela de Login Simples
+# Se quiser remover o login, apague ou comente as linhas abaixo até o 'st.stop()'
 if not st.session_state['logado']:
     col1, col2, col3 = st.columns([1,2,1])
     with col2:
         st.title("🔒 Acesso Restrito")
         senha = st.text_input("Senha de Acesso", type="password")
         if st.button("Entrar"):
-            if senha == "1234":  # Senha simples
+            if senha == "1234":  # Senha padrão
                 st.session_state['logado'] = True
                 st.rerun()
             else:
@@ -31,16 +32,15 @@ if not st.session_state['logado']:
 # 2. BARRA LATERAL - CADASTRO DE NOVO PROJETO
 # ============================================================================
 with st.sidebar:
-    st.image("https://cdn-icons-png.flaticon.com/512/1087/1087815.png", width=50) # Ícone genérico
+    st.image("https://cdn-icons-png.flaticon.com/512/1087/1087815.png", width=50)
     st.title("Siarcon Engenharia")
     st.divider()
     
     st.header("➕ Novo Projeto")
     
     with st.form("form_novo_projeto", clear_on_submit=True):
-        # Campos fundamentais para o vínculo funcionar
         cliente = st.text_input("Cliente:", placeholder="Ex: Farmacêutica XYZ")
-        obra = st.text_input("Nome da Obra/Projeto:", placeholder="Ex: Retrofit HVAC - Prédio A")
+        obra = st.text_input("Nome da Obra/Projeto:", placeholder="Ex: Retrofit HVAC")
         
         c1, c2 = st.columns(2)
         disciplina = c1.selectbox("Disciplina:", [
@@ -60,15 +60,15 @@ with st.sidebar:
             else:
                 novo_projeto = {
                     "data_criacao": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                    "cliente": cliente,   # Essencial para o filtro
-                    "obra": obra,         # Essencial para o título
+                    "cliente": cliente,
+                    "obra": obra,
                     "disciplina": disciplina,
                     "status": status,
                     "responsavel": responsavel,
                     "prazo": str(prazo)
                 }
                 
-                # Salva no banco
+                # Salva no banco (função do seu arquivo utils_db.py)
                 utils_db.salvar_projeto(novo_projeto)
                 
                 st.success("Projeto criado com sucesso!")
@@ -85,16 +85,20 @@ with st.sidebar:
 # ============================================================================
 st.title("📊 Painel de Controle de Projetos")
 
-# Carrega dados do banco
-df = utils_db.listar_todos_projetos()
+# Carrega dados do banco de dados
+try:
+    df = utils_db.listar_todos_projetos()
+except Exception as e:
+    st.error(f"Erro ao ler banco de dados: {e}")
+    df = pd.DataFrame() # Cria vazio para não travar
 
 if df.empty:
-    st.info("Nenhum projeto encontrado. Use a barra lateral para cadastrar o primeiro!")
+    st.info("Nenhum projeto encontrado. Cadastre o primeiro na barra lateral!")
 else:
     # Filtros de visualização
     col_filtro1, col_filtro2 = st.columns(2)
     
-    # Prepara lista de clientes para o filtro (Tratamento para evitar erro se coluna não existir)
+    # Tratamento para evitar erro se a coluna 'cliente' não existir
     lista_clientes = df['cliente'].unique() if 'cliente' in df.columns else []
     filtro_cliente = col_filtro1.multiselect("Filtrar por Cliente:", options=lista_clientes)
     
@@ -103,19 +107,21 @@ else:
 
     st.divider()
 
-    # --- FUNÇÃO DO BOTÃO (O CORAÇÃO DO SISTEMA) ---
+    # --- FUNÇÃO DO BOTÃO (CORRIGIDA E BLINDADA) ---
     def renderizar_botao_editar(row):
-        # Chave única para o botão não confundir
-        key_btn = f"btn_{row.get('_id', row.index)}"
+        # Gera uma chave única usando ID ou índice para não dar conflito
+        id_unico = row.get('_id', row.name) # row.name pega o index se não tiver _id
+        key_btn = f"btn_edit_{id_unico}"
         
         if st.button("✏️ Editar Escopo", key=key_btn, use_container_width=True):
-            # 1. Captura os dados com segurança (.get evita erro se a coluna faltar)
+            # 1. Captura os dados com segurança (Proteção contra colunas com nomes errados)
+            # Tenta pegar 'obra', se não achar tenta 'projeto', se não achar põe 'Sem Nome'
             projeto_nome = row.get('obra', row.get('projeto', 'Sem Nome'))
             cliente_nome = row.get('cliente', 'Cliente Não Informado')
-            projeto_id = row.get('_id')
+            projeto_id = str(id_unico)
             disc_alvo = row.get('disciplina', 'Dutos')
 
-            # 2. Salva na Memória Global (Session State) -> É ISSO QUE AS OUTRAS PÁGINAS LEEM
+            # 2. Salva na Memória Global (Session State)
             st.session_state['projeto_ativo'] = projeto_nome
             st.session_state['cliente_ativo'] = cliente_nome
             st.session_state['id_projeto_editar'] = projeto_id
@@ -132,13 +138,12 @@ else:
                 "Cobre": "pages/7_Cobre.py"
             }
             
-            destino = rotas.get(disc_alvo, "pages/1_Dutos.py") # Vai para Dutos se não achar
+            destino = rotas.get(disc_alvo, "pages/1_Dutos.py")
             
             # 4. Navega
             st.switch_page(destino)
 
     # --- DESENHO DO KANBAN ---
-    # Colunas de Status
     cols = st.columns(4)
     status_list = ["Não Iniciado", "Em Andamento", "Revisão", "Concluído"]
     cores = {"Não Iniciado": "🔴", "Em Andamento": "🟡", "Revisão": "🟠", "Concluído": "🟢"}
@@ -149,14 +154,13 @@ else:
             st.divider()
             
             # Filtra projetos deste status
-            # Verifica se a coluna status existe, senão assume 'Não Iniciado'
             if 'status' in df.columns:
                 df_status = df[df['status'] == status_nome]
             else:
+                # Se não tiver coluna status, joga tudo em 'Não Iniciado'
                 df_status = df if status_nome == "Não Iniciado" else pd.DataFrame()
 
             for idx, row in df_status.iterrows():
-                # Card do Projeto
                 with st.container(border=True):
                     # Tenta pegar 'obra', se não der pega 'projeto'
                     titulo = row.get('obra', row.get('projeto', 'Sem Título'))
