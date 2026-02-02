@@ -134,7 +134,8 @@ else:
         # --- A CORREÇÃO ESTÁ AQUI ---
         # Salvamos explicitamente o NOME e o CLIENTE na memória global
         # Nota: Verifique se no seu banco a coluna chama 'nome_projeto' ou apenas 'projeto'
-        st.session_state['projeto_ativo'] = row['projeto']  
+        # Mude 'projeto' para 'obra'
+        st.session_state['projeto_ativo'] = row['obra']
         st.session_state['cliente_ativo'] = row['cliente']
         st.session_state['id_projeto_editar'] = row['_id']
         st.session_state['logado'] = True # Garante a permissão
