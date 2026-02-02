@@ -3,62 +3,62 @@ import pandas as pd
 from datetime import datetime
 import time
 
+# Se você tiver o arquivo utils_db.py, descomente a linha abaixo:
+# import utils_db 
+
 # ============================================================================
-# 1. CONFIGURAÇÃO E CONTEXTO (CORREÇÃO DO LOOP DE CADASTRO)
+# CONFIGURAÇÃO DA PÁGINA E RECUPERAÇÃO DE ESTADO
 # ============================================================================
 st.set_page_config(page_title="Escopo - Dutos", page_icon="🔧", layout="wide")
 
-# Verifica Login
-if 'logado' not in st.session_state or not st.session_state['logado']:
-    st.warning("🔒 Acesso negado. Faça login no Dashboard.")
+# 1. Recupera as credenciais que o Dashboard enviou
+projeto_ativo = st.session_state.get('projeto_ativo')
+cliente_ativo = st.session_state.get('cliente_ativo')
+
+# 2. Trava de Segurança: Se não vier do Dashboard, avisa.
+if not projeto_ativo or not cliente_ativo:
+    st.error("⛔ ERRO DE VÍNCULO: Projeto não identificado.")
+    st.info("Vá ao Dashboard e clique no lápis ✏️ do card do projeto.")
+    if st.button("Voltar ao Dashboard"):
+        st.switch_page("_Dashboard.py") # Verifique se o nome do arquivo principal é esse
     st.stop()
 
-# Recupera o contexto do Dashboard (CORREÇÃO PRINCIPAL)
-cliente_atual = st.session_state.get('cliente_ativo', None)
-projeto_atual = st.session_state.get('projeto_ativo', None)
-
-if not cliente_atual or not projeto_atual:
-    st.error("⚠️ Nenhum projeto selecionado. Volte ao Dashboard e selecione um projeto.")
-    st.stop()
-
-# Define a disciplina desta página (MUDE ISSO NAS OUTRAS PÁGINAS)
+# Define a disciplina desta página
 DISCIPLINA_ATUAL = "Dutos"
 
-st.title(f"🔧 Escopo Manual: {DISCIPLINA_ATUAL}")
-st.caption(f"Projeto: **{projeto_atual}** | Cliente: **{cliente_atual}**")
+st.title(f"🔧 Escopo: {DISCIPLINA_ATUAL}")
+# Mostra que está vinculado corretamente
+st.success(f"📂 Projeto: **{projeto_ativo}** | 🏢 Cliente: **{cliente_ativo}**")
 
-# Inicializa banco de dados na memória se não existir
+# Garante que a lista local exista (para visualização imediata)
 if 'db_escopo' not in st.session_state:
     st.session_state['db_escopo'] = []
 
 # ============================================================================
-# 2. FORMULÁRIO DE CADASTRO (COM AUTO-REFRESH)
+# FORMULÁRIO (Lateral)
 # ============================================================================
 with st.sidebar:
     st.header(f"➕ Adicionar em {DISCIPLINA_ATUAL}")
     
     with st.form("form_item", clear_on_submit=True):
-        # Campos
         descricao = st.text_input("Descrição do Item:")
         c1, c2 = st.columns(2)
         qtd = c1.number_input("Quantidade", min_value=0.0, value=1.0, step=1.0)
         unid = c2.selectbox("Unidade", ["pç", "m", "m²", "kg", "vb", "h", "gl", "cj"])
-        obs = st.text_area("Observações / Detalhes")
+        obs = st.text_area("Observações")
         
-        # Botão Salvar
         enviado = st.form_submit_button("💾 Salvar Item")
 
         if enviado:
             if not descricao:
-                st.error("A descrição é obrigatória.")
+                st.error("Descrição é obrigatória.")
             else:
-                # Cria o registro
+                # 1. Cria o objeto do item
                 novo_item = {
-                    "id": len(st.session_state['db_escopo']) + 1,
-                    "data": datetime.now().strftime("%d/%m/%Y %H:%M"),
-                    "projeto": projeto_atual,     # Pega do Dashboard
-                    "cliente": cliente_atual,     # Pega do Dashboard
-                    "disciplina": DISCIPLINA_ATUAL, # Fixa a disciplina da página
+                    "data": datetime.now().strftime("%d/%m/%Y"),
+                    "projeto": projeto_ativo,  # <--- USA A VARIÁVEL RECUPERADA
+                    "cliente": cliente_ativo,  # <--- USA A VARIÁVEL RECUPERADA
+                    "disciplina": DISCIPLINA_ATUAL,
                     "descricao": descricao,
                     "qtd": qtd,
                     "unid": unid,
@@ -66,65 +66,52 @@ with st.sidebar:
                     "origem": "Manual"
                 }
                 
-                # Salva no banco global
+                # 2. Salva na Sessão (Visualização Imediata)
                 st.session_state['db_escopo'].append(novo_item)
                 
-                # Feedback e RECARGA FORÇADA (Correção do Bug visual)
-                st.success(f"Item adicionado a {DISCIPLINA_ATUAL}!")
-                time.sleep(0.5) 
+                # 3. (OPCIONAL) Se você tiver função de banco, chame aqui:
+                # utils_db.salvar_item_escopo(novo_item) 
+
+                st.toast(f"Item '{descricao}' salvo com sucesso!")
+                
+                # 4. FORÇA A ATUALIZAÇÃO DA TELA (Corrige o bug de não aparecer)
+                time.sleep(0.5)
                 st.rerun()
 
 # ============================================================================
-# 3. VISUALIZAÇÃO DA TABELA (FILTRADA)
+# TABELA DE ITENS
 # ============================================================================
-# Converte lista para DataFrame
+# Converte a lista da memória em Tabela
 df = pd.DataFrame(st.session_state['db_escopo'])
 
 if not df.empty:
-    # Filtra apenas: Projeto Atual E Disciplina Atual
-    filtro = (df['projeto'] == projeto_atual) & (df['disciplina'] == DISCIPLINA_ATUAL)
+    # Filtra: Só mostra itens DESTE projeto e DESTA disciplina
+    filtro = (df['projeto'] == projeto_ativo) & (df['disciplina'] == DISCIPLINA_ATUAL)
     df_filtrado = df[filtro].copy()
 
     if not df_filtrado.empty:
-        st.markdown("### 📋 Itens Cadastrados")
-        
-        # Edição direta na tabela
-        df_editado = st.data_editor(
+        st.data_editor(
             df_filtrado,
             column_config={
                 "descricao": "Descrição",
                 "qtd": st.column_config.NumberColumn("Qtd", format="%.2f"),
                 "unid": "Unid.",
-                "obs": "Observação",
-                "data": "Data",
-                "id": None,           # Esconde coluna técnica
-                "projeto": None,      # Já sabemos o projeto
+                "obs": "Obs",
+                # Ocultamos colunas repetitivas para limpar a visão
+                "projeto": None, 
                 "cliente": None,
-                "disciplina": None,   # Já sabemos a disciplina
-                "origem": None
+                "disciplina": None
             },
             use_container_width=True,
-            num_rows="dynamic", # Permite adicionar/remover linhas direto na tabela
-            key=f"editor_{DISCIPLINA_ATUAL}"
+            num_rows="dynamic", # Permite adicionar linhas na tabela
+            key="editor_dutos"
         )
-        
-        # KPI Rápido
-        total_itens = len(df_filtrado)
-        st.caption(f"Total de itens nesta disciplina: {total_itens}")
-        
     else:
-        st.info(f"Nenhum item cadastrado para **{DISCIPLINA_ATUAL}** neste projeto.")
+        st.info(f"Nenhum item cadastrado em {DISCIPLINA_ATUAL} para este projeto.")
 else:
-    st.info("O banco de dados de escopo está vazio.")
+    st.info("Lista de escopo vazia.")
 
-# ============================================================================
-# 4. AÇÃO EXTRA (LIMPEZA)
-# ============================================================================
+# Botão de Voltar
 st.divider()
-if st.button(f"🗑️ Limpar Lista de {DISCIPLINA_ATUAL}", type="secondary"):
-    # Mantém tudo que NÃO for (Projeto Atual + Disciplina Atual)
-    st.session_state['db_escopo'] = [
-        item for item in st.session_state['db_escopo'] 
-        if not (item['projeto'] == projeto_atual and item['disciplina'] == DISCIPLINA_ATUAL)
-    ]
-    st.rerun()
+if st.button("⬅️ Voltar ao Dashboard"):
+    st.switch_page("_Dashboard.py")
