@@ -128,12 +128,37 @@ else:
     col1, col2, col3, col4, col5 = st.columns(5)
     
     def botao_editar(row):
-        if st.button("✏️", key=f"edit_{row['_id']}", help="Editar Escopo"):
-            st.session_state['id_projeto_editar'] = row['_id']
-            disc_banco = row['disciplina']
-            pagina_destino = PAGINAS_DISCIPLINAS.get(disc_banco)
-            if pagina_destino: st.switch_page(pagina_destino)
-            else: st.error(f"Página não encontrada: {disc_banco}")
+    # Cria o botão
+    if st.button("✏️", key=f"edit_{row['_id']}", help="Editar Escopo"):
+        
+        # --- A CORREÇÃO ESTÁ AQUI ---
+        # Salvamos explicitamente o NOME e o CLIENTE na memória global
+        # Nota: Verifique se no seu banco a coluna chama 'nome_projeto' ou apenas 'projeto'
+        st.session_state['projeto_ativo'] = row['projeto']  
+        st.session_state['cliente_ativo'] = row['cliente']
+        st.session_state['id_projeto_editar'] = row['_id']
+        st.session_state['logado'] = True # Garante a permissão
+        # ----------------------------
+
+        disc_banco = row['disciplina']
+        
+        # Dicionário de rotas (ajuste os nomes dos arquivos se necessário)
+        PAGINAS_DISCIPLINAS = {
+            "Dutos": "pages/1_Dutos.py",
+            "Hidráulica": "pages/2_Hidráulica.py",
+            "Elétrica": "pages/3_Elétrica.py",
+            "Automação": "pages/4_Automação.py",
+            "TAB": "pages/5_TAB.py",
+            "Movimentações": "pages/6_Movimentações.py",
+            "Cobre": "pages/7_Cobre.py"
+        }
+
+        pagina_destino = PAGINAS_DISCIPLINAS.get(disc_banco)
+        
+        if pagina_destino:
+            st.switch_page(pagina_destino)
+        else:
+            st.error(f"Página não encontrada para a disciplina: {disc_banco}")
 
     # --- COLUNAS ---
     with col1:
