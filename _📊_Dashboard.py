@@ -166,6 +166,23 @@ else:
                 st.switch_page(destino)
             else:
                 st.error(f"Página não encontrada para: {disc_banco}")
+            
+            PAGINAS = {
+                "Dutos": "pages/1_Dutos.py",
+                "Hidráulica": "pages/2_Hidráulica.py",
+                "Elétrica": "pages/3_Elétrica.py",
+                "Automação": "pages/4_Automação.py",
+                "TAB": "pages/5_TAB.py",
+                "Movimentações": "pages/6_Movimentações.py",
+                "Cobre": "pages/7_Cobre.py"
+            }
+
+            destino = PAGINAS.get(disc_banco)
+            
+            if destino:
+                st.switch_page(destino)
+            else:
+                st.error(f"Página não encontrada para: {disc_banco}")
         
         if pagina_destino:
             st.switch_page(pagina_destino)
