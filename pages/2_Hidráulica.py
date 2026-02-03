@@ -12,37 +12,46 @@ if 'logado' not in st.session_state or not st.session_state['logado']:
 # ============================================================================
 # CONFIGURAÇÃO: HIDRÁULICA
 # ============================================================================
-DISCIPLINA_ATUAL = "Hidraulica" 
+DISCIPLINA_ATUAL = "Hidráulica" 
 
 ITENS_MATRIZ = [
-    "Rede de Água Gelada (CAG)", "Rede de Água de Condensação", "Rede de Drenagem",
-    "Instalação de Válvulas e Acessórios", "Instalação de Bombas", "Isolamento Térmico",
-    "Suportação de Tubulações", "Tratamento Químico / Flushing", "Testes Hidrostáticos"
+    "Fornecimento das tubulações", "Fornecimento das válvulas manuais", "Fornecimento materiais dreno",
+    "Fornecimento materiais isolamento térmico", "Fornecimento materiais suportação", "Fornecimento materiais consumíveis",
+    "Balanceamento hidrônico", "Testes Hidrostáticos", "Fornecimento válvulas de controle e balanceamento"
 ]
 
 PADRAO_TECNICO = [
     "Montagem de Tubulação em Aço Carbono (Solda/Rosca)",
-    "Montagem de Tubulação em Cobre",
+    "Fabricação e montagem da suportação"
     "Montagem de Tubulação em PPR/PVC",
+    "Fabricação e montagem dos cavaletes de água gelada",
+    "Fabricação e montagem dos cavaletes de água quente",
+    "Fabricação e montagem dos cavaletes de vapor e condensado",
+    "Fabricação e montagem dos cavaletes das bombas",
+    "Fabricação e montagem dos cavaletes dos chillers",
+    "Fabricação e montagem dos cavaletes do trocador de calor",
     "Instalação de Válvulas de Controle e Bloqueio",
-    "Instalação de Válvulas de Balanceamento (PICV/Estatica)",
+    "Instalação de Válvulas de Balanceamento",
     "Instalação de Filtros Y e Purgadores",
     "Instalação de Manômetros e Termômetros",
-    "Aplicação de Isolamento em Borracha Elast./Lã de Vidro",
-    "Proteção Mecânica em Alumínio",
-    "Instalação de Bombas (In-line/Bancada)",
+    "Aplicação de Isolamento em Borracha Elastomérica",
+    "Aplicação de isolamento em calhas de lâ de rocha",
+    "Aplicação de isolamento nas redes de dreno",
+    "Montagem da rede de dreno",
+    "Proteção Mecânica em Alumínio liso",
+    "Proteção Mecânica em Alumínio corrugado",
+    "Instalação de Bombas",
     "Execução de Drenos de Condensados"
 ]
 
 PADRAO_QUALIDADE = [
     "Teste Hidrostático de Pressão",
     "Inspeção Visual de Soldas",
-    "Verificação de Pintura e Identificação",
+    "Aplicação de fundo das tubulações",
     "Verificação de Alinhamento e Prumo",
-    "Teste de Estanqueidade em Drenos",
-    "Flushing e Limpeza da Rede",
-    "Passivação da Tubulação",
-    "Diagramas Isométricos As-Built"
+    "Limpeza da rede de água",
+    "Limpeza dos filtro Y,
+    "Limpeza do local de trabalho"
 ]
 # ============================================================================
 
