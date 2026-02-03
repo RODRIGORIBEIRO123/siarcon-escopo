@@ -9,7 +9,6 @@ import utils_db
 # ============================================================================
 st.set_page_config(page_title="Painel SIARCON", page_icon="📊", layout="wide")
 
-# CSS para melhorar o visual do Kanban (Cards compactos)
 st.markdown("""
 <style>
     div[data-testid="stVerticalBlock"] > div[style*="flex-direction: column;"] > div[data-testid="stVerticalBlock"] {
@@ -21,12 +20,11 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Inicializa sessão
 if 'logado' not in st.session_state: st.session_state['logado'] = False
 if 'usuario_atual' not in st.session_state: st.session_state['usuario_atual'] = ""
 
 # ============================================================================
-# 2. LOGIN (CONECTADO AO BANCO)
+# 2. LOGIN
 # ============================================================================
 if not st.session_state['logado']:
     col1, col2, col3 = st.columns([1,1,1])
@@ -35,9 +33,7 @@ if not st.session_state['logado']:
         with st.form("login_form"):
             usuario = st.text_input("Usuário")
             senha = st.text_input("Senha", type="password")
-            
             if st.form_submit_button("Entrar"):
-                # Valida na planilha usando a função do utils_db
                 if hasattr(utils_db, 'verificar_login_db') and utils_db.verificar_login_db(usuario, senha):
                     st.session_state['logado'] = True
                     st.session_state['usuario_atual'] = usuario
@@ -46,7 +42,6 @@ if not st.session_state['logado']:
                     st.error("Usuário ou Senha incorretos.")
     st.stop()
 
-# Função auxiliar de data
 def formatar_data_br(valor):
     try:
         if not valor or valor == "-": return "-"
@@ -55,7 +50,7 @@ def formatar_data_br(valor):
     except: return valor
 
 # ============================================================================
-# 3. CABEÇALHO E CADASTRO (MULTI-ESCOPO)
+# 3. CABEÇALHO E CADASTRO
 # ============================================================================
 c1, c2 = st.columns([4, 1])
 c1.title("Painel de projetos SIARCON")
@@ -66,49 +61,35 @@ with st.expander("➕ Cadastrar Nova Obra / Projetos", expanded=False):
         co1, co2 = st.columns(2)
         cli = co1.text_input("Cliente")
         obr = co2.text_input("Nome da Obra")
-        
-        # --- AQUI ESTÁ A MUDANÇA: MULTISELECT ---
         disciplinas_selecionadas = st.multiselect(
-            "Selecione os Escopos (Disciplinas)", 
-            ["Dutos", "Hidráulica", "Elétrica", "Automação", "TAB", "Movimentações", "Cobre"],
-            placeholder="Clique para adicionar escopos..."
+            "Selecione os Escopos", 
+            ["Dutos", "Hidráulica", "Elétrica", "Automação", "TAB", "Movimentações", "Cobre"]
         )
         
-        # Botão de Criação
         if st.form_submit_button("🚀 Criar Etiquetas"):
             if cli and obr and disciplinas_selecionadas:
-                # Data de hoje automática
                 data_hoje = datetime.now().strftime("%Y-%m-%d")
-                
-                # Loop: Cria um projeto para CADA disciplina selecionada
                 for disc in disciplinas_selecionadas:
                     novo_projeto = {
-                        "cliente": cli, 
-                        "obra": obr, 
-                        "disciplina": disc, 
-                        "status": "Não Iniciado",  # Status padrão inicial
-                        "prazo": data_hoje,        # Data de criação automática
+                        "cliente": cli, "obra": obr, "disciplina": disc, 
+                        "status": "Não Iniciado", "prazo": data_hoje,
                         "criado_por": st.session_state['usuario_atual']
                     }
                     utils_db.salvar_projeto(novo_projeto)
-                
-                st.success(f"{len(disciplinas_selecionadas)} etiquetas criadas com sucesso!")
-                time.sleep(1)
-                st.rerun()
-            else: 
-                st.error("Preencha Cliente, Obra e selecione pelo menos uma disciplina.")
+                st.success(f"{len(disciplinas_selecionadas)} etiquetas criadas!"); time.sleep(1); st.rerun()
+            else: st.error("Preencha todos os campos.")
 
 st.divider()
 
 # ============================================================================
-# 4. KANBAN VISUAL (COLUNAS LADO A LADO)
+# 4. KANBAN COM CORREÇÃO AUTOMÁTICA
 # ============================================================================
 try:
     df = utils_db.listar_todos_projetos()
 except:
     df = pd.DataFrame()
 
-# Definição das Colunas do Kanban
+# Colunas Oficiais do Kanban
 status_cols = ["Não Iniciado", "Engenharia", "Obras", "Suprimentos", "Finalizado"]
 colunas_tela = st.columns(len(status_cols))
 cores = {"Não Iniciado": "🔴", "Engenharia": "🔵", "Obras": "🏗️", "Suprimentos": "📦", "Finalizado": "🟢"}
@@ -116,31 +97,44 @@ cores = {"Não Iniciado": "🔴", "Engenharia": "🔵", "Obras": "🏗️", "Sup
 if df.empty:
     st.info("Nenhum projeto encontrado.")
 else:
-    # Garante colunas no DF
+    # Garante colunas
     for c in ['status', 'obra', 'cliente', 'disciplina']:
         if c not in df.columns: df[c] = ""
     
-    # Limpa status
+    # Limpeza básica
     df['status'] = df['status'].astype(str).str.strip()
 
-    # Loop para criar as 5 colunas VISUAIS
+    # --- CORREÇÃO DE STATUS (MAPA) ---
+    # Se o card estiver com status antigo, mapeia para o novo visualmente
+    mapa_correcao = {
+        "Em Elaboração": "Engenharia",
+        "Em Cotação": "Suprimentos",
+        "Em Análise Obras": "Obras",
+        "Concluído": "Finalizado",
+        "": "Não Iniciado"
+    }
+    # Aplica a correção no DataFrame em memória
+    df['status'] = df['status'].replace(mapa_correcao)
+    
+    # Rede de Segurança Final: Se ainda assim não bater com as colunas, joga para "Não Iniciado"
+    df.loc[~df['status'].isin(status_cols), 'status'] = "Não Iniciado"
+
+    # Renderiza as Colunas
     for i, s_nome in enumerate(status_cols):
         with colunas_tela[i]:
             st.markdown(f"**{cores.get(s_nome,'')} {s_nome}**")
             st.divider()
             
-            # Filtra projetos desta coluna
+            # Filtra
             df_s = df[df['status'] == s_nome]
             
             for idx, row in df_s.iterrows():
                 with st.container(border=True):
-                    # Dados do Card
                     uid = row.get('_id', idx)
                     tit = row.get('obra', 'Sem Nome')
                     cli_txt = row.get('cliente', '')
                     disc_txt = row.get('disciplina', '')
-                    # Data de criação (antigo prazo)
-                    data_txt = formatar_data_br(row.get('prazo', datetime.now()))
+                    data_txt = formatar_data_br(row.get('prazo', '-'))
                     
                     st.markdown(f"**{tit}**")
                     st.caption(f"{cli_txt}")
@@ -148,19 +142,19 @@ else:
                     
                     st.divider()
                     
-                    # Botões de Ação
-                    c_esq, c_edit, c_del, c_dir = st.columns([1, 2, 1, 1])
+                    # Botões
+                    b1, b2, b3, b4 = st.columns([1, 2, 1, 1])
                     
-                    # 1. Esquerda
+                    # Mover Esquerda
                     if i > 0:
-                        if c_esq.button("⬅️", key=f"L_{uid}", help="Voltar Fase"):
+                        if b1.button("⬅️", key=f"L_{uid}"):
                             row_dict = row.to_dict()
                             row_dict['status'] = status_cols[i-1]
                             utils_db.salvar_projeto(row_dict)
                             st.rerun()
                     
-                    # 2. Abrir (Edit)
-                    if c_edit.button("✏️", key=f"E_{uid}", use_container_width=True):
+                    # Abrir
+                    if b2.button("✏️", key=f"E_{uid}", use_container_width=True):
                         st.session_state['projeto_ativo'] = tit
                         st.session_state['cliente_ativo'] = cli_txt
                         st.session_state['id_projeto_editar'] = uid
@@ -174,17 +168,15 @@ else:
                         }
                         st.switch_page(rotas.get(disc_txt, "pages/1_Dutos.py"))
                     
-                    # 3. Excluir (Del)
-                    if c_del.button("🗑️", key=f"D_{uid}", help="Excluir"):
+                    # Excluir
+                    if b3.button("🗑️", key=f"D_{uid}"):
                         if hasattr(utils_db, 'excluir_projeto'):
                             utils_db.excluir_projeto(uid)
                             st.rerun()
-                        else:
-                            st.error("Erro: Atualize o utils_db.py")
 
-                    # 4. Direita
+                    # Mover Direita
                     if i < len(status_cols)-1:
-                        if c_dir.button("➡️", key=f"R_{uid}", help="Avançar Fase"):
+                        if b4.button("➡️", key=f"R_{uid}"):
                             row_dict = row.to_dict()
                             row_dict['status'] = status_cols[i+1]
                             utils_db.salvar_projeto(row_dict)
