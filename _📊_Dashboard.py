@@ -9,7 +9,7 @@ import utils_db
 # ============================================================================
 st.set_page_config(page_title="Painel SIARCON", page_icon="📊", layout="wide")
 
-# CSS para melhorar o visual do Kanban
+# CSS para melhorar o visual do Kanban (Cards compactos)
 st.markdown("""
 <style>
     div[data-testid="stVerticalBlock"] > div[style*="flex-direction: column;"] > div[data-testid="stVerticalBlock"] {
@@ -67,28 +67,32 @@ with st.expander("➕ Cadastrar Nova Obra / Projetos", expanded=False):
         cli = co1.text_input("Cliente")
         obr = co2.text_input("Nome da Obra")
         
-        # AGORA É MULTI-SELEÇÃO
-        disciplinas = st.multiselect("Selecione os Escopos (Disciplinas)", 
-                                     ["Dutos", "Hidráulica", "Elétrica", "Automação", "TAB", "Movimentações", "Cobre"])
+        # --- AQUI ESTÁ A MUDANÇA: MULTISELECT ---
+        disciplinas_selecionadas = st.multiselect(
+            "Selecione os Escopos (Disciplinas)", 
+            ["Dutos", "Hidráulica", "Elétrica", "Automação", "TAB", "Movimentações", "Cobre"],
+            placeholder="Clique para adicionar escopos..."
+        )
         
-        # Data automática (Hoje)
-        data_hoje = datetime.now().strftime("%Y-%m-%d")
-        
+        # Botão de Criação
         if st.form_submit_button("🚀 Criar Etiquetas"):
-            if cli and obr and disciplinas:
-                # Loop para criar um projeto para cada disciplina selecionada
-                for disc in disciplinas:
-                    novo = {
+            if cli and obr and disciplinas_selecionadas:
+                # Data de hoje automática
+                data_hoje = datetime.now().strftime("%Y-%m-%d")
+                
+                # Loop: Cria um projeto para CADA disciplina selecionada
+                for disc in disciplinas_selecionadas:
+                    novo_projeto = {
                         "cliente": cli, 
                         "obra": obr, 
                         "disciplina": disc, 
-                        "status": "Não Iniciado", # Padrão inicial
-                        "prazo": data_hoje,       # Data de criação automática
+                        "status": "Não Iniciado",  # Status padrão inicial
+                        "prazo": data_hoje,        # Data de criação automática
                         "criado_por": st.session_state['usuario_atual']
                     }
-                    utils_db.salvar_projeto(novo)
+                    utils_db.salvar_projeto(novo_projeto)
                 
-                st.success(f"{len(disciplinas)} etiquetas criadas com sucesso!")
+                st.success(f"{len(disciplinas_selecionadas)} etiquetas criadas com sucesso!")
                 time.sleep(1)
                 st.rerun()
             else: 
@@ -149,7 +153,7 @@ else:
                     
                     # 1. Esquerda
                     if i > 0:
-                        if c_esq.button("⬅️", key=f"L_{uid}"):
+                        if c_esq.button("⬅️", key=f"L_{uid}", help="Voltar Fase"):
                             row_dict = row.to_dict()
                             row_dict['status'] = status_cols[i-1]
                             utils_db.salvar_projeto(row_dict)
@@ -171,7 +175,7 @@ else:
                         st.switch_page(rotas.get(disc_txt, "pages/1_Dutos.py"))
                     
                     # 3. Excluir (Del)
-                    if c_del.button("🗑️", key=f"D_{uid}"):
+                    if c_del.button("🗑️", key=f"D_{uid}", help="Excluir"):
                         if hasattr(utils_db, 'excluir_projeto'):
                             utils_db.excluir_projeto(uid)
                             st.rerun()
@@ -180,7 +184,7 @@ else:
 
                     # 4. Direita
                     if i < len(status_cols)-1:
-                        if c_dir.button("➡️", key=f"R_{uid}"):
+                        if c_dir.button("➡️", key=f"R_{uid}", help="Avançar Fase"):
                             row_dict = row.to_dict()
                             row_dict['status'] = status_cols[i+1]
                             utils_db.salvar_projeto(row_dict)
