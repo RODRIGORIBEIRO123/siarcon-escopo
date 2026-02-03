@@ -18,7 +18,7 @@ def _conectar_gsheets():
         gc = gspread.service_account_from_dict(creds_dict)
         return gc.open("DB_SIARCON") 
     except Exception as e:
-        print(f"Erro conexão: {e}")
+        # print(f"Erro conexão: {e}") # Comentado para limpar log
         return None
 
 def _ler_aba_como_df(nome_aba):
@@ -44,7 +44,7 @@ def _ler_aba_como_df(nome_aba):
 
 def listar_todos_projetos():
     df = _ler_aba_como_df("Projetos")
-    cols = ['_id', 'status', 'disciplina', 'cliente', 'obra', 'prazo', 'fornecedor', 'valor_total', 'data_inicio']
+    cols = ['_id', 'status', 'disciplina', 'cliente', 'obra', 'prazo', 'fornecedor', 'valor_total', 'data_inicio', 'criado_por']
     if df.empty: return pd.DataFrame(columns=cols)
     for c in cols: 
         if c not in df.columns: df[c] = ""
@@ -96,7 +96,7 @@ def registrar_projeto(dados):
         print(f"Erro ao salvar: {e}")
         return False
 
-# --- NOVA FUNÇÃO DE EXCLUSÃO ---
+# --- FUNÇÃO DE EXCLUSÃO (ESSENCIAL PARA A LIXEIRA) ---
 def excluir_projeto(id_projeto):
     sh = _conectar_gsheets()
     if not sh: return False
@@ -134,20 +134,4 @@ def listar_fornecedores():
 
 def carregar_opcoes():
     df = _ler_aba_como_df("Dados")
-    opcoes = {'sms': []}
-    if not df.empty and 'Categoria' in df.columns and 'Item' in df.columns:
-        df['Categoria'] = df['Categoria'].astype(str).str.lower().str.strip()
-        for cat in df['Categoria'].unique():
-            itens = sorted(df[df['Categoria'] == cat]['Item'].unique().tolist())
-            opcoes[cat] = itens
-    return opcoes
-
-def aprender_novo_item(categoria, novo_item):
-    sh = _conectar_gsheets()
-    if not sh: return False
-    try:
-        try: ws = sh.worksheet("Dados")
-        except: ws = sh.add_worksheet("Dados", 100, 10)
-        ws.append_row([categoria.lower(), novo_item, "", ""])
-        return True
-    except: return False
+    opcoes
