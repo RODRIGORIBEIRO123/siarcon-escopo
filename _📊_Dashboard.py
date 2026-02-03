@@ -2,10 +2,10 @@ import streamlit as st
 import pandas as pd
 import time
 from datetime import datetime
-import utils_db  # Volta a usar sua conexão oficial
+import utils_db  # Conexão original com seu banco
 
 # ============================================================================
-# 1. CONFIGURAÇÕES INICIAIS
+# 1. CONFIGURAÇÕES
 # ============================================================================
 st.set_page_config(page_title="Siarcon - Gestão", page_icon="📊", layout="wide")
 
@@ -13,14 +13,14 @@ st.set_page_config(page_title="Siarcon - Gestão", page_icon="📊", layout="wid
 if 'logado' not in st.session_state:
     st.session_state['logado'] = False
 
-# Tela de Login (Padrão)
+# Tela de Login (Lógica original)
 if not st.session_state['logado']:
     col1, col2, col3 = st.columns([1,2,1])
     with col2:
         st.title("🔒 Siarcon Engenharia")
-        senha = st.text_input("Senha", type="password")
+        senha = st.text_input("Senha de Acesso", type="password")
         if st.button("Entrar"):
-            if senha == "1234":
+            if senha == "1234":  # Senha padrão
                 st.session_state['logado'] = True
                 st.rerun()
             else:
@@ -55,7 +55,7 @@ with st.sidebar:
                     "status": status,
                     "prazo": str(prazo)
                 }
-                # Salva no banco real
+                # Salva no banco real (recuperando seus dados)
                 utils_db.salvar_projeto(novo)
                 st.success("Projeto criado!")
                 time.sleep(1)
@@ -69,11 +69,11 @@ with st.sidebar:
         st.rerun()
 
 # ============================================================================
-# 3. KANBAN (RESTAURADO PARA VERSÃO JANEIRO)
+# 3. KANBAN (LAYOUT ORIGINAL RESTAURADO)
 # ============================================================================
 st.title("📊 Painel de Projetos")
 
-# Tenta carregar do banco. Se der erro, cria vazio para não quebrar a tela.
+# Tenta carregar do banco. 
 try:
     df = utils_db.listar_todos_projetos()
 except Exception as e:
@@ -87,7 +87,7 @@ else:
     for c in ['obra', 'cliente', 'disciplina', 'status']:
         if c not in df.columns: df[c] = "-"
 
-    # Layout Kanban
+    # Layout Kanban Original
     cols = st.columns(4)
     status_map = ["Não Iniciado", "Em Andamento", "Revisão", "Concluído"]
     colors = {"Não Iniciado": "🔴", "Em Andamento": "🟡", "Revisão": "🟠", "Concluído": "🟢"}
@@ -100,7 +100,7 @@ else:
             if 'status' in df.columns:
                 df_s = df[df['status'] == s_nome]
             else:
-                df_s = df # Se não tiver status, mostra tudo
+                df_s = df 
             
             for idx, row in df_s.iterrows():
                 with st.container(border=True):
@@ -112,7 +112,7 @@ else:
                     st.markdown(f"**{titulo}**")
                     st.caption(f"🏢 {cli} | 🔧 {disc}")
                     
-                    # --- BOTÃO DE EDIÇÃO (CORRIGIDO) ---
+                    # --- AQUI ESTÁ A CORREÇÃO DO VÍNCULO ---
                     # Usa ID ou Index para chave única
                     uid = row.get('_id', idx)
                     if st.button("✏️ Editar", key=f"edit_{uid}", use_container_width=True):
