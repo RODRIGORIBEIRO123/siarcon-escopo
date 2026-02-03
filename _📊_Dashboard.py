@@ -2,17 +2,17 @@ import streamlit as st
 import pandas as pd
 import time
 from datetime import datetime
-import utils_db  # Sua conexão original
+import utils_db
 
 # ============================================================================
-# 1. CONFIGURAÇÕES GERAIS
+# 1. CONFIGURAÇÕES
 # ============================================================================
 st.set_page_config(page_title="Siarcon - Gestão", page_icon="📊", layout="wide")
 
 if 'logado' not in st.session_state:
     st.session_state['logado'] = False
 
-# Tela de Login
+# Login
 if not st.session_state['logado']:
     col1, col2, col3 = st.columns([1,2,1])
     with col2:
@@ -42,7 +42,7 @@ with st.sidebar:
             "Automação", "TAB", "Movimentações", "Cobre"
         ])
         
-        # STATUS RESTAURADOS PARA O SEU FLUXO ORIGINAL
+        # STATUS ORIGINAIS DO SEU FLUXO
         status_opcoes = ["Não Iniciado", "Engenharia", "Obras", "Suprimentos", "Finalizado"]
         status = st.selectbox("Status Inicial", status_opcoes)
         
@@ -71,11 +71,10 @@ with st.sidebar:
         st.rerun()
 
 # ============================================================================
-# 3. KANBAN (LAYOUT PERSONALIZADO RESTAURADO)
+# 3. KANBAN (LAYOUT RESTAURADO)
 # ============================================================================
 st.title("📊 Painel de Projetos")
 
-# Carrega Dados
 try:
     df = utils_db.listar_todos_projetos()
 except Exception as e:
@@ -83,17 +82,16 @@ except Exception as e:
     df = pd.DataFrame()
 
 if df.empty:
-    st.info("Nenhum projeto encontrado. Utilize a barra lateral para cadastrar.")
+    st.info("Nenhum projeto encontrado.")
 else:
     # Garante colunas mínimas
     for c in ['obra', 'cliente', 'disciplina', 'status']:
         if c not in df.columns: df[c] = "-"
 
-    # --- DEFINIÇÃO DAS COLUNAS DO KANBAN ---
+    # COLUNAS DO SEU FLUXO
     colunas_kanban = ["Não Iniciado", "Engenharia", "Obras", "Suprimentos", "Finalizado"]
     cols = st.columns(len(colunas_kanban))
     
-    # Cores para cada status
     cores = {
         "Não Iniciado": "🔴", 
         "Engenharia": "🔵", 
@@ -107,15 +105,14 @@ else:
             st.markdown(f"### {cores.get(status_nome, '⚪')} {status_nome}")
             st.divider()
             
-            # Filtra projetos
             if 'status' in df.columns:
                 df_s = df[df['status'] == status_nome]
             else:
-                df_s = pd.DataFrame() # Se não tiver status compatível, não mostra nada errado
+                df_s = pd.DataFrame()
             
             for idx, row in df_s.iterrows():
                 with st.container(border=True):
-                    # Proteção de Nomes (.get)
+                    # Título usa 'obra' (se não tiver, tenta 'projeto')
                     titulo = row.get('obra', row.get('projeto', 'Sem Nome'))
                     cli = row.get('cliente', '')
                     disc = row.get('disciplina', 'Dutos')
@@ -124,17 +121,17 @@ else:
                     st.caption(f"🏢 {cli}")
                     st.caption(f"🔧 {disc}")
                     
-                    # --- BOTÃO CORRIGIDO (O QUE ARRUMA O PREENCHIMENTO) ---
+                    # --- CORREÇÃO DO VÍNCULO AQUI ---
                     uid = row.get('_id', idx)
                     if st.button("✏️ Editar", key=f"edit_{uid}", use_container_width=True):
                         
-                        # 1. Grava na memória para a próxima página ler
+                        # 1. Salva OBRIGATORIAMENTE 'obra' e 'cliente' na memória
                         st.session_state['projeto_ativo'] = titulo
                         st.session_state['cliente_ativo'] = cli
                         st.session_state['id_projeto_editar'] = uid
                         st.session_state['logado'] = True
                         
-                        # 2. Define a rota
+                        # 2. Roteamento
                         rotas = {
                             "Dutos": "pages/1_Dutos.py",
                             "Hidráulica": "pages/2_Hidráulica.py",
@@ -145,6 +142,5 @@ else:
                             "Cobre": "pages/7_Cobre.py"
                         }
                         
-                        # 3. Navega
                         destino = rotas.get(disc, "pages/1_Dutos.py")
                         st.switch_page(destino)
