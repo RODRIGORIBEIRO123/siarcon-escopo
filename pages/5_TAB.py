@@ -11,10 +11,17 @@ if 'logado' not in st.session_state or not st.session_state['logado']:
 DISCIPLINA_ATUAL = "TAB"
 TEXTO_RESUMO_PADRAO = "Este escopo contempla o fornecimento de serviços de TAB / Comissionamento de sistemas, conforme detalhamento a seguir."
 
+SMS_PADRAO_DOC = [
+    "Ficha de registro", "ASO (Atestado de Saúde Ocupacional)", "Ficha de EPI", "Ordem de Serviço",
+    "Certificados de Treinamento", "NR-06 (Equipamento de Proteção Individual)",
+    "NR-12 (Segurança em Máquinas e Equipamentos)",
+    "Comprovações de recolhimento de INSS, FGTS e folha de pagamento"
+]
+
 LISTA_NRS_COMPLETA = [
     "NR-01 (Disposições Gerais)", "NR-03 (Embargo e Interdição)", "NR-04 (SESMT)", "NR-05 (CIPA)", 
-    "NR-06 (EPI)", "NR-07 (PCMSO)", "NR-08 (Edificações)", "NR-09 (Avaliação e Controle de Exposições)", 
-    "NR-10 (Eletricidade)", "NR-11 (Transporte e Movimentação)", "NR-12 (Máquinas e Equipamentos)", 
+    "NR-07 (PCMSO)", "NR-08 (Edificações)", "NR-09 (Avaliação e Controle de Exposições)", 
+    "NR-10 (Eletricidade)", "NR-11 (Transporte e Movimentação)", 
     "NR-13 (Vasos de Pressão)", "NR-15 (Insalubridade)", "NR-16 (Periculosidade)", "NR-17 (Ergonomia)", 
     "NR-18 (Construção Civil)", "NR-19 (Explosivos)", "NR-20 (Inflamáveis)", "NR-21 (Trabalho a Céu Aberto)", 
     "NR-23 (Incêndios)", "NR-24 (Condições Sanitárias)", "NR-25 (Resíduos)", "NR-26 (Sinalização)", 
@@ -92,6 +99,8 @@ def gerar_docx(dados):
         row[2].text = "X" if v != "SIARCON" else ""
 
     doc.add_heading('5. SMS', 1)
+    for item_padrao in SMS_PADRAO_DOC:
+        doc.add_paragraph(item_padrao, style='List Bullet')
     if dados.get('sms_livre'): doc.add_paragraph(dados['sms_livre'])
     for nr in dados.get('nrs_selecionadas', []): doc.add_paragraph(nr, style='List Bullet')
 
@@ -120,8 +129,6 @@ with tab1:
     resp_eng = c2.text_input("Engenharia", value=dados_edit.get('responsavel', ''))
     resp_sup = c2.text_input("Suprimentos", value=dados_edit.get('resp_suprimentos', ''))
     revisao = c2.text_input("Revisão", value=dados_edit.get('revisao', 'R-00'))
-    
-    # --- RESUMO COM TEXTO PADRÃO ---
     val_resumo = dados_edit.get('resumo_escopo', TEXTO_RESUMO_PADRAO)
     resumo = c2.text_area("Resumo", value=val_resumo, height=100)
 
@@ -165,10 +172,8 @@ with tab4:
         try: nrs_salvas = eval(nrs_salvas)
         except: nrs_salvas = []
     elif not isinstance(nrs_salvas, list): nrs_salvas = []
-    
-    # LISTA DE NRS COMPLETA
     opcoes_sms = sorted(list(set(LISTA_NRS_COMPLETA + nrs_salvas)))
-    nrs = st.multiselect("NRs:", opcoes_sms, default=nrs_salvas)
+    nrs = st.multiselect("NRs Adicionais:", opcoes_sms, default=nrs_salvas)
     sms_livre = st.text_area("Livre SMS:", value=dados_edit.get('sms_livre', ''))
 
 with tab5:
