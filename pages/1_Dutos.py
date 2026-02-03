@@ -11,11 +11,19 @@ if 'logado' not in st.session_state or not st.session_state['logado']:
 DISCIPLINA_ATUAL = "Dutos"
 TEXTO_RESUMO_PADRAO = "Este escopo contempla o fornecimento de rede de dutos, conforme detalhamento a seguir."
 
-# Lista Completa de NRs
+# Lista fixa para o documento (já inclui NR-06 e NR-12)
+SMS_PADRAO_DOC = [
+    "Ficha de registro", "ASO (Atestado de Saúde Ocupacional)", "Ficha de EPI", "Ordem de Serviço",
+    "Certificados de Treinamento", "NR-06 (Equipamento de Proteção Individual)",
+    "NR-12 (Segurança em Máquinas e Equipamentos)",
+    "Comprovações de recolhimento de INSS, FGTS e folha de pagamento"
+]
+
+# Lista para seleção (Sem NR-06 e NR-12)
 LISTA_NRS_COMPLETA = [
     "NR-01 (Disposições Gerais)", "NR-03 (Embargo e Interdição)", "NR-04 (SESMT)", "NR-05 (CIPA)", 
-    "NR-06 (EPI)", "NR-07 (PCMSO)", "NR-08 (Edificações)", "NR-09 (Avaliação e Controle de Exposições)", 
-    "NR-10 (Eletricidade)", "NR-11 (Transporte e Movimentação)", "NR-12 (Máquinas e Equipamentos)", 
+    "NR-07 (PCMSO)", "NR-08 (Edificações)", "NR-09 (Avaliação e Controle de Exposições)", 
+    "NR-10 (Eletricidade)", "NR-11 (Transporte e Movimentação)", 
     "NR-13 (Vasos de Pressão)", "NR-15 (Insalubridade)", "NR-16 (Periculosidade)", "NR-17 (Ergonomia)", 
     "NR-18 (Construção Civil)", "NR-19 (Explosivos)", "NR-20 (Inflamáveis)", "NR-21 (Trabalho a Céu Aberto)", 
     "NR-23 (Incêndios)", "NR-24 (Condições Sanitárias)", "NR-25 (Resíduos)", "NR-26 (Sinalização)", 
@@ -87,14 +95,11 @@ def gerar_docx(dados):
     doc.add_heading('3. QUALIDADE', 1)
     for item in dados.get('itens_qualidade', []): doc.add_paragraph(item, style='List Bullet')
 
-    # --- CORREÇÃO DA MATRIZ (TABELA) ---
     doc.add_heading('4. MATRIZ DE RESPONSABILIDADES', 1)
     table = doc.add_table(rows=1, cols=3)
     table.style = 'Table Grid'
     hdr = table.rows[0].cells
-    hdr[0].text = "ITEM"
-    hdr[1].text = "SIARCON"
-    hdr[2].text = "FORNECEDOR"
+    hdr[0].text = "ITEM"; hdr[1].text = "SIARCON"; hdr[2].text = "FORNECEDOR"
     for k, v in dados.get('matriz', {}).items():
         row = table.add_row().cells
         row[0].text = k
@@ -102,6 +107,10 @@ def gerar_docx(dados):
         row[2].text = "X" if v != "SIARCON" else ""
 
     doc.add_heading('5. SMS', 1)
+    # Adiciona itens padrão obrigatórios
+    for item_padrao in SMS_PADRAO_DOC:
+        doc.add_paragraph(item_padrao, style='List Bullet')
+    # Adiciona itens selecionados e livres
     if dados.get('sms_livre'): doc.add_paragraph(dados['sms_livre'])
     for nr in dados.get('nrs_selecionadas', []): doc.add_paragraph(nr, style='List Bullet')
 
@@ -130,8 +139,6 @@ with tab1:
     resp_eng = c2.text_input("Engenharia", value=dados_edit.get('responsavel', ''))
     resp_sup = c2.text_input("Suprimentos", value=dados_edit.get('resp_suprimentos', ''))
     revisao = c2.text_input("Revisão", value=dados_edit.get('revisao', 'R-00'))
-    
-    # --- RESUMO COM TEXTO PADRÃO ---
     val_resumo = dados_edit.get('resumo_escopo', TEXTO_RESUMO_PADRAO)
     resumo = c2.text_area("Resumo", value=val_resumo, height=100)
 
@@ -142,12 +149,10 @@ with tab2:
         try: itens_salvos = eval(itens_salvos) 
         except: itens_salvos = []
     elif not isinstance(itens_salvos, list): itens_salvos = []
-    
     opcoes_finais = sorted(list(set(lista_tec_final + itens_salvos)))
     itens_tec = st.multiselect("Itens Técnicos:", opcoes_finais, default=itens_salvos)
     tec_livre = st.text_area("Livre Técnico:", value=dados_edit.get('tecnico_livre', ''))
     st.divider()
-    
     lista_qual_final = sorted(list(set(opcoes.get(f"qualidade_{DISCIPLINA_ATUAL.lower()}", []) + PADRAO_QUALIDADE)))
     itens_salvos_q = dados_edit.get('itens_qualidade', [])
     if isinstance(itens_salvos_q, str):
@@ -164,7 +169,6 @@ with tab3:
         try: matriz_salva = eval(matriz_salva)
         except: matriz_salva = {}
     elif not isinstance(matriz_salva, dict): matriz_salva = {}
-
     for item in ITENS_MATRIZ:
         col_a, col_b = st.columns([2,1])
         col_a.write(f"**{item}**")
@@ -178,10 +182,10 @@ with tab4:
         try: nrs_salvas = eval(nrs_salvas)
         except: nrs_salvas = []
     elif not isinstance(nrs_salvas, list): nrs_salvas = []
-
-    # USANDO LISTA COMPLETA
+    
+    # LISTA SEM NR-06 e NR-12
     opcoes_sms = sorted(list(set(LISTA_NRS_COMPLETA + nrs_salvas)))
-    nrs = st.multiselect("NRs:", opcoes_sms, default=nrs_salvas)
+    nrs = st.multiselect("NRs Adicionais:", opcoes_sms, default=nrs_salvas)
     sms_livre = st.text_area("Livre SMS:", value=dados_edit.get('sms_livre', ''))
 
 with tab5:
