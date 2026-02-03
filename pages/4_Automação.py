@@ -35,14 +35,19 @@ PADRAO_TECNICO = [
 ]
 
 PADRAO_QUALIDADE = [
-    "Teste de Ponto a Ponto (Point-to-Point)",
+    "Teste de Ponto a Ponto à frio",
+    "Teste de ponto a Ponto à quente",
+    "Emissão de relatório de comissionamento dos pontos",
+    "Emissão de memorial de lógica de controle"
     "Teste de Lógica de Controle",
     "Teste de Falha de Comunicação",
     "Verificação de Calibração de Sensores",
     "Backup da Programação Entregue",
     "Treinamento da Equipe de Operação",
     "Manual de Operação do Sistema",
-    "Lista de Pontos (I/O List) As-Built"
+    "Lista de Pontos (I/O List) As-Built",
+    "Lista de spare parts".
+    
 ]
 # ============================================================================
 
