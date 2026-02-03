@@ -50,7 +50,7 @@ PADRAO_QUALIDADE = [
     "Aplicação de fundo das tubulações",
     "Verificação de Alinhamento e Prumo",
     "Limpeza da rede de água",
-    "Limpeza dos filtro Y,
+    "Limpeza dos filtro Y",
     "Limpeza do local de trabalho"
 ]
 # ============================================================================
