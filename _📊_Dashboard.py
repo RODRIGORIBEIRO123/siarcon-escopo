@@ -26,24 +26,20 @@ if not st.session_state['logado']:
                 st.error("Senha incorreta")
     st.stop()
 
-# Função auxiliar para formatar data BR (DD/MM/AAAA)
 def formatar_data_br(valor):
     if not valor or valor == "-": return "-"
     try:
-        # Se for objeto date, converte direto
         if isinstance(valor, (datetime, date)):
             return valor.strftime("%d/%m/%Y")
-        # Se for string YYYY-MM-DD
         return datetime.strptime(str(valor), "%Y-%m-%d").strftime("%d/%m/%Y")
     except:
-        return valor # Retorna original se falhar
+        return valor
 
 # ============================================================================
-# 2. CABEÇALHO E CADASTRO (NO TOPO)
+# 2. CABEÇALHO E CADASTRO
 # ============================================================================
 st.title("Painel de projetos SIARCON")
 
-# Formulário de Cadastro
 with st.expander("➕ Cadastrar Nova Obra / Projeto", expanded=False):
     with st.form("novo_projeto", clear_on_submit=True):
         c1, c2 = st.columns(2)
@@ -56,7 +52,6 @@ with st.expander("➕ Cadastrar Nova Obra / Projeto", expanded=False):
             "Automação", "TAB", "Movimentações", "Cobre"
         ])
         
-        # STATUS EXATOS DO KANBAN
         status_opcoes = ["Não Iniciado", "Engenharia", "Obras", "Suprimentos", "Finalizado"]
         status = c4.selectbox("Status Inicial", status_opcoes)
         
@@ -70,22 +65,20 @@ with st.expander("➕ Cadastrar Nova Obra / Projeto", expanded=False):
                     "obra": obra,
                     "disciplina": disciplina,
                     "status": status,
-                    "prazo": str(prazo_input) # Salva como YYYY-MM-DD para o banco ordenar certo
+                    "prazo": str(prazo_input)
                 }
                 utils_db.salvar_projeto(novo)
-                st.success(f"Projeto '{obra}' cadastrado com sucesso!")
+                st.success(f"Projeto '{obra}' cadastrado!")
                 time.sleep(1)
                 st.rerun()
             else:
-                st.error("Por favor, preencha o Cliente e o Nome da Obra.")
+                st.error("Preencha Cliente e Obra.")
 
 st.divider()
 
 # ============================================================================
-# 3. KANBAN (COM NAVEGAÇÃO POR ABAS)
+# 3. KANBAN (COM SETAS E LIXEIRA)
 # ============================================================================
-
-# Carrega Dados
 try:
     df = utils_db.listar_todos_projetos()
 except Exception as e:
@@ -93,24 +86,18 @@ except Exception as e:
     df = pd.DataFrame()
 
 if df.empty:
-    st.info("Nenhum projeto encontrado. Utilize o cadastro acima.")
+    st.info("Nenhum projeto encontrado.")
 else:
-    # Garante colunas mínimas
     for c in ['obra', 'cliente', 'disciplina', 'status']:
         if c not in df.columns: df[c] = "-"
     
-    # --- CORREÇÃO DE ITENS SUMIDOS ---
-    # Remove espaços em branco extras que podem ter vindo do banco
+    # Normalização dos Status
+    status_kanban = ["Não Iniciado", "Engenharia", "Obras", "Suprimentos", "Finalizado"]
     if 'status' in df.columns:
         df['status'] = df['status'].astype(str).str.strip()
-        # Se o status estiver vazio ou errado, joga para "Não Iniciado"
-        status_validos = ["Não Iniciado", "Engenharia", "Obras", "Suprimentos", "Finalizado"]
-        df.loc[~df['status'].isin(status_validos), 'status'] = "Não Iniciado"
+        df.loc[~df['status'].isin(status_kanban), 'status'] = "Não Iniciado"
 
-    # Definição das Abas
-    status_kanban = ["Não Iniciado", "Engenharia", "Obras", "Suprimentos", "Finalizado"]
-    
-    # Cria as Abas
+    # Abas de Navegação
     abas = st.tabs([f"  {s}  " for s in status_kanban])
     
     cores = {
@@ -118,42 +105,50 @@ else:
         "Obras": "🏗️", "Suprimentos": "📦", "Finalizado": "🟢"
     }
 
-    # Preenche cada aba
     for i, status_nome in enumerate(status_kanban):
         with abas[i]:
             st.markdown(f"### {cores.get(status_nome, '⚪')} {status_nome}")
             
-            # Filtra projetos
             if 'status' in df.columns:
                 df_s = df[df['status'] == status_nome]
             else:
                 df_s = pd.DataFrame()
             
-            # Mostra os cards
             if df_s.empty:
-                st.caption("Nenhum projeto nesta fase.")
+                st.caption("Nenhum projeto.")
             else:
-                # Grid de cards (3 por linha)
                 cols_cards = st.columns(3)
                 for idx, (index_df, row) in enumerate(df_s.iterrows()):
                     col_atual = cols_cards[idx % 3]
                     
                     with col_atual:
                         with st.container(border=True):
-                            titulo = row.get('obra', row.get('projeto', 'Sem Nome'))
+                            uid = row.get('_id', index_df)
+                            titulo = row.get('obra', 'Sem Nome')
                             cli = row.get('cliente', '')
                             disc = row.get('disciplina', '-')
-                            
-                            # Formata a data para BRASIL
                             prazo_txt = formatar_data_br(row.get('prazo', '-'))
                             
                             st.markdown(f"**{titulo}**")
                             st.text(f"🏢 {cli}")
                             st.caption(f"🔧 {disc} | 📅 {prazo_txt}")
                             
-                            # BOTÃO DE EDIÇÃO
-                            uid = row.get('_id', index_df)
-                            if st.button("✏️ Abrir Escopo", key=f"btn_{uid}", use_container_width=True):
+                            st.divider()
+                            
+                            # --- BOTÕES DE AÇÃO ---
+                            c_esq, c_edit, c_del, c_dir = st.columns([1, 2, 1, 1])
+                            
+                            # 1. Mover Esquerda
+                            if i > 0:
+                                if c_esq.button("⬅️", key=f"L_{uid}", help="Voltar Fase"):
+                                    novo_st = status_kanban[i-1]
+                                    # Atualiza no banco
+                                    dados_up = row.to_dict(); dados_up['status'] = novo_st
+                                    utils_db.salvar_projeto(dados_up)
+                                    st.rerun()
+                            
+                            # 2. Editar (Centro)
+                            if c_edit.button("✏️ Abrir", key=f"E_{uid}", use_container_width=True):
                                 st.session_state['projeto_ativo'] = titulo
                                 st.session_state['cliente_ativo'] = cli
                                 st.session_state['id_projeto_editar'] = uid
@@ -168,10 +163,23 @@ else:
                                     "Movimentações": "pages/6_Movimentações.py",
                                     "Cobre": "pages/7_Cobre.py"
                                 }
-                                destino = rotas.get(disc, "pages/1_Dutos.py")
-                                st.switch_page(destino)
+                                st.switch_page(rotas.get(disc, "pages/1_Dutos.py"))
+                            
+                            # 3. Excluir
+                            if c_del.button("🗑️", key=f"D_{uid}", help="Excluir Projeto"):
+                                utils_db.excluir_projeto(uid)
+                                st.toast(f"Projeto {titulo} excluído!")
+                                time.sleep(1)
+                                st.rerun()
+                                
+                            # 4. Mover Direita
+                            if i < len(status_kanban) - 1:
+                                if c_dir.button("➡️", key=f"R_{uid}", help="Avançar Fase"):
+                                    novo_st = status_kanban[i+1]
+                                    dados_up = row.to_dict(); dados_up['status'] = novo_st
+                                    utils_db.salvar_projeto(dados_up)
+                                    st.rerun()
 
-# --- BOTÃO DE RECARGA ---
 st.divider()
 if st.button("🔄 Atualizar Quadro"):
     st.cache_data.clear()
