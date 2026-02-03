@@ -13,7 +13,7 @@ if 'logado' not in st.session_state or not st.session_state['logado']:
 DISCIPLINA_ATUAL = "TAB"
 ITENS_MATRIZ = [
     "Instrumentos de Medição", "Mão de Obra de Ajuste", "Relatórios Técnicos",
-    "Troca de Polias/Correias", "Balanceamento Hidrônico", "Balanceamento de Ar",
+    "Balanceamento Hidrônico", "Balanceamento de Ar",
     "ART de Execução", "Análise de Qualidade do Ar (RE 09)"
 ]
 # ... COLE O BLOCO PRINCIPAL AQUI ABAIXO ...# --- INÍCIO DO CÓDIGO COMUM ---
