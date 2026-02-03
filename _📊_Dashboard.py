@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import time
-from datetime import datetime
+from datetime import datetime, date
 import utils_db
 
 # ============================================================================
@@ -26,12 +26,24 @@ if not st.session_state['logado']:
                 st.error("Senha incorreta")
     st.stop()
 
+# Função auxiliar para formatar data BR (DD/MM/AAAA)
+def formatar_data_br(valor):
+    if not valor or valor == "-": return "-"
+    try:
+        # Se for objeto date, converte direto
+        if isinstance(valor, (datetime, date)):
+            return valor.strftime("%d/%m/%Y")
+        # Se for string YYYY-MM-DD
+        return datetime.strptime(str(valor), "%Y-%m-%d").strftime("%d/%m/%Y")
+    except:
+        return valor # Retorna original se falhar
+
 # ============================================================================
 # 2. CABEÇALHO E CADASTRO (NO TOPO)
 # ============================================================================
 st.title("Painel de projetos SIARCON")
 
-# Formulário de Cadastro movido para o topo dentro de um Expander
+# Formulário de Cadastro
 with st.expander("➕ Cadastrar Nova Obra / Projeto", expanded=False):
     with st.form("novo_projeto", clear_on_submit=True):
         c1, c2 = st.columns(2)
@@ -44,10 +56,11 @@ with st.expander("➕ Cadastrar Nova Obra / Projeto", expanded=False):
             "Automação", "TAB", "Movimentações", "Cobre"
         ])
         
+        # STATUS EXATOS DO KANBAN
         status_opcoes = ["Não Iniciado", "Engenharia", "Obras", "Suprimentos", "Finalizado"]
         status = c4.selectbox("Status Inicial", status_opcoes)
         
-        prazo = st.date_input("Prazo de Entrega")
+        prazo_input = st.date_input("Prazo de Entrega", format="DD/MM/YYYY")
         
         if st.form_submit_button("🚀 Criar Projeto"):
             if cliente and obra:
@@ -57,7 +70,7 @@ with st.expander("➕ Cadastrar Nova Obra / Projeto", expanded=False):
                     "obra": obra,
                     "disciplina": disciplina,
                     "status": status,
-                    "prazo": str(prazo)
+                    "prazo": str(prazo_input) # Salva como YYYY-MM-DD para o banco ordenar certo
                 }
                 utils_db.salvar_projeto(novo)
                 st.success(f"Projeto '{obra}' cadastrado com sucesso!")
@@ -69,7 +82,7 @@ with st.expander("➕ Cadastrar Nova Obra / Projeto", expanded=False):
 st.divider()
 
 # ============================================================================
-# 3. KANBAN (COM NAVEGAÇÃO POR ABAS/BOTÕES)
+# 3. KANBAN (COM NAVEGAÇÃO POR ABAS)
 # ============================================================================
 
 # Carrega Dados
@@ -85,19 +98,24 @@ else:
     # Garante colunas mínimas
     for c in ['obra', 'cliente', 'disciplina', 'status']:
         if c not in df.columns: df[c] = "-"
+    
+    # --- CORREÇÃO DE ITENS SUMIDOS ---
+    # Remove espaços em branco extras que podem ter vindo do banco
+    if 'status' in df.columns:
+        df['status'] = df['status'].astype(str).str.strip()
+        # Se o status estiver vazio ou errado, joga para "Não Iniciado"
+        status_validos = ["Não Iniciado", "Engenharia", "Obras", "Suprimentos", "Finalizado"]
+        df.loc[~df['status'].isin(status_validos), 'status'] = "Não Iniciado"
 
-    # Definição das Abas (Etiquetas do Kanban)
+    # Definição das Abas
     status_kanban = ["Não Iniciado", "Engenharia", "Obras", "Suprimentos", "Finalizado"]
     
-    # Cria os "botões para ir para os lados" (Abas)
+    # Cria as Abas
     abas = st.tabs([f"  {s}  " for s in status_kanban])
     
     cores = {
-        "Não Iniciado": "🔴", 
-        "Engenharia": "🔵", 
-        "Obras": "🏗️", 
-        "Suprimentos": "📦", 
-        "Finalizado": "🟢"
+        "Não Iniciado": "🔴", "Engenharia": "🔵", 
+        "Obras": "🏗️", "Suprimentos": "📦", "Finalizado": "🟢"
     }
 
     # Preenche cada aba
@@ -105,7 +123,7 @@ else:
         with abas[i]:
             st.markdown(f"### {cores.get(status_nome, '⚪')} {status_nome}")
             
-            # Filtra projetos do status atual
+            # Filtra projetos
             if 'status' in df.columns:
                 df_s = df[df['status'] == status_nome]
             else:
@@ -115,7 +133,7 @@ else:
             if df_s.empty:
                 st.caption("Nenhum projeto nesta fase.")
             else:
-                # Cria um grid de cards (3 por linha para não ficar lista linguiça)
+                # Grid de cards (3 por linha)
                 cols_cards = st.columns(3)
                 for idx, (index_df, row) in enumerate(df_s.iterrows()):
                     col_atual = cols_cards[idx % 3]
@@ -125,13 +143,15 @@ else:
                             titulo = row.get('obra', row.get('projeto', 'Sem Nome'))
                             cli = row.get('cliente', '')
                             disc = row.get('disciplina', '-')
-                            prazo_txt = row.get('prazo', '-')
+                            
+                            # Formata a data para BRASIL
+                            prazo_txt = formatar_data_br(row.get('prazo', '-'))
                             
                             st.markdown(f"**{titulo}**")
                             st.text(f"🏢 {cli}")
                             st.caption(f"🔧 {disc} | 📅 {prazo_txt}")
                             
-                            # BOTÃO DE EDIÇÃO (Mantendo a correção do vínculo)
+                            # BOTÃO DE EDIÇÃO
                             uid = row.get('_id', index_df)
                             if st.button("✏️ Abrir Escopo", key=f"btn_{uid}", use_container_width=True):
                                 st.session_state['projeto_ativo'] = titulo
@@ -151,7 +171,7 @@ else:
                                 destino = rotas.get(disc, "pages/1_Dutos.py")
                                 st.switch_page(destino)
 
-# --- BOTÃO DE RECARGA (Rodapé) ---
+# --- BOTÃO DE RECARGA ---
 st.divider()
 if st.button("🔄 Atualizar Quadro"):
     st.cache_data.clear()
