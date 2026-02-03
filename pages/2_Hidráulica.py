@@ -35,7 +35,7 @@ PADRAO_TECNICO = [
     "Instalação de Filtros Y e Purgadores",
     "Instalação de Manômetros e Termômetros",
     "Aplicação de Isolamento em Borracha Elastomérica",
-    "Aplicação de isolamento em calhas de lâ de rocha",
+    "Aplicação de isolamento em calhas de lã de rocha",
     "Aplicação de isolamento nas redes de dreno",
     "Montagem da rede de dreno",
     "Proteção Mecânica em Alumínio liso",
