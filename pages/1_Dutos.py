@@ -17,31 +17,43 @@ DISCIPLINA_ATUAL = "Dutos"
 ITENS_MATRIZ = [
     "Fabricação de Dutos (Chapa/MPU)", "Montagem de Dutos", "Isolamento Térmico",
     "Suportação e Fixação", "Instalação de Grelhas/Difusores", "Instalação de Dampers",
-    "Dutos Flexíveis", "Conexão com Equipamentos", "Testes de Estanqueidade"
+    "Dutos Flexíveis", "Conexão com Equipamentos", "Testes de Estanqueidade", "Posicionamento dos equipamentos (Ventiladores / Exaustores)",
+    "Posicionamento dos equipamentos (Fancoil / UTA)"
 ]
 
 PADRAO_TECNICO = [
-    "Fabricação e Montagem de Dutos em Chapa Galvanizada (TDC/S)",
+    "Fabricação e Montagem de Dutos em Chapa Galvanizada (TDC)",
     "Fabricação e Montagem de Dutos em MPU",
-    "Aplicação de Isolamento Térmico (Lã de Vidro/Borracha)",
+    "Fabricação e Montagem de Dutos em chapa preta",
+    "Aplicação de Isolamento Térmico (Lã de Vidro/Lã de Rocha)",
+    "Aplicação de Isolamento Térmico (Borracha Elastomérica)",
     "Instalação de Suportes e Tirantes",
+    "Montagem de Rede de Dutos TDC",
+    "Montagem de Rede de Dutos MPU",
+    "Montagem de Rede de Dutos chapa preta",
+    "Montagem de Rede de Dutos Circulares",
     "Montagem de Rede de Dutos Flexíveis",
-    "Instalação de Dampers de Regulagem e Corta-Fogo",
+    "Instalação de Dampers de Regulagem",
+    "Instalação de Dampers Corta-Fogo",
     "Instalação de Grelhas, Difusores e Venezianas",
     "Vedação de Flanges e Juntas (Silicone/Fita)",
     "Conexão de Dutos aos Equipamentos (Fancoils/UTA)",
-    "Instalação de Portas de Inspeção"
+    "Instalação de Portas de Inspeção",
+    "Posicionamento dos equipamentos",
+    "Fabricação de dutos TDC",
+    "Fabricação de dutos em chapa preta".
+    
 ]
 
 PADRAO_QUALIDADE = [
-    "Teste de Estanqueidade (Teste de Luz/Fumaça)",
-    "Verificação de Espessura da Chapa/Isolamento",
+    "Preparação e teste de 100% da rede de dutos",
+    "Preparação e teste por amostragem de rede de dutos",
+    "Todos os dutos devem ser higienizados durante a instalação",
+    "Todos os dutos devem ter suas bocas fechadas ao final do dia, com filme plástico",
+    "Acompanhamento do trabalho de TAB",
     "Nivelamento e Alinhamento da Rede",
     "Inspeção de Vedação das Juntas",
-    "Verificação de Fixação dos Suportes",
-    "Limpeza Interna dos Dutos",
-    "Balanceamento Preliminar de Vazão",
-    "Diagramas As-Built"
+    "Verificação de Fixação dos Suportes".
 ]
 # ============================================================================
 
