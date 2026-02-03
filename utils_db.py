@@ -18,7 +18,6 @@ def _conectar_gsheets():
         gc = gspread.service_account_from_dict(creds_dict)
         return gc.open("DB_SIARCON") 
     except Exception as e:
-        # print(f"Erro conexão: {e}") # Comentado para limpar log
         return None
 
 def _ler_aba_como_df(nome_aba):
@@ -28,10 +27,8 @@ def _ler_aba_como_df(nome_aba):
         try: ws = sh.worksheet(nome_aba)
         except: 
             if nome_aba == "Dados":
-                for n in ["Página1", "Sheet1"]:
-                    try: ws = sh.worksheet(n); break
-                    except: pass
-                else: return pd.DataFrame()
+                try: ws = sh.add_worksheet("Dados", 100, 10)
+                except: return pd.DataFrame()
             else: return pd.DataFrame()
         
         data = ws.get_all_records()
@@ -39,9 +36,33 @@ def _ler_aba_como_df(nome_aba):
     except: return pd.DataFrame()
 
 # ==================================================
-# 2. FUNÇÕES PRINCIPAIS (PROJETOS)
+# 2. AUTENTICAÇÃO (LOGIN PELO BANCO)
 # ==================================================
+def verificar_login_db(usuario, senha):
+    """Verifica usuário e senha na aba 'Usuarios' da planilha"""
+    df = _ler_aba_como_df("Usuarios")
+    
+    # Se a aba não existir ou estiver vazia
+    if df.empty:
+        # Fallback de emergência se não tiver nada cadastrado
+        if usuario == "admin" and senha == "1234": return True
+        return False
+    
+    # Converte tudo para string para comparar
+    df['Usuario'] = df['Usuario'].astype(str)
+    df['Senha'] = df['Senha'].astype(str)
+    
+    # Busca
+    user_encontrado = df[
+        (df['Usuario'] == str(usuario)) & 
+        (df['Senha'] == str(senha))
+    ]
+    
+    return not user_encontrado.empty
 
+# ==================================================
+# 3. FUNÇÕES DE PROJETO
+# ==================================================
 def listar_todos_projetos():
     df = _ler_aba_como_df("Projetos")
     cols = ['_id', 'status', 'disciplina', 'cliente', 'obra', 'prazo', 'fornecedor', 'valor_total', 'data_inicio', 'criado_por']
@@ -69,7 +90,7 @@ def registrar_projeto(dados):
         try: ws = sh.worksheet("Projetos")
         except: 
             ws = sh.add_worksheet("Projetos", 100, 20)
-            ws.append_row(['_id', 'status', 'disciplina', 'cliente', 'obra', 'prazo', 'fornecedor', 'valor_total'])
+            ws.append_row(['_id', 'status', 'disciplina', 'cliente', 'obra', 'prazo', 'fornecedor', 'valor_total', 'criado_por'])
         
         headers = ws.row_values(1)
         if not headers: 
@@ -92,11 +113,8 @@ def registrar_projeto(dados):
         else: 
             ws.append_row(row_data)
         return True
-    except Exception as e: 
-        print(f"Erro ao salvar: {e}")
-        return False
+    except: return False
 
-# --- FUNÇÃO DE EXCLUSÃO (ESSENCIAL PARA A LIXEIRA) ---
 def excluir_projeto(id_projeto):
     sh = _conectar_gsheets()
     if not sh: return False
@@ -110,9 +128,8 @@ def excluir_projeto(id_projeto):
     return False
 
 # ==================================================
-# 3. AUXILIARES
+# 4. AUXILIARES
 # ==================================================
-
 def listar_fornecedores():
     sh = _conectar_gsheets()
     if not sh: return []
@@ -134,4 +151,20 @@ def listar_fornecedores():
 
 def carregar_opcoes():
     df = _ler_aba_como_df("Dados")
-    opcoes
+    opcoes = {'sms': []}
+    if not df.empty and 'Categoria' in df.columns and 'Item' in df.columns:
+        df['Categoria'] = df['Categoria'].astype(str).str.lower().str.strip()
+        for cat in df['Categoria'].unique():
+            itens = sorted(df[df['Categoria'] == cat]['Item'].unique().tolist())
+            opcoes[cat] = itens
+    return opcoes
+
+def aprender_novo_item(categoria, novo_item):
+    sh = _conectar_gsheets()
+    if not sh: return False
+    try:
+        try: ws = sh.worksheet("Dados")
+        except: ws = sh.add_worksheet("Dados", 100, 10)
+        ws.append_row([categoria.lower(), novo_item, "", ""])
+        return True
+    except: return False
