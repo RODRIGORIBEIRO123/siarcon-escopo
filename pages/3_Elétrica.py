@@ -17,7 +17,7 @@ DISCIPLINA_ATUAL = "Eletrica"
 ITENS_MATRIZ = [
     "Infraestrutura (Eletrocalhas/Perfilados)", "Cabos de Força", "Cabos de Comando",
     "Quadros Elétricos (QGBT/Comando)", "Instrumentação de Campo", "Aterramento",
-    "Conectorização/Terminação", "Testes de Isolação (Megger)", "Diagramas As-Built"
+    "Conectorização/Terminação"
 ]
 
 PADRAO_TECNICO = [
@@ -25,24 +25,18 @@ PADRAO_TECNICO = [
     "Instalação de Eletrodutos Rígidos/Flexíveis",
     "Lançamento de Cabos de Força (Baixa Tensão)",
     "Lançamento de Cabos de Comando/Sinal",
-    "Montagem e Instalação de Quadros (QGBT)",
-    "Montagem de Painéis de Comando (CCM)",
     "Instalação de Chaves Seccionadoras",
     "Ligação de Motores e Equipamentos",
-    "Instalação de Sistema de Aterramento",
+    "Instalação dos sensores e instrumentos",
     "Identificação de Cabos e Componentes",
     "Serviços de Furacão e Fixação"
 ]
 
 PADRAO_QUALIDADE = [
-    "Teste de Resistência de Isolação (Megger)",
-    "Teste de Continuidade dos Condutores",
-    "Verificação de Reaperto de Conexões (Torquímetro)",
+    "Alinhamento e organização dos cabos nas calhas e painel"
+    "Proteger os painéis durante os cortes, para evitar limalhas de ferro",
     "Teste de Rotação de Motores",
-    "Inspeção Visual de Montagem",
-    "Laudo das Instalações Elétricas",
-    "Diagramas Unifilares Atualizados (As-Built)",
-    "Certificado de Calibração dos Instrumentos"
+    "Inspeção Visual de Montagem"
 ]
 # ============================================================================
 
