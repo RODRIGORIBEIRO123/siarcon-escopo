@@ -2,6 +2,7 @@ import streamlit as st
 from docx import Document
 from docx.shared import Pt
 import io
+import time
 from datetime import date
 import utils_db
 
@@ -53,6 +54,7 @@ PADRAO_QUALIDADE = [
 st.set_page_config(page_title="Escopo TAB", page_icon="⚖️", layout="wide")
 if 'opcoes_db' not in st.session_state: st.session_state['opcoes_db'] = utils_db.carregar_opcoes()
 
+cat_tecnica_db = f"tecnico_{DISCIPLINA_ATUAL.lower()}"
 id_projeto = st.session_state.get('id_projeto_editar')
 dados_edit = {}
 if id_projeto:
@@ -133,7 +135,14 @@ with tab1:
     resumo = c2.text_area("Resumo", value=val_resumo, height=100)
 
 with tab2:
-    lista_tec_final = sorted(list(set(opcoes.get(f"tecnico_{DISCIPLINA_ATUAL.lower()}", []) + PADRAO_TECNICO)))
+    c_add1, c_add2 = st.columns([4, 1])
+    novo_item = c_add1.text_input("Adicionar novo item técnico:", key="novo_item_tec")
+    if c_add2.button("💾 Adicionar", key="btn_add_tec"):
+        if utils_db.aprender_novo_item(cat_tecnica_db, novo_item):
+            st.session_state['opcoes_db'] = utils_db.carregar_opcoes()
+            st.success("Adicionado!"); time.sleep(0.5); st.rerun()
+
+    lista_tec_final = sorted(list(set(opcoes.get(cat_tecnica_db, []) + PADRAO_TECNICO)))
     itens_salvos = dados_edit.get('itens_tecnicos', [])
     if isinstance(itens_salvos, str): 
         try: itens_salvos = eval(itens_salvos)
@@ -180,8 +189,11 @@ with tab5:
     val = st.text_input("Valor", value=dados_edit.get('valor_total', ''))
     pgto = st.text_area("Pgto", value=dados_edit.get('condicao_pgto', ''))
     obs = st.text_area("Obs", value=dados_edit.get('obs_gerais', ''))
-    lista_st = ["Em Elaboração", "Em Análise Obras", "Em Cotação", "Finalizado", "Concluído"]
-    st_at = dados_edit.get('status', 'Em Elaboração')
+    
+    lista_st = ["Não Iniciado", "Engenharia", "Obras", "Suprimentos", "Finalizado"]
+    st_at = dados_edit.get('status', 'Não Iniciado')
+    mapa_status = {"Em Elaboração": "Engenharia", "Em Cotação": "Suprimentos", "Em Análise Obras": "Obras", "Concluído": "Finalizado"}
+    st_at = mapa_status.get(st_at, st_at)
     idx_st = lista_st.index(st_at) if st_at in lista_st else 0
     status = st.selectbox("Status", lista_st, index=idx_st)
 
