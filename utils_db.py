@@ -10,7 +10,6 @@ from datetime import datetime
 def _conectar_gsheets():
     try:
         if "gcp_service_account" not in st.secrets: 
-            # st.error("Secret 'gcp_service_account' não encontrada!")
             return None
         
         creds_dict = dict(st.secrets["gcp_service_account"])
@@ -53,11 +52,11 @@ def verificar_login_db(usuario, senha):
     return not user_encontrado.empty
 
 # ==================================================
-# 3. FUNÇÕES DE PROJETO (COM AUTO-CORREÇÃO)
+# 3. FUNÇÕES DE PROJETO (COM AUTO-CORREÇÃO DE COLUNAS)
 # ==================================================
 def listar_todos_projetos():
     df = _ler_aba_como_df("Projetos")
-    # Colunas mínimas para o dashboard não quebrar
+    # Garante colunas mínimas para o dashboard não quebrar
     cols_minimas = ['_id', 'status', 'disciplina', 'cliente', 'obra', 'prazo']
     if df.empty: return pd.DataFrame(columns=cols_minimas)
     
@@ -72,7 +71,7 @@ def buscar_projeto_por_id(id_projeto):
     if df.empty: return None
     projeto = df[df['_id'] == str(id_projeto)]
     if not projeto.empty:
-        # Preenche NaN com string vazia para não travar os campos de texto
+        # Preenche vazios com string vazia para não travar os campos de texto
         return projeto.fillna("").iloc[0].to_dict()
     return None
 
@@ -88,25 +87,25 @@ def registrar_projeto(dados):
         except: 
             ws = sh.add_worksheet("Projetos", 100, 20)
         
-        # 2. Pega os headers atuais
+        # 2. Pega os headers atuais (cabeçalho)
         headers_atuais = ws.row_values(1)
         if not headers_atuais:
             headers_atuais = ['_id', 'status', 'disciplina', 'cliente', 'obra']
             ws.append_row(headers_atuais)
 
-        # 3. VERIFICAÇÃO DE COLUNAS FALTANTES (A MAGIA ACONTECE AQUI)
+        # --- A MÁGICA ACONTECE AQUI ---
+        # 3. Verifica se tem alguma chave nova (ex: itens_tecnicos) que não tem coluna ainda
         novas_colunas = []
         for chave in dados.keys():
             if chave not in headers_atuais:
                 novas_colunas.append(chave)
         
-        # Se tiver coluna nova (ex: itens_tecnicos), adiciona no cabeçalho
+        # Se tiver coluna nova faltando, cria ela na planilha
         if novas_colunas:
-            # Adiciona as células no final da primeira linha
+            # Adiciona colunas extras
             ws.add_cols(len(novas_colunas))
-            # Atualiza a lista local de headers
+            # Atualiza a lista local de headers e escreve na linha 1
             headers_atuais.extend(novas_colunas)
-            # Reescreve o cabeçalho completo para garantir ordem
             ws.update(range_name="A1", values=[headers_atuais])
 
         # 4. Gera ID se não tiver
@@ -166,7 +165,7 @@ def listar_fornecedores():
             return lista
     except: pass
     
-    # Fallback
+    # Fallback para aprender da aba Dados se não tiver aba fornecedores
     df = _ler_aba_como_df("Dados")
     if not df.empty and 'Fornecedor' in df.columns:
         return df[['Fornecedor', 'CNPJ']].dropna(subset=['Fornecedor']).drop_duplicates().to_dict('records')
@@ -189,7 +188,6 @@ def aprender_novo_item(categoria, novo_item):
         try: ws = sh.worksheet("Dados")
         except: ws = sh.add_worksheet("Dados", 100, 10)
         
-        # Garante cabeçalho
         if not ws.row_values(1): ws.append_row(["Categoria", "Item"])
         
         ws.append_row([categoria.lower(), novo_item])
