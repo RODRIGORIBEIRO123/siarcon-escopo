@@ -129,11 +129,15 @@ with tab1:
     c1, c2 = st.columns(2)
     cliente = c1.text_input("Cliente", value=dados_edit.get('cliente', ''))
     obra = c1.text_input("Obra", value=dados_edit.get('obra', ''))
-    db_forn = utils_db.listar_fornecedores(); lista_nomes = [""] + [f['Fornecedor'] for f in db_forn]
-    val_forn_db = dados_edit.get('fornecedor', ''); idx_f = lista_nomes.index(val_forn_db) if val_forn_db in lista_nomes else 0
+    
+    db_forn = utils_db.listar_fornecedores()
+    lista_nomes = [""] + [f['Fornecedor'] for f in db_forn]
+    val_forn_db = dados_edit.get('fornecedor', '')
+    idx_f = lista_nomes.index(val_forn_db) if val_forn_db in lista_nomes else 0
     sel_forn = c1.selectbox("Fornecedor (DB):", lista_nomes, index=idx_f)
     forn = c1.text_input("Razão Social:", value=sel_forn if sel_forn else val_forn_db)
     cnpj = c1.text_input("CNPJ:", value=dados_edit.get('cnpj_fornecedor', ''))
+    
     resp_eng = c2.text_input("Engenharia", value=dados_edit.get('responsavel', ''))
     resp_sup = c2.text_input("Suprimentos", value=dados_edit.get('resp_suprimentos', ''))
     revisao = c2.text_input("Revisão", value=dados_edit.get('revisao', 'R-00'))
@@ -146,7 +150,7 @@ with tab2:
     novo_item = c_add1.text_input("Adicionar novo item técnico:", key="novo_item_tec")
     if c_add2.button("💾 Adicionar", key="btn_add_tec"):
         if utils_db.aprender_novo_item(cat_tecnica_db, novo_item):
-            st.session_state['opcoes_db'] = utils_db.carregar_opcoes() # Atualiza cache local
+            st.session_state['opcoes_db'] = utils_db.carregar_opcoes()
             st.success("Adicionado!"); time.sleep(0.5); st.rerun()
 
     lista_tec_final = sorted(list(set(opcoes.get(cat_tecnica_db, []) + PADRAO_TECNICO)))
@@ -200,14 +204,10 @@ with tab5:
     pgto = st.text_area("Pgto", value=dados_edit.get('condicao_pgto', ''))
     obs = st.text_area("Obs", value=dados_edit.get('obs_gerais', ''))
     
-    # --- LISTA DE STATUS CORRIGIDA (IGUAL AO KANBAN) ---
     lista_st = ["Não Iniciado", "Engenharia", "Obras", "Suprimentos", "Finalizado"]
-    
     st_at = dados_edit.get('status', 'Não Iniciado')
-    # Correção para status antigos
     mapa_status = {"Em Elaboração": "Engenharia", "Em Cotação": "Suprimentos", "Em Análise Obras": "Obras", "Concluído": "Finalizado"}
     st_at = mapa_status.get(st_at, st_at)
-    
     idx_st = lista_st.index(st_at) if st_at in lista_st else 0
     status = st.selectbox("Status", lista_st, index=idx_st)
 
@@ -221,10 +221,18 @@ dados = {
     'data_inicio': dados_edit.get('data_inicio', date.today().strftime("%Y-%m-%d"))
 }
 
-c1, c2 = st.columns(2)
-if c_b1.button("☁️ SALVAR"):
+# --- RODAPÉ COM BOTÕES PADRONIZADOS ---
+col_b1, col_b2 = st.columns(2)
+if col_b1.button("☁️ SALVAR"):
     if utils_db.registrar_projeto(dados):
-        st.success("Salvo com sucesso no Banco de Dados!")
-        time.sleep(1) # Dá tempo visual do usuário ver
+        st.success("Salvo com sucesso!")
+        time.sleep(1)
     else:
-        st.error("FALHA AO SALVAR! Verifique sua conexão ou permissões da planilha.")
+        st.error("Erro ao salvar! Verifique a conexão.")
+
+if col_b2.button("💾 SALVAR E DOCX", type="primary"):
+    if utils_db.registrar_projeto(dados):
+        b = gerar_docx(dados)
+        st.download_button(f"📥 Baixar DOCX", b, f"Escopo_{DISCIPLINA_ATUAL}.docx")
+    else:
+        st.error("Erro ao salvar! DOCX não gerado.")
