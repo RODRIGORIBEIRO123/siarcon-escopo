@@ -222,7 +222,9 @@ dados = {
 }
 
 c1, c2 = st.columns(2)
-if c1.button("☁️ SALVAR"): utils_db.registrar_projeto(dados); st.success("Salvo!")
-if c2.button("💾 DOCX", type="primary"): 
-    utils_db.registrar_projeto(dados); b = gerar_docx(dados)
-    st.download_button("Baixar DOCX", b, f"Escopo_{DISCIPLINA_ATUAL}.docx")
+if c_b1.button("☁️ SALVAR"):
+    if utils_db.registrar_projeto(dados):
+        st.success("Salvo com sucesso no Banco de Dados!")
+        time.sleep(1) # Dá tempo visual do usuário ver
+    else:
+        st.error("FALHA AO SALVAR! Verifique sua conexão ou permissões da planilha.")
