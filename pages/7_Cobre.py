@@ -77,19 +77,20 @@ def gerar_docx(dados):
     head = doc.add_heading(f'ESCOPO - {dados["disciplina"].upper()}', 0)
     head.alignment = WD_ALIGN_PARAGRAPH.CENTER
     
-    # Subtítulo
+    # Subtítulo (20pt)
     sub = doc.add_paragraph('SIARCON ENGENHARIA')
     sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
     sub.runs[0].bold = True
-    sub.runs[0].font.size = Pt(12)
+    sub.runs[0].font.size = Pt(20)
     
     # 1. DADOS
     doc.add_heading('1. DADOS DA OBRA', 1)
-    table = doc.add_table(rows=7, cols=2); table.style = 'Table Grid'
+    table = doc.add_table(rows=8, cols=2); table.style = 'Table Grid'
     data_hj = datetime.now().strftime("%d/%m/%Y")
     info_rows = [
         ("CLIENTE", dados['cliente']), ("OBRA", dados['obra']), ("FORNECEDOR", dados['fornecedor']),
-        ("ENGENHARIA", dados['responsavel']), ("SUPRIMENTOS", dados['resp_suprimentos']),
+        ("ENGENHARIA", dados['responsavel']), ("OBRAS", dados.get('resp_obras', '')),
+        ("SUPRIMENTOS", dados['resp_suprimentos']),
         ("PROJETOS REFERÊNCIA", dados.get('projetos_referencia', '-')),
         ("DATA / REVISÃO", f"{data_hj}  |  Rev: {dados.get('revisao','-')}")
     ]
@@ -98,9 +99,8 @@ def gerar_docx(dados):
         row.cells[0].text = label; row.cells[0].paragraphs[0].runs[0].bold = True
         row.cells[1].text = str(value)
 
-    # 2. TÉCNICO (CORRIGIDO)
+    # 2. TÉCNICO
     doc.add_heading('2. ESCOPO TÉCNICO', 1)
-    p = doc.add_paragraph(); p.add_run("RESUMO:").bold = True
     doc.add_paragraph(dados.get('resumo_escopo', ''))
     if dados.get('tecnico_livre'):
         p = doc.add_paragraph(); p.add_run("OBSERVAÇÕES GERAIS:").bold = True
@@ -120,7 +120,7 @@ def gerar_docx(dados):
     # 4. MATRIZ
     doc.add_heading('4. MATRIZ DE RESPONSABILIDADES', 1)
     tm = doc.add_table(rows=1, cols=4); tm.style = 'Table Grid'
-    h = tm.rows[0].cells; h[0].text = "ITEM"; h[1].text = "SIARCON"; h[2].text = "FORNECEDOR"; h[3].text = "FORA"
+    h = tm.rows[0].cells; h[0].text = "ITEM"; h[1].text = "SIARCON"; h[2].text = "FORNECEDOR"; h[3].text = "FORA DO ESCOPO"
     for k, v in dados.get('matriz', {}).items():
         row = tm.add_row().cells; row[0].text = k
         row[1].text = "X" if v == "SIARCON" else ""; row[2].text = "X" if v == "FORNECEDOR" else ""
@@ -162,18 +162,20 @@ with tab1:
     cnpj = c1.text_input("CNPJ:", value=dados_edit.get('cnpj_fornecedor', ''))
     
     resp_eng = c2.text_input("Engenharia SIARCON", value=dados_edit.get('responsavel', ''))
+    resp_obras = c2.text_input("Obras SIARCON", value=dados_edit.get('resp_obras', ''))
     resp_sup = c2.text_input("Suprimentos SIARCON", value=dados_edit.get('resp_suprimentos', ''))
     revisao = c2.text_input("Revisão", value=dados_edit.get('revisao', 'R-00'))
     
-    # CORREÇÃO DUPLICAÇÃO
     st.divider(); c2.write("📂 **Projetos de Referência**")
     val_proj_salvo = dados_edit.get('projetos_referencia', '')
+    lista_atual = [x.strip() for x in val_proj_salvo.split('\n') if x.strip()]
     uploads = c2.file_uploader("Arraste arquivos aqui", accept_multiple_files=True)
     if uploads:
         for f in uploads:
-            if f.name not in val_proj_salvo:
-                val_proj_salvo = (val_proj_salvo + "\n" + f.name).strip()
-    projetos_ref = c2.text_area("Lista de Projetos:", value=val_proj_salvo, height=100)
+            if f.name not in lista_atual:
+                lista_atual.append(f.name)
+    val_proj_final = "\n".join(lista_atual)
+    projetos_ref = c2.text_area("Lista de Projetos:", value=val_proj_final, height=100)
 
 with tab2:
     val_resumo = dados_edit.get('resumo_escopo', '') or TEXTO_RESUMO_PADRAO
@@ -247,7 +249,9 @@ with tab5:
 st.markdown("---")
 dados = {
     '_id': dados_edit.get('_id'), 'disciplina': DISCIPLINA_ATUAL, 'cliente': cliente, 'obra': obra, 
-    'fornecedor': forn, 'cnpj_fornecedor': cnpj, 'responsavel': resp_eng, 'resp_suprimentos': resp_sup, 
+    'fornecedor': forn, 'cnpj_fornecedor': cnpj, 'responsavel': resp_eng, 
+    'resp_obras': resp_obras,
+    'resp_suprimentos': resp_sup, 
     'revisao': revisao, 'projetos_referencia': projetos_ref, 'resumo_escopo': resumo, 
     'itens_tecnicos': itens_tec, 'comentarios_itens': comentarios_novos, 'tecnico_livre': tec_livre, 
     'itens_qualidade': itens_qual, 'matriz': escolhas, 'nrs_selecionadas': nrs, 'sms_livre': sms_livre, 
@@ -263,5 +267,5 @@ if col_b1.button("☁️ SALVAR"):
 if col_b2.button("💾 SALVAR E DOCX", type="primary"):
     if utils_db.registrar_projeto(dados):
         f_forn = forn.strip() or "Fornecedor"; f_obra = obra.strip() or "Obra"
-        b = gerar_docx(dados); st.download_button(f"Baixar DOCX", b, f"Escopo {DISCIPLINA_ATUAL} - {f_forn} - {f_obra}.docx")
+        b = gerar_docx(dados); st.download_button(f"Baixar DOCX", b, f"Escopo_{DISCIPLINA_ATUAL} - {f_forn} - {f_obra}.docx")
     else: st.error("Erro ao salvar.")
