@@ -1,6 +1,7 @@
 import streamlit as st
 from docx import Document
 from docx.shared import Pt
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 import io
 import time
 from datetime import date, datetime
@@ -12,7 +13,7 @@ if 'logado' not in st.session_state or not st.session_state['logado']:
 DISCIPLINA_ATUAL = "TAB"
 TEXTO_RESUMO_PADRAO = "Este escopo contempla o fornecimento de serviços de TAB / Comissionamento de sistemas, conforme detalhamento a seguir."
 
-# --- LISTAS TÉCNICAS (TAB) ---
+# --- LISTAS TAB ---
 ITENS_MATRIZ = [
     "Instrumentação Calibrada (Balômetro/Anemômetro)", "Mão de Obra Especializada",
     "Relatórios Técnicos", "Balanceamento de Ar", "Balanceamento Hidrônico",
@@ -35,7 +36,6 @@ PADRAO_QUALIDADE = [
     "Verificação de Fechamento de Forro", "Limpeza dos Filtros antes do TAB"
 ]
 
-# --- PADRÕES GERAIS ---
 SMS_PADRAO_DOC = [
     "Ficha de registro", "ASO (Atestado de Saúde Ocupacional)", "Ficha de EPI", "Ordem de Serviço",
     "Certificados de Treinamento", "NR-06 (Equipamento de Proteção Individual)",
@@ -53,7 +53,6 @@ LISTA_NRS_SELECAO = [
     "NR-33 (Espaços Confinados)", "NR-35 (Trabalho em Altura)", "NR-38 (Limpeza Urbana)"
 ]
 
-# --- INÍCIO ---
 st.set_page_config(page_title=f"Escopo {DISCIPLINA_ATUAL}", page_icon="⚖️", layout="wide")
 if 'opcoes_db' not in st.session_state: st.session_state['opcoes_db'] = utils_db.carregar_opcoes()
 
@@ -76,7 +75,15 @@ def gerar_docx(dados):
     try: style = doc.styles['Normal']; style.font.name = 'Calibri'; style.font.size = Pt(11)
     except: pass
     
-    doc.add_heading(f'ESCOPO - {dados["disciplina"].upper()}', 0)
+    # Título Centralizado
+    head = doc.add_heading(f'ESCOPO - {dados["disciplina"].upper()}', 0)
+    head.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    
+    # Subtítulo
+    sub = doc.add_paragraph('SIARCON ENGENHARIA')
+    sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    sub.runs[0].bold = True
+    sub.runs[0].font.size = Pt(12)
     
     # 1. DADOS
     doc.add_heading('1. DADOS DA OBRA', 1)
@@ -93,15 +100,15 @@ def gerar_docx(dados):
         row.cells[0].text = label; row.cells[0].paragraphs[0].runs[0].bold = True
         row.cells[1].text = str(value)
 
-    # 2. TÉCNICO
+    # 2. TÉCNICO (CORRIGIDO)
     doc.add_heading('2. ESCOPO TÉCNICO', 1)
-    doc.add_paragraph("RESUMO:", style='Strong')
+    p = doc.add_paragraph(); p.add_run("RESUMO:").bold = True
     doc.add_paragraph(dados.get('resumo_escopo', ''))
     if dados.get('tecnico_livre'):
-        doc.add_paragraph("OBSERVAÇÕES GERAIS:", style='Strong')
+        p = doc.add_paragraph(); p.add_run("OBSERVAÇÕES GERAIS:").bold = True
         doc.add_paragraph(dados['tecnico_livre'])
     
-    doc.add_paragraph("DETALHAMENTO:", style='Strong')
+    p = doc.add_paragraph(); p.add_run("DETALHAMENTO:").bold = True
     comentarios = dados.get('comentarios_itens', {})
     for item in dados.get('itens_tecnicos', []):
         p = doc.add_paragraph(style='List Bullet')
@@ -160,12 +167,15 @@ with tab1:
     resp_sup = c2.text_input("Suprimentos SIARCON", value=dados_edit.get('resp_suprimentos', ''))
     revisao = c2.text_input("Revisão", value=dados_edit.get('revisao', 'R-00'))
     
+    # CORREÇÃO DUPLICAÇÃO
     st.divider(); c2.write("📂 **Projetos de Referência**")
-    uploads = c2.file_uploader("Arraste arquivos", accept_multiple_files=True)
-    nomes_arquivos = "\n".join([f.name for f in uploads]) if uploads else ""
-    val_proj = dados_edit.get('projetos_referencia', '')
-    if nomes_arquivos: val_proj = (val_proj + "\n" + nomes_arquivos).strip()
-    projetos_ref = c2.text_area("Lista de Projetos:", value=val_proj, height=100)
+    val_proj_salvo = dados_edit.get('projetos_referencia', '')
+    uploads = c2.file_uploader("Arraste arquivos aqui", accept_multiple_files=True)
+    if uploads:
+        for f in uploads:
+            if f.name not in val_proj_salvo:
+                val_proj_salvo = (val_proj_salvo + "\n" + f.name).strip()
+    projetos_ref = c2.text_area("Lista de Projetos:", value=val_proj_salvo, height=100)
 
 with tab2:
     val_resumo = dados_edit.get('resumo_escopo', '') or TEXTO_RESUMO_PADRAO
@@ -254,5 +264,6 @@ if col_b1.button("☁️ SALVAR"):
 
 if col_b2.button("💾 SALVAR E DOCX", type="primary"):
     if utils_db.registrar_projeto(dados):
-        b = gerar_docx(dados); st.download_button(f"Baixar DOCX", b, f"Escopo_{DISCIPLINA_ATUAL}.docx")
+        f_forn = forn.strip() or "Fornecedor"; f_obra = obra.strip() or "Obra"
+        b = gerar_docx(dados); st.download_button(f"Baixar DOCX", b, f"Escopo {DISCIPLINA_ATUAL} - {f_forn} - {f_obra}.docx")
     else: st.error("Erro ao salvar.")
