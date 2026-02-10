@@ -94,13 +94,20 @@ def gerar_docx(dados):
         row.cells[1].text = str(value)
 
     doc.add_heading('2. ESCOPO TÉCNICO', 1)
-    doc.add_paragraph("RESUMO:", style='Strong')
+    
+    # CORREÇÃO DO ERRO DE ESTILO AQUI
+    p_resumo = doc.add_paragraph()
+    p_resumo.add_run("RESUMO:").bold = True
     doc.add_paragraph(dados.get('resumo_escopo', ''))
+    
     if dados.get('tecnico_livre'):
-        doc.add_paragraph("OBSERVAÇÕES GERAIS:", style='Strong')
+        p_obs = doc.add_paragraph()
+        p_obs.add_run("OBSERVAÇÕES GERAIS:").bold = True
         doc.add_paragraph(dados['tecnico_livre'])
     
-    doc.add_paragraph("DETALHAMENTO:", style='Strong')
+    p_det = doc.add_paragraph()
+    p_det.add_run("DETALHAMENTO:").bold = True
+    
     comentarios = dados.get('comentarios_itens', {})
     for item in dados.get('itens_tecnicos', []):
         p = doc.add_paragraph(style='List Bullet')
@@ -156,7 +163,7 @@ with tab1:
     revisao = c2.text_input("Revisão", value=dados_edit.get('revisao', 'R-00'))
     
     st.divider(); c2.write("📂 **Projetos de Referência**")
-    uploads = c2.file_uploader("Arraste arquivos", accept_multiple_files=True)
+    uploads = c2.file_uploader("Arraste arquivos aqui", accept_multiple_files=True)
     nomes_arquivos = "\n".join([f.name for f in uploads]) if uploads else ""
     val_proj = dados_edit.get('projetos_referencia', '')
     if nomes_arquivos: val_proj = (val_proj + "\n" + nomes_arquivos).strip()
