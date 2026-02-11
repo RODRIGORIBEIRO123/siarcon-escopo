@@ -267,11 +267,23 @@ def listar_rotas_dia(data_filtro=None):
     df = _ler_aba_como_df("Rotas")
     if df.empty: return df
     
+    # Normaliza a data para garantir que string bata com string
     if data_filtro:
-        # Filtra pela data
+        df['data_rota'] = df['data_rota'].astype(str)
+        
+        # Função para forçar formato DD/MM/YYYY
+        def normalizar_data(d):
+            try:
+                # Se vier como YYYY-MM-DD (Padrão Sheets), converte
+                if "-" in d and len(d.split("-")[0]) == 4:
+                    return datetime.strptime(d, "%Y-%m-%d").strftime("%d/%m/%Y")
+            except: pass
+            return d
+            
+        df['data_rota'] = df['data_rota'].apply(normalizar_data)
         df = df[df['data_rota'] == str(data_filtro)]
     
-    # Ordena por Ordem (se possível converter)
+    # Ordena por Ordem
     try:
         df['ordem'] = pd.to_numeric(df['ordem'])
         df = df.sort_values('ordem')
