@@ -27,6 +27,7 @@ if 'opcoes_db' not in st.session_state:
 # FUNÇÕES DE DOCUMENTO (DOCX)
 # ============================================================================
 def set_cell_background(cell, color_hex):
+    """Pinta o fundo da célula"""
     shading_elm = parse_xml(r'<w:shd {} w:fill="{}"/>'.format(nsdecls('w'), color_hex))
     cell._tc.get_or_add_tcPr().append(shading_elm)
 
@@ -49,6 +50,8 @@ def gerar_romaneio_docx(dados, df_materiais):
     style.font.name = 'Calibri'
     style.font.size = Pt(10)
 
+    # LARGURA TOTAL ÚTIL = 10.7 polegadas
+    
     # --- 1. CABEÇALHO (LOGO + TÍTULO) ---
     table_head = doc.add_table(rows=1, cols=2)
     table_head.style = 'Table Grid'
@@ -133,10 +136,12 @@ def gerar_romaneio_docx(dados, df_materiais):
     t_mat.style = 'Table Grid'
     t_mat.autofit = False 
     
-    w_desc = Inches(4.0)
-    w_det = Inches(4.5)
-    w_unid = Inches(1.1)
-    w_qtd = Inches(1.1)
+    # LARGURAS REAJUSTADAS (Unid e Qtd menores)
+    # Total = 10.7
+    w_desc = Inches(4.55)  # Aumentado
+    w_det = Inches(4.55)   # Aumentado
+    w_unid = Inches(0.8)   # Reduzido (era 1.1)
+    w_qtd = Inches(0.8)    # Reduzido (era 1.1)
     
     hdr = t_mat.rows[0].cells
     hdr[0].width = w_desc; hdr[0].text = "DESCRIÇÃO DO MATERIAL"
@@ -212,15 +217,18 @@ def gerar_romaneio_docx(dados, df_materiais):
 # ============================================================================
 st.title("📦 Romaneio de Materiais")
 
+# 1. DADOS
 c1, c2, c3 = st.columns([2, 2, 1])
 obra = c1.text_input("Obra (Cliente)", value="EUROFARMA")
 destino = c2.text_input("Destino (Local de Entrega)", placeholder="Ex: Almoxarifado Central / Prédio Anexo")
-data_doc = c3.text_input("Data", value=date.today().strftime("%d/%m/%Y"))
+data_atual = date.today().strftime("%d/%m/%Y")
+data_doc = c3.text_input("Data", value=data_atual)
 
 st.write("### 📋 Lista de Materiais")
 
 opcoes_materiais = sorted(st.session_state['opcoes_db'].get('materiais_romaneio', []))
 
+# --- CORREÇÃO DO DATAFRAME ---
 cols_esperadas = ["MATERIAL", "DETALHE", "UNID", "QTD"]
 if 'df_romaneio' not in st.session_state:
     st.session_state['df_romaneio'] = pd.DataFrame([{"MATERIAL": "", "DETALHE": "", "UNID": "PC", "QTD": 0} for _ in range(5)])
@@ -263,7 +271,6 @@ col_env, col_rec = st.columns(2)
 resp_envio = col_env.text_input("Responsável Envio (Siarcon)", value="João Bigoni")
 resp_receb = col_rec.text_input("Responsável Recebimento", value="Global")
 
-# --- CORREÇÃO DAS VARIÁVEIS AQUI ---
 col_b1, col_b2 = st.columns(2)
 
 dados_romaneio = {
