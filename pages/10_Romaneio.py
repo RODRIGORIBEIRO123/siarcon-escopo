@@ -135,25 +135,20 @@ opcoes_materiais = sorted(st.session_state['opcoes_db'].get('materiais_romaneio'
 cols_esperadas = ["MATERIAL", "DETALHE", "UNID", "QTD"]
 
 if 'df_romaneio' not in st.session_state:
-    # Cria novo do zero
     st.session_state['df_romaneio'] = pd.DataFrame(
         [{"MATERIAL": "", "DETALHE": "", "UNID": "PC", "QTD": 0} for _ in range(5)]
     )
 else:
-    # Se já existe (memória antiga), verifica se tem todas as colunas
+    # Garante que as colunas existam na memória antiga
     df_atual = st.session_state['df_romaneio']
-    
-    # Adiciona colunas que faltam (ex: DETALHE que não tinha antes)
     for col in cols_esperadas:
         if col not in df_atual.columns:
             df_atual[col] = "" if col != "QTD" else 0
-            
-    # Reordena e salva de volta
     st.session_state['df_romaneio'] = df_atual[cols_esperadas]
 
 # Configuração das Colunas
 config_colunas = {
-    "MATERIAL": st.column_config.SelectboxColumn("Descrição do Material (Banco)", options=opcoes_materiais, width="large", required=True),
+    "MATERIAL": st.column_config.SelectboxColumn("Descrição (Banco)", options=opcoes_materiais, width="large", required=True),
     "DETALHE": st.column_config.TextColumn("Detalhe / Complemento", width="medium"),
     "UNID": st.column_config.SelectboxColumn("Unid.", options=["PC", "KG", "M", "CX", "PAR", "BR", "RL", "CJ", "UN"], width="small", required=True),
     "QTD": st.column_config.NumberColumn("Qtd.", min_value=0, step=1, format="%d", width="small", required=True)
@@ -167,20 +162,34 @@ df_editado = st.data_editor(
     hide_index=True
 )
 
-# 4. CADASTRO DE NOVO MATERIAL (ABAIXO DA LISTA)
+# 4. CADASTRO EM LOTE (LISTA)
 st.markdown("---")
-with st.expander("➕ Não encontrou o material na lista acima? Cadastre aqui no Banco de Dados"):
-    c_new1, c_new2 = st.columns([4, 1])
-    novo_material = c_new1.text_input("Nome do Novo Material (Ex: Chapa Galvanizada #26)")
-    if c_new2.button("💾 Cadastrar"):
-        if novo_material:
-            if utils_db.aprender_novo_item("materiais_romaneio", novo_material):
-                st.session_state['opcoes_db'] = utils_db.carregar_opcoes() 
-                st.success(f"'{novo_material}' cadastrado! Ele aparecerá na lista acima.")
-                time.sleep(1)
+with st.expander("➕ Cadastro em Lote (Copiar e Colar Lista)"):
+    st.info("Cole abaixo a lista de materiais que deseja adicionar ao Banco de Dados (um material por linha).")
+    
+    texto_lista = st.text_area("Lista de Novos Materiais:", height=150, placeholder="Exemplo:\nChapa #26\nPerfilado 38x38\nEletrodo 6013")
+    
+    if st.button("💾 Cadastrar Lista no Banco"):
+        if texto_lista:
+            # Limpa e separa por linha
+            novos_itens = [x.strip() for x in texto_lista.split('\n') if x.strip()]
+            
+            if novos_itens:
+                progress_bar = st.progress(0)
+                contador = 0
+                for i, item in enumerate(novos_itens):
+                    if utils_db.aprender_novo_item("materiais_romaneio", item):
+                        contador += 1
+                    progress_bar.progress((i + 1) / len(novos_itens))
+                
+                st.session_state['opcoes_db'] = utils_db.carregar_opcoes() # Atualiza cache
+                st.success(f"{contador} materiais cadastrados com sucesso!")
+                time.sleep(1.5)
                 st.rerun()
-            else: st.error("Erro ao salvar no banco.")
-        else: st.warning("Digite o nome do material.")
+            else:
+                st.warning("A lista está vazia.")
+        else:
+            st.warning("Cole a lista antes de clicar em salvar.")
 
 st.markdown("---")
 
