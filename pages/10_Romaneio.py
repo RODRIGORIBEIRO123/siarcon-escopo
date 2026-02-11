@@ -89,13 +89,13 @@ def gerar_romaneio_docx(dados, df_materiais):
     t_mat = doc.add_table(rows=1, cols=4)
     t_mat.style = 'Table Grid'
     
-    # Configura largura das colunas (proporção visual)
-    # Total ~7.5 inches de largura útil
+    # Configura largura das colunas
     t_mat.autofit = False
-    t_mat.columns[0].width = Inches(3.0) # Descrição
-    t_mat.columns[1].width = Inches(2.5) # Detalhe
-    t_mat.columns[2].width = Inches(0.8) # Unid
-    t_mat.columns[3].width = Inches(1.2) # Qtd
+    # Total largura útil ~ 7.5 inches
+    t_mat.columns[0].width = Inches(3.0) # Descrição (Maior)
+    t_mat.columns[1].width = Inches(2.7) # Detalhe (Médio)
+    t_mat.columns[2].width = Inches(0.8) # Unid (Pequeno)
+    t_mat.columns[3].width = Inches(1.0) # Qtd (Pequeno)
     
     hdr = t_mat.rows[0].cells
     headers = ["DESCRIÇÃO DO MATERIAL", "DETALHE", "UNID.", "QTD."]
@@ -112,6 +112,7 @@ def gerar_romaneio_docx(dados, df_materiais):
             cells = t_mat.add_row().cells
             cells[0].text = desc
             cells[1].text = str(row.get('DETALHE', ''))
+            
             cells[2].text = str(row.get('UNID', ''))
             cells[2].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
             
@@ -123,8 +124,11 @@ def gerar_romaneio_docx(dados, df_materiais):
             cells[3].text = str(qtd)
             cells[3].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-    # Linhas vazias para preencher folha
-    for _ in range(8):
+    # Linhas vazias para preencher folha (total 15 linhas)
+    linhas_preenchidas = len(df_materiais)
+    linhas_para_adicionar = max(0, 15 - linhas_preenchidas)
+    
+    for _ in range(linhas_para_adicionar):
         t_mat.add_row()
 
     doc.add_paragraph("")
@@ -165,67 +169,55 @@ def gerar_romaneio_docx(dados, df_materiais):
 # ============================================================================
 st.title("📦 Romaneio de Materiais")
 
-# --- 1. CADASTRO DE NOVOS MATERIAIS NO BANCO ---
-with st.expander("➕ Cadastrar Novo Material no Banco de Dados"):
-    c_new1, c_new2 = st.columns([4, 1])
-    novo_material = c_new1.text_input("Nome do Material (Ex: Chapa Galvanizada #26)")
-    if c_new2.button("💾 Cadastrar"):
-        if novo_material:
-            if utils_db.aprender_novo_item("materiais_romaneio", novo_material):
-                st.session_state['opcoes_db'] = utils_db.carregar_opcoes() # Atualiza cache
-                st.success(f"'{novo_material}' cadastrado!")
-                time.sleep(1)
-                st.rerun()
-            else:
-                st.error("Erro ao salvar no banco.")
-        else:
-            st.warning("Digite o nome do material.")
-
-st.divider()
-
-# --- 2. DADOS DO ROMANEIO ---
+# --- 1. DADOS DO ROMANEIO ---
 c1, c2 = st.columns([3, 1])
 obra = c1.text_input("Nome da Obra (Cliente)", value="EUROFARMA")
 data_atual = date.today().strftime("%d/%m/%Y")
 data_doc = c2.text_input("Data", value=data_atual)
 
-# --- 3. EDITOR DE MATERIAIS ---
 st.write("### 📋 Lista de Materiais")
 
 # Recupera lista de materiais do banco
 opcoes_materiais = sorted(st.session_state['opcoes_db'].get('materiais_romaneio', []))
 
-# Inicializa dataframe se vazio
+# --- FORÇA A ATUALIZAÇÃO DAS COLUNAS (CORREÇÃO DO PROBLEMA DE CACHE) ---
 if 'df_romaneio' not in st.session_state:
     st.session_state['df_romaneio'] = pd.DataFrame(
         [{"MATERIAL": "", "DETALHE": "", "UNID": "PC", "QTD": 0} for _ in range(5)]
     )
+else:
+    # Se já existe, garante que as colunas novas existam
+    if "DETALHE" not in st.session_state['df_romaneio'].columns:
+        st.session_state['df_romaneio']["DETALHE"] = ""
+    # Reordena para ficar bonito
+    st.session_state['df_romaneio'] = st.session_state['df_romaneio'][["MATERIAL", "DETALHE", "UNID", "QTD"]]
 
-# Configuração das Colunas
+# --- 3. EDITOR DE MATERIAIS (TABELA) ---
+# Ajuste de largura: Descrição é "large" para empurrar as outras e deixá-las justas
 config_colunas = {
     "MATERIAL": st.column_config.SelectboxColumn(
-        "Descrição do Material",
+        "Descrição do Material (Banco de Dados)",
         options=opcoes_materiais,
-        width="large",
+        width="large", # Deixar largo para ocupar espaço
         required=True
     ),
     "DETALHE": st.column_config.TextColumn(
-        "Detalhe / Complemento",
+        "Detalhe (Complemento)",
         width="medium",
         help="Ex: Dimensões, Marca, Cor"
     ),
     "UNID": st.column_config.SelectboxColumn(
         "Unid.",
         options=["PC", "KG", "M", "CX", "PAR", "BR", "RL", "CJ", "UN"],
-        width="small",
+        width="small", # Tenta ficar o menor possível
         required=True
     ),
     "QTD": st.column_config.NumberColumn(
         "Qtd.",
         min_value=0,
         step=1,
-        format="%d", # Sem decimais visualmente
-        width="small",
+        format="%d",
+        width="small", # Tenta ficar o menor possível
         required=True
     )
 }
@@ -238,9 +230,25 @@ df_editado = st.data_editor(
     hide_index=True
 )
 
+# --- 4. CADASTRO DE NOVO MATERIAL (MOVIDO PARA BAIXO) ---
+with st.expander("➕ Não encontrou o material? Cadastre aqui no Banco de Dados"):
+    c_new1, c_new2 = st.columns([4, 1])
+    novo_material = c_new1.text_input("Nome do Material (Ex: Chapa Galvanizada #26)")
+    if c_new2.button("💾 Cadastrar"):
+        if novo_material:
+            if utils_db.aprender_novo_item("materiais_romaneio", novo_material):
+                st.session_state['opcoes_db'] = utils_db.carregar_opcoes() # Atualiza cache
+                st.success(f"'{novo_material}' cadastrado! Ele aparecerá na lista acima.")
+                time.sleep(1)
+                st.rerun()
+            else:
+                st.error("Erro ao salvar no banco.")
+        else:
+            st.warning("Digite o nome do material.")
+
 st.markdown("---")
 
-# --- 4. RODAPÉ E AÇÕES ---
+# --- 5. RODAPÉ E AÇÕES ---
 c3, c4 = st.columns(2)
 resp_envio = c3.text_input("Responsável pelo Envio (Siarcon)", value="João Bigoni")
 resp_receb = c4.text_input("Responsável pelo Recebimento (Cliente)", value="Global")
