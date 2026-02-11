@@ -11,3 +11,4 @@ extra-streamlit-components
 pymupdf
 folium
 streamlit-folium
+requests
