@@ -60,9 +60,16 @@ if c_top2.button("🔄 Recalcular Rota"): st.rerun()
 df = utils_db.listar_rotas_dia(date.today().strftime("%d/%m/%Y"))
 
 if not df.empty:
+    # --- CORREÇÃO DO ERRO KEYERROR (AUTO-REPARO) ---
+    # Garante que as colunas novas existam, mesmo se a planilha for antiga
+    colunas_novas = ['tempo_estimado_parada', 'lat', 'lon', 'hora_conclusao', 'status']
+    for col in colunas_novas:
+        if col not in df.columns:
+            df[col] = 0 if col == 'tempo_estimado_parada' else None
+
     # --- CÁLCULO DA ROTA TOTAL ---
-    # 1. Soma tempos de parada
-    total_paradas_min = df['tempo_estimado_parada'].astype(float).sum() if 'tempo_estimado_parada' in df.columns else 0
+    # 1. Soma tempos de parada (Converte para float seguro)
+    total_paradas_min = pd.to_numeric(df['tempo_estimado_parada'], errors='coerce').fillna(0).sum()
     
     # 2. Calcula trajeto OSRM (se tiver coordenadas)
     coords = []
@@ -70,14 +77,15 @@ if not df.empty:
     coords.append((-22.564, -47.400)) 
     
     tem_coords = False
-    if 'lat' in df.columns and 'lon' in df.columns:
-        for _, row in df.iterrows():
-            try:
-                l, lo = float(row['lat']), float(row['lon'])
-                if l and lo: 
-                    coords.append((l, lo))
-                    tem_coords = True
-            except: pass
+    # Verifica se lat/lon existem e são válidos
+    for _, row in df.iterrows():
+        try:
+            l = float(row['lat'])
+            lo = float(row['lon'])
+            if l != 0 and lo != 0: 
+                coords.append((l, lo))
+                tem_coords = True
+        except: pass
             
     km_total = 0
     tempo_direcao_min = 0
@@ -99,8 +107,13 @@ if not df.empty:
     st.markdown("---")
 
     # Tabela
+    # Agora é seguro chamar as colunas pois garantimos que elas existem acima
+    colunas_visiveis = ['ordem', 'tipo', 'cliente', 'endereco', 'tempo_estimado_parada', 'status']
+    # Filtra apenas as que realmente existem no DF final (segurança dupla)
+    cols_to_show = [c for c in colunas_visiveis if c in df.columns]
+    
     st.dataframe(
-        df[['ordem', 'tipo', 'cliente', 'endereco', 'tempo_estimado_parada', 'status']],
+        df[cols_to_show],
         use_container_width=True,
         hide_index=True
     )
@@ -128,4 +141,4 @@ if not df.empty:
         st_folium(m, width=None, height=400)
     
 else:
-    st.info("Nenhuma rota para hoje.")
+    st.info("Nenhuma rota cadastrada para hoje.")
