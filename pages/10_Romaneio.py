@@ -4,7 +4,7 @@ from docx import Document
 from docx.shared import Pt, Inches, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.section import WD_ORIENT
-from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT, WD_ROW_HEIGHT_RULE # Importação Nova
+from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT, WD_ROW_HEIGHT_RULE
 from docx.oxml.ns import nsdecls
 from docx.oxml import parse_xml
 import io
@@ -49,25 +49,21 @@ def gerar_romaneio_docx(dados, df_materiais):
     style.font.name = 'Calibri'
     style.font.size = Pt(10)
 
-    # LARGURA TOTAL ÚTIL = 10.7 polegadas (para alinhar todas as tabelas)
-    
     # --- 1. CABEÇALHO (LOGO + TÍTULO) ---
     table_head = doc.add_table(rows=1, cols=2)
     table_head.style = 'Table Grid'
-    table_head.autofit = False # Desliga autofit para fixar largura
+    table_head.autofit = False
     
-    # Define Larguras: Logo (2.5) + Título (8.2) = 10.7
     table_head.columns[0].width = Inches(2.5)
     table_head.columns[1].width = Inches(8.2)
     
-    # Define Altura da Linha (Para reduzir altura)
     row_head = table_head.rows[0]
     row_head.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
-    row_head.height = Inches(0.9) # Altura justa para o logo
+    row_head.height = Inches(0.9)
 
     # Célula 1: Logo
     c0 = table_head.cell(0, 0)
-    c0.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER # Centraliza verticalmente
+    c0.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
     p0 = c0.paragraphs[0]
     p0.alignment = WD_ALIGN_PARAGRAPH.CENTER
     
@@ -75,7 +71,6 @@ def gerar_romaneio_docx(dados, df_materiais):
     if os.path.exists(logo_path):
         try:
             run = p0.add_run()
-            # Ajuste leve na largura da imagem para caber na altura reduzida
             run.add_picture(logo_path, width=Inches(1.8)) 
         except:
             p0.add_run("SIARCON").bold = True
@@ -84,43 +79,40 @@ def gerar_romaneio_docx(dados, df_materiais):
     
     # Célula 2: Título
     c1 = table_head.cell(0, 1)
-    c1.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER # Centraliza verticalmente
+    c1.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
     p1 = c1.paragraphs[0]
     run_title = p1.add_run("ROMANEIO DE ENVIO DE MATERIAIS")
     run_title.bold = True
     run_title.font.size = Pt(16)
     p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
     
-    # NÃO ADICIONAR PARÁGRAFO AQUI PARA ENCOSTAR AS TABELAS
-
-    # --- 2. DADOS EMPRESA/OBRA/DESTINO (Fundo Cinza) ---
+    # --- 2. DADOS EMPRESA/OBRA/DESTINO ---
     t_sub = doc.add_table(rows=3, cols=2)
     t_sub.style = 'Table Grid'
     t_sub.autofit = False
     
-    # Define Larguras: Texto (8.7) + Data (2.0) = 10.7
     for row in t_sub.rows:
         row.cells[0].width = Inches(8.7)
         row.cells[1].width = Inches(2.0)
-        row.height = Inches(0.25) # Linhas finas
+        row.height = Inches(0.25)
     
-    # Linha 1: Empresa
+    # Linha 1
     c_emp = t_sub.cell(0, 0)
-    c_emp.merge(t_sub.cell(0, 1)) # Mescla tudo
+    c_emp.merge(t_sub.cell(0, 1))
     c_emp.text = "Empresa: SIARCON ENGENHARIA LTDA - EPP"
     c_emp.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
     set_cell_background(c_emp, "D9D9D9")
     c_emp.paragraphs[0].runs[0].bold = True
     
-    # Linha 2: Obra
+    # Linha 2
     c_obra = t_sub.cell(1, 0)
-    c_obra.merge(t_sub.cell(1, 1)) # Mescla tudo
+    c_obra.merge(t_sub.cell(1, 1))
     c_obra.text = f"Obra: {dados['obra'].upper()}"
     c_obra.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
     set_cell_background(c_obra, "D9D9D9")
     c_obra.paragraphs[0].runs[0].bold = True
 
-    # Linha 3: Destino (Esq) e Data (Dir)
+    # Linha 3
     c_dest = t_sub.cell(2, 0)
     c_dest.text = f"Destino: {dados['destino'].upper()}"
     c_dest.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
@@ -141,14 +133,11 @@ def gerar_romaneio_docx(dados, df_materiais):
     t_mat.style = 'Table Grid'
     t_mat.autofit = False 
     
-    # LARGURAS SOMANDO 10.7
-    # Desc(4.0) + Det(4.5) + Unid(1.1) + Qtd(1.1) = 10.7
     w_desc = Inches(4.0)
     w_det = Inches(4.5)
     w_unid = Inches(1.1)
     w_qtd = Inches(1.1)
     
-    # Cabeçalho
     hdr = t_mat.rows[0].cells
     hdr[0].width = w_desc; hdr[0].text = "DESCRIÇÃO DO MATERIAL"
     hdr[1].width = w_det;  hdr[1].text = "DETALHE"
@@ -161,30 +150,22 @@ def gerar_romaneio_docx(dados, df_materiais):
         cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
         cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
 
-    # Dados
     for index, row in df_materiais.iterrows():
         desc = str(row.get('MATERIAL', '')).strip()
         if desc:
-            row_cells = t_mat.add_row().cells
+            r = t_mat.add_row()
+            r.cells[0].width = w_desc; r.cells[0].text = desc
+            r.cells[1].width = w_det;  r.cells[1].text = str(row.get('DETALHE', ''))
             
-            # Aplica larguras
-            row_cells[0].width = w_desc
-            row_cells[1].width = w_det
-            row_cells[2].width = w_unid
-            row_cells[3].width = w_qtd
-            
-            row_cells[0].text = desc
-            row_cells[1].text = str(row.get('DETALHE', ''))
-            
-            row_cells[2].text = str(row.get('UNID', ''))
-            row_cells[2].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+            r.cells[2].width = w_unid; r.cells[2].text = str(row.get('UNID', ''))
+            r.cells[2].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
             
             qtd = row.get('QTD', 0)
             try: 
                 if float(qtd).is_integer(): qtd = int(qtd)
             except: pass
-            row_cells[3].text = str(qtd)
-            row_cells[3].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+            r.cells[3].width = w_qtd; r.cells[3].text = str(qtd)
+            r.cells[3].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
 
     # Linhas em branco
     for _ in range(max(0, 12 - len(df_materiais))): 
@@ -199,8 +180,6 @@ def gerar_romaneio_docx(dados, df_materiais):
     # --- 4. RODAPÉ ---
     t_footer = doc.add_table(rows=2, cols=2)
     t_footer.autofit = False
-    
-    # Define largura para dividir a página ao meio (10.7 / 2 = 5.35)
     w_foot = Inches(5.35)
     t_footer.columns[0].width = w_foot
     t_footer.columns[1].width = w_foot
@@ -284,6 +263,7 @@ col_env, col_rec = st.columns(2)
 resp_envio = col_env.text_input("Responsável Envio (Siarcon)", value="João Bigoni")
 resp_receb = col_rec.text_input("Responsável Recebimento", value="Global")
 
+# --- CORREÇÃO DAS VARIÁVEIS AQUI ---
 col_b1, col_b2 = st.columns(2)
 
 dados_romaneio = {
@@ -292,11 +272,11 @@ dados_romaneio = {
     'materiais_json': df_editado.to_json(orient="records")
 }
 
-if col_btn1.button("💾 Salvar Romaneio"):
+if col_b1.button("💾 Salvar Romaneio"):
     if utils_db.registrar_romaneio(dados_romaneio): st.success("Salvo!")
     else: st.error("Erro ao salvar.")
 
-if col_btn2.button("📄 Gerar DOCX (Paisagem)", type="primary"):
+if col_b2.button("📄 Gerar DOCX (Paisagem)", type="primary"):
     df_final = df_editado[df_editado["MATERIAL"].astype(str).str.strip() != ""]
     if not df_final.empty:
         arquivo_docx = gerar_romaneio_docx(dados_romaneio, df_final)
