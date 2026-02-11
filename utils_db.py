@@ -193,3 +193,37 @@ def aprender_novo_item(categoria, novo_item):
         ws.append_row([categoria.lower(), novo_item])
         return True
     except: return False
+
+def registrar_romaneio(dados):
+    sh = _conectar_gsheets()
+    if not sh: return False
+    try:
+        # Tenta pegar a aba ou criar
+        try: ws = sh.worksheet("Romaneios")
+        except: ws = sh.add_worksheet("Romaneios", 100, 20)
+        
+        # Headers Fixos para Romaneio
+        headers = ['id', 'data', 'obra', 'materiais_json', 'responsavel_envio', 'responsavel_recebimento']
+        
+        # Se a aba for nova, cria cabeçalho
+        if not ws.row_values(1): ws.append_row(headers)
+
+        # Gera ID
+        if 'id' not in dados or not dados['id']: 
+            dados['id'] = datetime.now().strftime("%Y%m%d%H%M%S")
+
+        # Prepara linha
+        row_data = [
+            str(dados.get('id', '')),
+            str(dados.get('data', '')),
+            str(dados.get('obra', '')),
+            str(dados.get('materiais_json', '')), # Vamos salvar a lista como texto JSON
+            str(dados.get('responsavel_envio', '')),
+            str(dados.get('responsavel_recebimento', ''))
+        ]
+        
+        ws.append_row(row_data)
+        return True
+    except Exception as e:
+        print(f"Erro ao salvar romaneio: {e}")
+        return False
