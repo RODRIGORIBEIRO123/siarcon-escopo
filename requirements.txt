@@ -9,5 +9,5 @@ openpyxl
 openai
 extra-streamlit-components
 pymupdf
-openpyxl
-
+folium
+streamlit-folium
