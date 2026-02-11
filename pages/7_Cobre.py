@@ -13,7 +13,7 @@ if 'logado' not in st.session_state or not st.session_state['logado']:
 DISCIPLINA_ATUAL = "Cobre"
 TEXTO_RESUMO_PADRAO = "Este escopo contempla o fornecimento de instalações frigorígenas, conforme detalhamento a seguir."
 
-# --- LISTAS COBRE ---
+# --- LISTAS COBRE (MANTIDAS) ---
 ITENS_MATRIZ = [
     "Tubulação de Cobre", "Isolamento Térmico (Elastomérico)",
     "Solda e Consumíveis (PPU/Prata)", "Carga de Gás Refrigerante",
@@ -168,16 +168,16 @@ with tab1:
     
     st.divider(); c2.write("📂 **Projetos de Referência**")
     val_proj_salvo = dados_edit.get('projetos_referencia', '')
-    # Proteção contra erro de split em None
     if not val_proj_salvo: val_proj_salvo = ""
-    lista_atual = [x.strip() for x in val_proj_salvo.split('\n') if x.strip()]
+    
+    set_arquivos = set([x.strip() for x in val_proj_salvo.split('\n') if x.strip()])
     
     uploads = c2.file_uploader("Arraste arquivos aqui", accept_multiple_files=True)
     if uploads:
         for f in uploads:
-            if f.name not in lista_atual:
-                lista_atual.append(f.name)
-    val_proj_final = "\n".join(lista_atual)
+            set_arquivos.add(f.name)
+            
+    val_proj_final = "\n".join(sorted(list(set_arquivos)))
     projetos_ref = c2.text_area("Lista de Projetos:", value=val_proj_final, height=100)
 
 with tab2:
@@ -192,31 +192,26 @@ with tab2:
 
     lista_tec_final = sorted(list(set(opcoes.get(cat_tecnica_db, []) + PADRAO_TECNICO)))
     
-    # --- CORREÇÃO DO ERRO DO EVAL AQUI ---
     itens_salvos = dados_edit.get('itens_tecnicos', [])
     if isinstance(itens_salvos, str) and itens_salvos.strip():
         try: itens_salvos = eval(itens_salvos)
         except: itens_salvos = []
-    elif not isinstance(itens_salvos, list):
-        itens_salvos = []
+    elif not isinstance(itens_salvos, list): itens_salvos = []
         
     opcoes_finais = sorted(list(set(lista_tec_final + itens_salvos)))
     itens_tec = st.multiselect("Itens do Escopo:", opcoes_finais, default=itens_salvos)
     
-    # Comentários
     comentarios_salvos = dados_edit.get('comentarios_itens', {})
     if isinstance(comentarios_salvos, str) and comentarios_salvos.strip():
         try: comentarios_salvos = eval(comentarios_salvos)
         except: comentarios_salvos = {}
-    elif not isinstance(comentarios_salvos, dict):
-        comentarios_salvos = {}
+    elif not isinstance(comentarios_salvos, dict): comentarios_salvos = {}
         
     comentarios_novos = {}
     if itens_tec:
         st.caption("📝 Detalhe os itens (Marca, Local, etc.):")
         for i in itens_tec:
-            val_c = comentarios_salvos.get(i, "")
-            comentarios_novos[i] = st.text_input(f"Detalhe '{i}':", value=val_c)
+            comentarios_novos[i] = st.text_input(f"Detalhe '{i}':", value=comentarios_salvos.get(i, ""))
             
     st.divider()
     tec_livre = st.text_area("Observações Gerais:", value=dados_edit.get('tecnico_livre', ''))
@@ -224,50 +219,40 @@ with tab2:
     
     lista_qual = sorted(list(set(opcoes.get(f"qualidade_{DISCIPLINA_ATUAL.lower()}", []) + PADRAO_QUALIDADE)))
     
-    # Safe Eval Qualidade
     itens_salvos_q = dados_edit.get('itens_qualidade', [])
     if isinstance(itens_salvos_q, str) and itens_salvos_q.strip():
         try: itens_salvos_q = eval(itens_salvos_q)
         except: itens_salvos_q = []
-    elif not isinstance(itens_salvos_q, list):
-        itens_salvos_q = []
+    elif not isinstance(itens_salvos_q, list): itens_salvos_q = []
         
     opcoes_qual = sorted(list(set(lista_qual + itens_salvos_q)))
     itens_qual = st.multiselect("Itens Qualidade:", opcoes_qual, default=itens_salvos_q)
 
 with tab3:
     escolhas = {}
-    
-    # Safe Eval Matriz
     matriz_salva = dados_edit.get('matriz', {})
     if isinstance(matriz_salva, str) and matriz_salva.strip():
         try: matriz_salva = eval(matriz_salva)
         except: matriz_salva = {}
-    elif not isinstance(matriz_salva, dict):
-        matriz_salva = {}
+    elif not isinstance(matriz_salva, dict): matriz_salva = {}
     
     st.write("Responsabilidades:")
     for item in ITENS_MATRIZ:
         c_m1, c_m2 = st.columns([2, 3])
         c_m1.write(f"**{item}**")
         opts = ["SIARCON", "FORNECEDOR", "FORA DO ESCOPO"]
-        
-        saved_val = matriz_salva.get(item, "SIARCON")
-        idx = opts.index(saved_val) if saved_val in opts else 0
-        
+        idx = opts.index(matriz_salva.get(item, "SIARCON")) if matriz_salva.get(item) in opts else 0
         escolhas[item] = c_m2.radio(f"r_{item}", opts, index=idx, horizontal=True, label_visibility="collapsed")
         st.divider()
 
 with tab4:
     st.info("Itens padrão (Ficha, ASO, EPI, NRs 06/12...) inclusos automaticamente.")
     
-    # Safe Eval NRs
     nrs_salvas = dados_edit.get('nrs_selecionadas', [])
     if isinstance(nrs_salvas, str) and nrs_salvas.strip():
         try: nrs_salvas = eval(nrs_salvas)
         except: nrs_salvas = []
-    elif not isinstance(nrs_salvas, list):
-        nrs_salvas = []
+    elif not isinstance(nrs_salvas, list): nrs_salvas = []
         
     opcoes_sms = sorted(list(set(LISTA_NRS_SELECAO + nrs_salvas)))
     nrs = st.multiselect("NRs Adicionais:", opcoes_sms, default=nrs_salvas)
