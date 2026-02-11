@@ -293,3 +293,45 @@ def concluir_parada(id_parada):
             return True
     except: pass
     return False
+
+# --- ADICIONE AO FINAL DE utils_db.py ---
+import requests
+
+def obter_coordenadas(endereco):
+    """Converte endereço em Lat/Lon usando Nominatim (Grátis)"""
+    try:
+        url = "https://nominatim.openstreetmap.org/search"
+        headers = {'User-Agent': 'SiarconLogistica/1.0'}
+        params = {'q': endereco, 'format': 'json', 'limit': 1}
+        response = requests.get(url, headers=headers, params=params).json()
+        if response:
+            return float(response[0]['lat']), float(response[0]['lon'])
+    except:
+        pass
+    return None, None
+
+def calcular_rota_osrm(pontos):
+    """
+    Calcula distância e tempo total passando por vários pontos.
+    pontos: lista de tuplas [(lat, lon), (lat, lon), ...]
+    """
+    if len(pontos) < 2:
+        return 0, 0, [] # Sem rota
+
+    # Formata coordenadas para OSRM: lon,lat;lon,lat
+    coords_str = ";".join([f"{p[1]},{p[0]}" for p in pontos])
+    url = f"http://router.project-osrm.org/route/v1/driving/{coords_str}?overview=false"
+    
+    try:
+        r = requests.get(url).json()
+        if 'routes' in r:
+            distancia_m = r['routes'][0]['distance']
+            tempo_s = r['routes'][0]['duration']
+            
+            km = round(distancia_m / 1000, 1)
+            minutos = round(tempo_s / 60)
+            return km, minutos
+    except:
+        pass
+    
+    return 0, 0
