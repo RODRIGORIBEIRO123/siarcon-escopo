@@ -229,6 +229,8 @@ def registrar_romaneio(dados):
 
 # --- ADICIONE AO FINAL DE utils_db.py ---
 
+# --- ADICIONE ISTO NO FINAL DO ARQUIVO utils_db.py ---
+
 def registrar_parada_rota(dados):
     sh = _conectar_gsheets()
     if not sh: return False
@@ -236,7 +238,7 @@ def registrar_parada_rota(dados):
         try: ws = sh.worksheet("Rotas")
         except: ws = sh.add_worksheet("Rotas", 100, 20)
         
-        headers = ['id', 'data_rota', 'ordem', 'cliente', 'endereco', 'tipo', 'status', 'obs', 'motorista', 'hora_conclusao']
+        headers = ['id', 'data_rota', 'ordem', 'tipo', 'cliente', 'endereco', 'motorista', 'status', 'obs', 'hora_conclusao']
         if not ws.row_values(1): ws.append_row(headers)
 
         if 'id' not in dados or not dados['id']: 
@@ -246,26 +248,16 @@ def registrar_parada_rota(dados):
             str(dados.get('id', '')),
             str(dados.get('data_rota', '')),
             str(dados.get('ordem', '')),
+            str(dados.get('tipo', 'Entrega')),
             str(dados.get('cliente', '')),
             str(dados.get('endereco', '')),
-            str(dados.get('tipo', 'Entrega')), # Coleta ou Entrega
+            str(dados.get('motorista', '')),
             str(dados.get('status', 'Pendente')),
             str(dados.get('obs', '')),
-            str(dados.get('motorista', '')),
             str(dados.get('hora_conclusao', ''))
         ]
         
-        # Verifica se atualiza ou cria
-        cell = None
-        try: cell = ws.find(str(dados['id']), in_column=1)
-        except: pass
-
-        if cell:
-            # Atualiza linha (Simplificado: reescreve a linha toda)
-            col_letras = gspread.utils.rowcol_to_a1(cell.row, 1)
-            ws.update(range_name=f"A{cell.row}", values=[row_data])
-        else:
-            ws.append_row(row_data)
+        ws.append_row(row_data)
         return True
     except Exception as e:
         print(f"Erro rota: {e}")
@@ -276,10 +268,10 @@ def listar_rotas_dia(data_filtro=None):
     if df.empty: return df
     
     if data_filtro:
-        # Filtra pela data (string x string)
+        # Filtra pela data
         df = df[df['data_rota'] == str(data_filtro)]
     
-    # Ordena por Ordem
+    # Ordena por Ordem (se possível converter)
     try:
         df['ordem'] = pd.to_numeric(df['ordem'])
         df = df.sort_values('ordem')
@@ -294,9 +286,9 @@ def concluir_parada(id_parada):
         ws = sh.worksheet("Rotas")
         cell = ws.find(str(id_parada), in_column=1)
         if cell:
-            # Atualiza Status (Col G - index 7) e Hora (Col J - index 10)
+            # Coluna 8 (H) é Status, Coluna 10 (J) é Hora Conclusão
             hora_agora = datetime.now().strftime("%H:%M")
-            ws.update_cell(cell.row, 7, "Concluído")
+            ws.update_cell(cell.row, 8, "Concluído")
             ws.update_cell(cell.row, 10, hora_agora)
             return True
     except: pass
