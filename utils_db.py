@@ -335,3 +335,83 @@ def calcular_rota_osrm(pontos):
         pass
     
     return 0, 0
+
+# --- ATUALIZAÇÃO NO FINAL DE utils_db.py ---
+import requests
+import time
+
+def obter_coordenadas(endereco):
+    """
+    Converte endereço em Lat/Lon usando Nominatim (Grátis).
+    Adiciona 'Brasil' para melhorar precisão se não tiver.
+    """
+    if not endereco: return 0, 0
+    
+    # Melhora a busca adicionando contexto se for muito curta
+    termo_busca = endereco
+    if "brasil" not in termo_busca.lower():
+        termo_busca += ", Brasil"
+        
+    try:
+        url = "https://nominatim.openstreetmap.org/search"
+        # User-Agent é obrigatório pelas regras do Nominatim
+        headers = {'User-Agent': 'SiarconApp/1.0 (contato@siarcon.com)'}
+        params = {'q': termo_busca, 'format': 'json', 'limit': 1}
+        
+        r = requests.get(url, headers=headers, params=params, timeout=5)
+        dados = r.json()
+        
+        if dados:
+            return float(dados[0]['lat']), float(dados[0]['lon'])
+    except Exception as e:
+        print(f"Erro GPS: {e}")
+    
+    return 0, 0
+
+def calcular_rota_osrm(pontos):
+    """
+    Calcula rota entre lista de coordenadas [(lat, lon), ...].
+    Retorna: km (float), minutos (float), geometria (str/encoded)
+    """
+    if len(pontos) < 2:
+        return 0, 0, None
+
+    # Formata para OSRM: lon,lat;lon,lat (Atenção: OSRM usa Longitude,Latitude)
+    coords_str = ";".join([f"{p[1]},{p[0]}" for p in pontos])
+    
+    # overview=full retorna a geometria para desenhar no mapa
+    url = f"http://router.project-osrm.org/route/v1/driving/{coords_str}?overview=full&geometries=geojson"
+    
+    try:
+        r = requests.get(url, timeout=5).json()
+        if 'routes' in r and len(r['routes']) > 0:
+            rota = r['routes'][0]
+            distancia_m = rota['distance']
+            tempo_s = rota['duration']
+            geometry = rota['geometry'] # Linha para desenhar no mapa
+            
+            km = round(distancia_m / 1000, 1)
+            minutos = round(tempo_s / 60)
+            return km, minutos, geometry
+    except Exception as e:
+        print(f"Erro OSRM: {e}")
+        
+    return 0, 0, None
+
+def atualizar_coordenadas_rota(id_rota, lat, lon):
+    """Salva a coordenada descoberta no banco para não buscar de novo"""
+    sh = _conectar_gsheets()
+    if not sh: return False
+    try:
+        ws = sh.worksheet("Rotas")
+        cell = ws.find(str(id_rota), in_column=1)
+        if cell:
+            # Colunas de Lat/Lon (K e L -> indices 11 e 12)
+            # Se sua planilha tiver ordem diferente, isso ajusta
+            # Headers: id, data, ordem, tipo, cliente, endereco, motorista, status, obs, hora, tempo_est, lat, lon
+            # Lat é col 12, Lon é col 13
+            ws.update_cell(cell.row, 12, str(lat).replace('.', ','))
+            ws.update_cell(cell.row, 13, str(lon).replace('.', ','))
+            return True
+    except: pass
+    return False
