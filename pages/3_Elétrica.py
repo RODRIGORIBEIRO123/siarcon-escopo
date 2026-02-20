@@ -14,9 +14,8 @@ DISCIPLINA_ATUAL = "Elétrica"
 TEXTO_RESUMO_PADRAO = "Este escopo contempla o fornecimento de instalações elétricas, conforme detalhamento a seguir."
 
 ITENS_MATRIZ = [
-    "Infraestrutura (Eletrocalhas/Perfilados)", "Cabos de Força", "Cabos de Comando",
-    "Quadros Elétricos (QGBT/Comando)", "Instrumentação de Campo", "Aterramento",
-    "Conectorização/Terminação"
+    "Materiais de infraestrutura (Calhas, Eletrodutos, etc", "Cabos de Força", "Cabos de Comando",
+    "Quadros Elétricos (QGBT/Comando)", "Conectorização/Terminação", "Plataforma elevatória", "Escada tipo 'A'", "Hospedagens", "Refeições", "Deslocamento até a obra"
 ]
 
 PADRAO_TECNICO = [
