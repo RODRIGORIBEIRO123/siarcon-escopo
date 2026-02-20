@@ -30,21 +30,21 @@ PADRAO_TECNICO = [
 PADRAO_QUALIDADE = [
     "Alinhamento e organização dos cabos nas calhas e painel",
     "Proteger os painéis durante os cortes, para evitar limalhas de ferro",
-    "Teste de Rotação de Motores", "Inspeção Visual de Montagem"
+    "Teste de Rotação de Motores", "Inspeção Visual de Montagem", "Acompanhamento startup da automação", "Ajustes nos inversores"
 ]
 
 SMS_PADRAO_DOC = [
     "Ficha de registro", "ASO (Atestado de Saúde Ocupacional)", "Ficha de EPI", "Ordem de Serviço",
-    "Certificados de Treinamento", "NR-06 (Equipamento de Proteção Individual)",
-    "NR-12 (Segurança em Máquinas e Equipamentos)",
+    "Certificados de Treinamento", "NR-01 (Disposições Gerais)", "NR-06 (Equipamento de Proteção Individual)", "NR-10 (Eletricidade)",
+    "NR-12 (Segurança em Máquinas e Equipamentos)", "NR-18 (Construção Civil)", 
     "Comprovações de recolhimento de INSS, FGTS e folha de pagamento"
 ]
 
 LISTA_NRS_SELECAO = [
-    "NR-01 (Disposições Gerais)", "NR-03 (Embargo e Interdição)", "NR-04 (SESMT)", "NR-05 (CIPA)", 
+    , "NR-03 (Embargo e Interdição)", "NR-04 (SESMT)", "NR-05 (CIPA)", 
     "NR-07 (PCMSO)", "NR-08 (Edificações)", "NR-09 (Avaliação e Controle de Exposições)", 
-    "NR-10 (Eletricidade)", "NR-11 (Transporte e Movimentação)", "NR-13 (Vasos de Pressão)", 
-    "NR-15 (Insalubridade)", "NR-16 (Periculosidade)", "NR-17 (Ergonomia)", "NR-18 (Construção Civil)", 
+     "NR-11 (Transporte e Movimentação)", "NR-13 (Vasos de Pressão)", 
+    "NR-15 (Insalubridade)", "NR-16 (Periculosidade)", "NR-17 (Ergonomia)",  
     "NR-19 (Explosivos)", "NR-20 (Inflamáveis)", "NR-21 (Trabalho a Céu Aberto)", "NR-23 (Incêndios)", 
     "NR-24 (Condições Sanitárias)", "NR-25 (Resíduos)", "NR-26 (Sinalização)", "NR-28 (Fiscalização)", 
     "NR-33 (Espaços Confinados)", "NR-35 (Trabalho em Altura)", "NR-38 (Limpeza Urbana)"
