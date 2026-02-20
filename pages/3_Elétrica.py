@@ -14,17 +14,16 @@ DISCIPLINA_ATUAL = "Elétrica"
 TEXTO_RESUMO_PADRAO = "Este escopo contempla o fornecimento de instalações elétricas, conforme detalhamento a seguir."
 
 ITENS_MATRIZ = [
-    "Materiais de infraestrutura (Calhas, Eletrodutos, etc", "Cabos de Força", "Cabos de Comando",
+    "Materiais de infraestrutura (Calhas, Eletrodutos, etc)", "Cabos de Força", "Cabos de Comando",
     "Quadros Elétricos (QGBT/Comando)", "Conectorização/Terminação", "Plataforma elevatória", "Escada tipo 'A'", "Hospedagens", "Refeições", "Deslocamento até a obra"
 ]
 
 PADRAO_TECNICO = [
     "Instalação de Eletrocalhas e Perfilados", "Instalação de Eletrodutos Rígidos/Flexíveis",
-    "Lançamento de Cabos de Força (Baixa Tensão)", "Lançamento de Cabos de Comando/Sinal",
-    "Instalação de Chaves Seccionadoras", "Ligação de Motores e Equipamentos",
+    "Lançamento de Cabos de Força", "Lançamento de Cabos de Comando/Sinal",
+    "Instalação de Chaves Seccionadoras NR-10", "Ligação de Motores e Equipamentos",
     "Instalação dos sensores e instrumentos", "Identificação de Cabos e Componentes",
-    "Serviços de Furacão e Fixação"
-]
+    ]
 
 PADRAO_QUALIDADE = [
     "Alinhamento e organização dos cabos nas calhas e painel",
