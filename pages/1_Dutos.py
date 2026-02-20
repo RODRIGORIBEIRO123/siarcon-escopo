@@ -18,7 +18,7 @@ ITENS_MATRIZ = [
     "Fornecimento de materiais de dutos (Chapas)",  "Fornecimento acessórios dutos (Canto, Grampo)",
     "Fornecimento de isolamento térmico", "Fornecimento silicone PU", 
     "Fornecimento de elementos difusão", "Fornecimento de caixas terminais", "Fornecimento de Plataformas elevatórias", 
-    "Fornecimento de escadas tipo 'A"", "Fornecimento de containers", "Fornecimento de maquinário para fab. dutos em obra"
+    "Fornecimento de escadas tipo 'A"", "Fornecimento de containers", "Fornecimento de maquinário para fab. dutos em obra",
     "Hospedagens", "Refeições", "Deslocamento até a obra"
 ]
 
