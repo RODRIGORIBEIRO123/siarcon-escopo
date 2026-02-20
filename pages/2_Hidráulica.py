@@ -17,7 +17,8 @@ ITENS_MATRIZ = [
     "Fornecimento das tubulações", "Fornecimento das válvulas manuais", "Fornecimento materiais dreno",
     "Fornecimento materiais isolamento térmico", "Fornecimento materiais suportação", 
     "Fornecimento materiais consumíveis", "Balanceamento hidrônico", 
-    "Testes Hidrostáticos", "Fornecimento válvulas de controle e balanceamento"
+    "Testes Hidrostáticos", "Fornecimento válvulas de controle e balanceamento",
+    "Plataforma elevatória", "Escada tipo 'A'", "Hospedagens", "Refeições", "Deslocamento até a obra"
 ]
 
 PADRAO_TECNICO = [
