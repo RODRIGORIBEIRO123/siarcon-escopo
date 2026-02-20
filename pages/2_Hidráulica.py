@@ -43,18 +43,18 @@ PADRAO_QUALIDADE = [
 SMS_PADRAO_DOC = [
     "Ficha de registro", "ASO (Atestado de Saúde Ocupacional)", "Ficha de EPI", "Ordem de Serviço",
     "Certificados de Treinamento", "NR-01 (Disposições Gerais)", "NR-06 (Equipamento de Proteção Individual)",
-    "NR-12 (Segurança em Máquinas e Equipamentos)", "NR-18 (Construção Civil)", "NR-35 (Trabalho em Altura)"
+    "NR-12 (Segurança em Máquinas e Equipamentos)", "NR-18 (Construção Civil)", "NR-35 (Trabalho em Altura)",
     "Comprovações de recolhimento de INSS, FGTS e folha de pagamento"
 ]
 
 LISTA_NRS_SELECAO = [
-    , "NR-03 (Embargo e Interdição)", "NR-04 (SESMT)", "NR-05 (CIPA)", 
+    "NR-03 (Embargo e Interdição)", "NR-04 (SESMT)", "NR-05 (CIPA)", 
     "NR-07 (PCMSO)", "NR-08 (Edificações)", "NR-09 (Avaliação e Controle de Exposições)", 
     "NR-10 (Eletricidade)", "NR-11 (Transporte e Movimentação)", "NR-13 (Vasos de Pressão)", 
     "NR-15 (Insalubridade)", "NR-16 (Periculosidade)", "NR-17 (Ergonomia)", 
     "NR-19 (Explosivos)", "NR-20 (Inflamáveis)", "NR-21 (Trabalho a Céu Aberto)", "NR-23 (Incêndios)", 
     "NR-24 (Condições Sanitárias)", "NR-25 (Resíduos)", "NR-26 (Sinalização)", "NR-28 (Fiscalização)", 
-    "NR-33 (Espaços Confinados)", , "NR-38 (Limpeza Urbana)"
+    "NR-33 (Espaços Confinados)", "NR-38 (Limpeza Urbana)"
 ]
 
 st.set_page_config(page_title=f"Escopo {DISCIPLINA_ATUAL}", page_icon="💧", layout="wide")
@@ -62,14 +62,10 @@ st.set_page_config(page_title=f"Escopo {DISCIPLINA_ATUAL}", page_icon="💧", la
 st.markdown("""
     <style>
     div[data-testid="stDownloadButton"] button {
-        background-color: #28a745 !important;
-        color: white !important;
-        border-color: #28a745 !important;
-        width: 100%;
+        background-color: #28a745 !important; color: white !important; border-color: #28a745 !important; width: 100%;
     }
     div[data-testid="stDownloadButton"] button:hover {
-        background-color: #218838 !important;
-        border-color: #1e7e34 !important;
+        background-color: #218838 !important; border-color: #1e7e34 !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -78,10 +74,7 @@ if 'opcoes_db' not in st.session_state: st.session_state['opcoes_db'] = utils_db
 
 cat_tecnica_db = f"tecnico_{DISCIPLINA_ATUAL.lower()}"
 id_projeto = st.session_state.get('id_projeto_editar')
-dados_edit = {}
-if id_projeto:
-    t = utils_db.buscar_projeto_por_id(id_projeto)
-    if t: dados_edit = t
+dados_edit = utils_db.buscar_projeto_por_id(id_projeto) if id_projeto else {}
 
 def formatar_moeda(valor):
     try:
@@ -156,7 +149,6 @@ def gerar_docx(dados):
 
     b = io.BytesIO(); doc.save(b); b.seek(0); return b
 
-# --- INTERFACE ---
 st.title(f"💧 {DISCIPLINA_ATUAL}")
 if dados_edit: st.info(f"Editando: {dados_edit.get('obra')} | Cliente: {dados_edit.get('cliente')}")
 opcoes = st.session_state.get('opcoes_db', {})
@@ -252,7 +244,6 @@ with tab3:
         try: matriz_salva = eval(matriz_salva)
         except: matriz_salva = {}
     elif not isinstance(matriz_salva, dict): matriz_salva = {}
-    
     st.write("Responsabilidades:")
     for item in ITENS_MATRIZ:
         c_m1, c_m2 = st.columns([2, 3])
@@ -269,7 +260,6 @@ with tab4:
         try: nrs_salvas = eval(nrs_salvas)
         except: nrs_salvas = []
     elif not isinstance(nrs_salvas, list): nrs_salvas = []
-        
     opcoes_sms = sorted(list(set(LISTA_NRS_SELECAO + nrs_salvas)))
     nrs = st.multiselect("NRs Adicionais:", opcoes_sms, default=nrs_salvas)
     sms_livre = st.text_area("Outras exigências:", value=dados_edit.get('sms_livre', ''))
