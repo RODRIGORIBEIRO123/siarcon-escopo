@@ -13,7 +13,7 @@ if 'logado' not in st.session_state or not st.session_state['logado']:
 DISCIPLINA_ATUAL = "Dutos"
 TEXTO_RESUMO_PADRAO = "Este escopo contempla o fornecimento de rede de dutos, conforme detalhamento a seguir."
 
-# --- LISTAS DUTOS (MANTIDAS) ---
+# --- LISTAS DUTOS ---
 ITENS_MATRIZ = [
     "Fabricação de Dutos (Chapa/MPU)", "Montagem de Dutos", "Isolamento Térmico",
     "Suportação e Fixação", "Instalação de Grelhas/Difusores", "Instalação de Dampers",
@@ -60,6 +60,23 @@ LISTA_NRS_SELECAO = [
 ]
 
 st.set_page_config(page_title=f"Escopo {DISCIPLINA_ATUAL}", page_icon="🌪️", layout="wide")
+
+# CSS para botão de download verde
+st.markdown("""
+    <style>
+    div[data-testid="stDownloadButton"] button {
+        background-color: #28a745 !important;
+        color: white !important;
+        border-color: #28a745 !important;
+        width: 100%;
+    }
+    div[data-testid="stDownloadButton"] button:hover {
+        background-color: #218838 !important;
+        border-color: #1e7e34 !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 if 'opcoes_db' not in st.session_state: st.session_state['opcoes_db'] = utils_db.carregar_opcoes()
 
 cat_tecnica_db = f"tecnico_{DISCIPLINA_ATUAL.lower()}"
@@ -81,15 +98,12 @@ def gerar_docx(dados):
     try: style = doc.styles['Normal']; style.font.name = 'Calibri'; style.font.size = Pt(11)
     except: pass
     
-    # Título Centralizado
     head = doc.add_heading(f'ESCOPO - {dados["disciplina"].upper()}', 0)
     head.alignment = WD_ALIGN_PARAGRAPH.CENTER
     
-    # Subtítulo (20pt)
     sub = doc.add_paragraph('SIARCON ENGENHARIA')
     sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    sub.runs[0].bold = True
-    sub.runs[0].font.size = Pt(20)
+    sub.runs[0].bold = True; sub.runs[0].font.size = Pt(20)
     
     # 1. DADOS
     doc.add_heading('1. DADOS DA OBRA', 1)
@@ -97,10 +111,8 @@ def gerar_docx(dados):
     data_hj = datetime.now().strftime("%d/%m/%Y")
     info_rows = [
         ("CLIENTE", dados['cliente']), ("OBRA", dados['obra']), ("FORNECEDOR", dados['fornecedor']),
-        ("ENGENHARIA", dados['responsavel']), 
-        ("OBRAS", dados.get('resp_obras', '')), # Campo Obras
-        ("SUPRIMENTOS", dados['resp_suprimentos']),
-        ("PROJETOS REFERÊNCIA", dados.get('projetos_referencia', '-')),
+        ("ENGENHARIA", dados['responsavel']), ("OBRAS", dados.get('resp_obras', '')),
+        ("SUPRIMENTOS", dados['resp_suprimentos']), ("PROJETOS REFERÊNCIA", dados.get('projetos_referencia', '-')),
         ("DATA / REVISÃO", f"{data_hj}  |  Rev: {dados.get('revisao','-')}")
     ]
     for idx, (label, value) in enumerate(info_rows):
@@ -110,13 +122,10 @@ def gerar_docx(dados):
 
     # 2. TÉCNICO
     doc.add_heading('2. ESCOPO TÉCNICO', 1)
-    # Sem texto "RESUMO:"
     doc.add_paragraph(dados.get('resumo_escopo', ''))
-    
     if dados.get('tecnico_livre'):
         p = doc.add_paragraph(); p.add_run("OBSERVAÇÕES GERAIS:").bold = True
         doc.add_paragraph(dados['tecnico_livre'])
-    
     p = doc.add_paragraph(); p.add_run("DETALHAMENTO:").bold = True
     comentarios = dados.get('comentarios_itens', {})
     for item in dados.get('itens_tecnicos', []):
@@ -124,27 +133,33 @@ def gerar_docx(dados):
         run = p.add_run(item); run.bold = True
         if comentarios.get(item): p.add_run(f": {comentarios[item]}")
 
-    # 3. QUALIDADE
-    doc.add_heading('3. PADRÃO DE QUALIDADE', 1)
-    for item in dados.get('itens_qualidade', []): doc.add_paragraph(item, style='List Bullet')
+    # NUMERAÇÃO DINÂMICA (Depende da Qualidade)
+    num_secao = 3
+    tem_qualidade = bool(dados.get('itens_qualidade'))
+    if tem_qualidade:
+        doc.add_heading(f'{num_secao}. PADRÃO DE QUALIDADE', 1)
+        for item in dados['itens_qualidade']: doc.add_paragraph(item, style='List Bullet')
+        num_secao += 1
 
-    # 4. MATRIZ
-    doc.add_heading('4. MATRIZ DE RESPONSABILIDADES', 1)
+    # MATRIZ
+    doc.add_heading(f'{num_secao}. MATRIZ DE RESPONSABILIDADES', 1)
     tm = doc.add_table(rows=1, cols=4); tm.style = 'Table Grid'
     h = tm.rows[0].cells; h[0].text = "ITEM"; h[1].text = "SIARCON"; h[2].text = "FORNECEDOR"; h[3].text = "FORA DO ESCOPO"
     for k, v in dados.get('matriz', {}).items():
         row = tm.add_row().cells; row[0].text = k
         row[1].text = "X" if v == "SIARCON" else ""; row[2].text = "X" if v == "FORNECEDOR" else ""
         row[3].text = "X" if v == "FORA DO ESCOPO" else ""
+    num_secao += 1
 
-    # 5. SMS
-    doc.add_heading('5. SEGURANÇA (SMS)', 1)
+    # SMS
+    doc.add_heading(f'{num_secao}. SEGURANÇA (SMS)', 1)
     for i in SMS_PADRAO_DOC: doc.add_paragraph(i, style='List Bullet')
     for nr in dados.get('nrs_selecionadas', []): doc.add_paragraph(nr, style='List Bullet')
     if dados.get('sms_livre'): doc.add_paragraph(dados['sms_livre'])
+    num_secao += 1
 
-    # 6. COMERCIAL
-    doc.add_heading('6. COMERCIAL', 1)
+    # COMERCIAL
+    doc.add_heading(f'{num_secao}. COMERCIAL', 1)
     doc.add_paragraph(f"Valor Global: {formatar_moeda(dados.get('valor_total',''))} (valor fixo e irreajustável)")
     doc.add_paragraph(f"Condição de Pagamento: {dados.get('condicao_pgto','')}")
     if dados.get('obs_gerais'): doc.add_paragraph(f"Obs: {dados['obs_gerais']}")
@@ -180,15 +195,10 @@ with tab1:
     st.divider(); c2.write("📂 **Projetos de Referência**")
     val_proj_salvo = dados_edit.get('projetos_referencia', '')
     if not val_proj_salvo: val_proj_salvo = ""
-    
-    # Lógica de SET para evitar duplicatas
     set_arquivos = set([x.strip() for x in val_proj_salvo.split('\n') if x.strip()])
-    
     uploads = c2.file_uploader("Arraste arquivos aqui", accept_multiple_files=True)
     if uploads:
-        for f in uploads:
-            set_arquivos.add(f.name)
-            
+        for f in uploads: set_arquivos.add(f.name)
     val_proj_final = "\n".join(sorted(list(set_arquivos)))
     projetos_ref = c2.text_area("Lista de Projetos:", value=val_proj_final, height=100)
 
@@ -197,13 +207,18 @@ with tab2:
     resumo = st.text_area("Resumo:", value=val_resumo, height=80)
     st.divider()
     
+    # --- NOVO TÉCNICO (Sem recarregar) ---
     c_a1, c_a2 = st.columns([4,1])
-    novo_item = c_a1.text_input("Novo Item DB:", key="add_db")
-    if c_a2.button("💾 Criar"): 
-        if utils_db.aprender_novo_item(cat_tecnica_db, novo_item): st.session_state['opcoes_db'] = utils_db.carregar_opcoes(); st.rerun()
-
+    novo_item = c_a1.text_input("Novo Item DB (Técnico):", key="add_db_tec")
     lista_tec_final = sorted(list(set(opcoes.get(cat_tecnica_db, []) + PADRAO_TECNICO)))
     
+    if c_a2.button("💾 Criar Téc."): 
+        if novo_item and utils_db.aprender_novo_item(cat_tecnica_db, novo_item): 
+            st.session_state['opcoes_db'] = utils_db.carregar_opcoes()
+            lista_tec_final.append(novo_item)
+            lista_tec_final = sorted(list(set(lista_tec_final)))
+            st.toast("✅ Salvo no banco!")
+
     itens_salvos = dados_edit.get('itens_tecnicos', [])
     if isinstance(itens_salvos, str) and itens_salvos.strip():
         try: itens_salvos = eval(itens_salvos)
@@ -221,15 +236,25 @@ with tab2:
         
     comentarios_novos = {}
     if itens_tec:
-        st.caption("📝 Detalhe os itens (Marca, Local, etc.):")
-        for i in itens_tec:
-            comentarios_novos[i] = st.text_input(f"Detalhe '{i}':", value=comentarios_salvos.get(i, ""))
+        st.caption("📝 Detalhe os itens:")
+        for i in itens_tec: comentarios_novos[i] = st.text_input(f"Detalhe '{i}':", value=comentarios_salvos.get(i, ""))
             
     st.divider()
     tec_livre = st.text_area("Observações Gerais:", value=dados_edit.get('tecnico_livre', ''))
+    
     st.divider(); st.markdown("#### Qualidade")
     
+    # --- NOVA QUALIDADE NO DB (Sem recarregar) ---
+    c_q1, c_q2 = st.columns([4,1])
+    novo_item_q = c_q1.text_input("Novo Item DB (Qualidade):", key="add_db_qual")
     lista_qual = sorted(list(set(opcoes.get(f"qualidade_{DISCIPLINA_ATUAL.lower()}", []) + PADRAO_QUALIDADE)))
+    
+    if c_q2.button("💾 Criar Qual."): 
+        if novo_item_q and utils_db.aprender_novo_item(f"qualidade_{DISCIPLINA_ATUAL.lower()}", novo_item_q): 
+            st.session_state['opcoes_db'] = utils_db.carregar_opcoes()
+            lista_qual.append(novo_item_q)
+            lista_qual = sorted(list(set(lista_qual)))
+            st.toast("✅ Qualidade salva no banco!")
     
     itens_salvos_q = dados_edit.get('itens_qualidade', [])
     if isinstance(itens_salvos_q, str) and itens_salvos_q.strip():
@@ -258,8 +283,7 @@ with tab3:
         st.divider()
 
 with tab4:
-    st.info("Itens padrão (Ficha, ASO, EPI, NRs 06/12...) inclusos automaticamente.")
-    
+    st.info("Itens padrão inclusos automaticamente.")
     nrs_salvas = dados_edit.get('nrs_selecionadas', [])
     if isinstance(nrs_salvas, str) and nrs_salvas.strip():
         try: nrs_salvas = eval(nrs_salvas)
@@ -286,8 +310,7 @@ st.markdown("---")
 dados = {
     '_id': dados_edit.get('_id'), 'disciplina': DISCIPLINA_ATUAL, 'cliente': cliente, 'obra': obra, 
     'fornecedor': forn, 'cnpj_fornecedor': cnpj, 'responsavel': resp_eng, 
-    'resp_obras': resp_obras,
-    'resp_suprimentos': resp_sup, 
+    'resp_obras': resp_obras, 'resp_suprimentos': resp_sup, 
     'revisao': revisao, 'projetos_referencia': projetos_ref, 'resumo_escopo': resumo, 
     'itens_tecnicos': itens_tec, 'comentarios_itens': comentarios_novos, 'tecnico_livre': tec_livre, 
     'itens_qualidade': itens_qual, 'matriz': escolhas, 'nrs_selecionadas': nrs, 'sms_livre': sms_livre, 
@@ -295,13 +318,23 @@ dados = {
     'data_inicio': dados_edit.get('data_inicio', date.today().strftime("%Y-%m-%d"))
 }
 
+# --- BOTÕES (Corrigidos com Download Verde) ---
 col_b1, col_b2 = st.columns(2)
-if col_b1.button("☁️ SALVAR"):
-    if utils_db.registrar_projeto(dados): st.success("Salvo!"); time.sleep(1)
-    else: st.error("Erro ao salvar.")
 
-if col_b2.button("💾 SALVAR E DOCX", type="primary"):
-    if utils_db.registrar_projeto(dados):
+with col_b1:
+    if st.button("☁️ APENAS SALVAR NO DB"):
+        if utils_db.registrar_projeto(dados): st.success("Salvo no banco de dados!")
+        else: st.error("Erro ao salvar.")
+
+with col_b2:
+    if st.button("💾 SALVAR E PREPARAR DOCX", type="primary"):
+        if utils_db.registrar_projeto(dados):
+            st.success("Salvo! Clique no botão verde abaixo para baixar.")
+            st.session_state[f'btn_docx_{DISCIPLINA_ATUAL}'] = True
+        else: st.error("Erro ao salvar.")
+    
+    # Download aparece logo abaixo se o arquivo estiver pronto
+    if st.session_state.get(f'btn_docx_{DISCIPLINA_ATUAL}', False):
         f_forn = forn.strip() or "Fornecedor"; f_obra = obra.strip() or "Obra"
-        b = gerar_docx(dados); st.download_button(f"Baixar DOCX", b, f"Escopo_{DISCIPLINA_ATUAL} - {f_forn} - {f_obra}.docx")
-    else: st.error("Erro ao salvar.")
+        b = gerar_docx(dados)
+        st.download_button("📥 BAIXAR DOCX GERADO", b, file_name=f"Escopo_{DISCIPLINA_ATUAL} - {f_forn} - {f_obra}.docx")
