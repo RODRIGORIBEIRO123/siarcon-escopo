@@ -41,9 +41,9 @@ SMS_PADRAO_DOC = [
 ]
 
 LISTA_NRS_SELECAO = [
-    , "NR-03 (Embargo e Interdição)", "NR-04 (SESMT)", "NR-05 (CIPA)", 
+    "NR-03 (Embargo e Interdição)", "NR-04 (SESMT)", "NR-05 (CIPA)", 
     "NR-07 (PCMSO)", "NR-08 (Edificações)", "NR-09 (Avaliação e Controle de Exposições)", 
-     "NR-11 (Transporte e Movimentação)", "NR-13 (Vasos de Pressão)", 
+    "NR-11 (Transporte e Movimentação)", "NR-13 (Vasos de Pressão)", 
     "NR-15 (Insalubridade)", "NR-16 (Periculosidade)", "NR-17 (Ergonomia)",  
     "NR-19 (Explosivos)", "NR-20 (Inflamáveis)", "NR-21 (Trabalho a Céu Aberto)", "NR-23 (Incêndios)", 
     "NR-24 (Condições Sanitárias)", "NR-25 (Resíduos)", "NR-26 (Sinalização)", "NR-28 (Fiscalização)", 
