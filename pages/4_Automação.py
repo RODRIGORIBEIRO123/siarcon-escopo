@@ -14,17 +14,19 @@ DISCIPLINA_ATUAL = "Automação"
 TEXTO_RESUMO_PADRAO = "Este escopo contempla o fornecimento de sistema de automação, conforme detalhamento a seguir."
 
 ITENS_MATRIZ = [
-    "Controladores (DDC/PLC)", "Sensores e Atuadores", "Infraestrutura de Rede",
-    "Cabeamento de Controle", "Painéis de Automação", "Software Supervisório",
-    "Comissionamento/Start-up", "Treinamento Operacional", "Licenças de Software"
+    "Fornecimento controladores", "Fornecimento de Instrumentação", "Fornecimento de válvulas de controle com atuador",
+    "Infraestrutura de Rede", "Cabeamento de Controle", "Painéis de Automação", "Software Supervisório",
+    "Comissionamento/Start-up", "Treinamento Operacional", "Licenças de Software", "Certificação CFR21 Part11"
 ]
 
 PADRAO_TECNICO = [
-    "Fornecimento e Instalação de Controladores (DDC)", "Instalação de Sensores de Temperatura/Umidade",
-    "Instalação de Sensores de Pressão Diferencial", "Instalação de Atuadores de Válvulas e Dampers",
-    "Lançamento de Cabos de Rede (CAT6 / RS-485)", "Montagem de Painéis de Automação",
-    "Interligação Elétrica dos Periféricos", "Programação de Lógica de Controle",
-    "Desenvolvimento de Telas Gráficas (Supervisório)", "Integração com Equipamentos (Chiller/Fancoil - BACnet/Modbus)",
+    "Fornecimento de painel de automação", "Fornecimento de instrumentações", "Fornecimento de software de supervisão",
+    "Fornecimento de PC para supervisório", "Fornecimento de PC industrial para supervisório",
+    "Desenvolvimento das lógicas de controle, "Realização de startu-up em campo",
+    "Lançamento de Cabos de Rede (CAT6 / RS-485)", "Fornecimento de painel de potência",
+    "Interligação Elétrica dos Periféricos",
+    "Desenvolvimento de Telas Gráficas (IHM)", "Desenvolvimento de Telas Gráficas (Supervisório)" 
+    "Integração com Equipamentos (Chiller/Fancoil - BACnet/Modbus)",
     "Start-up e Testes Funcionais"
 ]
 
@@ -38,13 +40,13 @@ PADRAO_QUALIDADE = [
 
 SMS_PADRAO_DOC = [
     "Ficha de registro", "ASO (Atestado de Saúde Ocupacional)", "Ficha de EPI", "Ordem de Serviço",
-    "Certificados de Treinamento", "NR-06 (Equipamento de Proteção Individual)",
+    "Certificados de Treinamento", "NR-01 (Disposições Gerais)", "NR-06 (Equipamento de Proteção Individual)",
     "NR-12 (Segurança em Máquinas e Equipamentos)",
     "Comprovações de recolhimento de INSS, FGTS e folha de pagamento"
 ]
 
 LISTA_NRS_SELECAO = [
-    "NR-01 (Disposições Gerais)", "NR-03 (Embargo e Interdição)", "NR-04 (SESMT)", "NR-05 (CIPA)", 
+     "NR-03 (Embargo e Interdição)", "NR-04 (SESMT)", "NR-05 (CIPA)", 
     "NR-07 (PCMSO)", "NR-08 (Edificações)", "NR-09 (Avaliação e Controle de Exposições)", 
     "NR-10 (Eletricidade)", "NR-11 (Transporte e Movimentação)", "NR-13 (Vasos de Pressão)", 
     "NR-15 (Insalubridade)", "NR-16 (Periculosidade)", "NR-17 (Ergonomia)", "NR-18 (Construção Civil)", 
