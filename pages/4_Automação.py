@@ -22,10 +22,10 @@ ITENS_MATRIZ = [
 PADRAO_TECNICO = [
     "Fornecimento de painel de automação", "Fornecimento de instrumentações", "Fornecimento de software de supervisão",
     "Fornecimento de PC para supervisório", "Fornecimento de PC industrial para supervisório",
-    "Desenvolvimento das lógicas de controle, "Realização de startu-up em campo",
+    "Desenvolvimento das lógicas de controle", "Realização de startu-up em campo",
     "Lançamento de Cabos de Rede (CAT6 / RS-485)", "Fornecimento de painel de potência",
     "Interligação Elétrica dos Periféricos",
-    "Desenvolvimento de Telas Gráficas (IHM)", "Desenvolvimento de Telas Gráficas (Supervisório)" 
+    "Desenvolvimento de Telas Gráficas (IHM)", "Desenvolvimento de Telas Gráficas (Supervisório)",
     "Integração com Equipamentos (Chiller/Fancoil - BACnet/Modbus)",
     "Start-up e Testes Funcionais"
 ]
@@ -46,7 +46,7 @@ SMS_PADRAO_DOC = [
 ]
 
 LISTA_NRS_SELECAO = [
-     "NR-03 (Embargo e Interdição)", "NR-04 (SESMT)", "NR-05 (CIPA)", 
+    "NR-03 (Embargo e Interdição)", "NR-04 (SESMT)", "NR-05 (CIPA)", 
     "NR-07 (PCMSO)", "NR-08 (Edificações)", "NR-09 (Avaliação e Controle de Exposições)", 
     "NR-10 (Eletricidade)", "NR-11 (Transporte e Movimentação)", "NR-13 (Vasos de Pressão)", 
     "NR-15 (Insalubridade)", "NR-16 (Periculosidade)", "NR-17 (Ergonomia)", "NR-18 (Construção Civil)", 
