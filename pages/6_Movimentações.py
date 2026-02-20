@@ -14,20 +14,19 @@ DISCIPLINA_ATUAL = "Movimentações"
 TEXTO_RESUMO_PADRAO = "Este escopo contempla o fornecimento de serviços de movimentações, conforme detalhamento a seguir."
 
 ITENS_MATRIZ = [
-    "Contratação de Guindaste/Munck", "Licenças de Trânsito (CET)",
-    "Plano de Rigging", "Equipe de Rigging", "Transporte Horizontal",
-    "Transporte Vertical", "Seguro de Içamento", "Isolamento da Área"
+    "Palteiras", "Acessórios para movimentações", "Hospedagens", "Refeições", "Deslocamento até a obra"
 ]
 
 PADRAO_TECNICO = [
-    "Içamento de Chillers/Fancoils para cobertura", "Movimentação interna de equipamentos (Paleteira/Tartaruga)",
+    "Içamento de equipamentos", "Movimentação interna de equipamentos (Paleteira/Tartaruga)",
     "Remoção e descarte de equipamentos antigos", "Posicionamento final sobre bases de concreto",
     "Montagem de andaimes para acesso", "Abertura de paredes/lajes para passagem (Civil)",
-    "Fechamento de acessos após movimentação"
+    "Fechamento de acessos após movimentação", "Fornecimento de plano de rigging", "Fornecimento de 1 ajudante",
+    "Fornecimento de 2 ajudantes", "Fornceimento de equipe de remoção"
 ]
 
 PADRAO_QUALIDADE = [
-    "Vistoria prévia do local de içamento", "Verificação de cintas e manilhas (Certificadas)",
+    "Vistoria prévia do local de içamento", "Verificação de cintas e manilhas",
     "ART do Plano de Rigging", "Inspeção visual dos equipamentos após posicionamento",
     "Check-list de segurança da operação"
 ]
