@@ -15,19 +15,19 @@ TEXTO_RESUMO_PADRAO = "Este escopo contempla o fornecimento de serviços de TAB 
 
 # ⚠️ SE VOCÊ TINHA ITENS DIFERENTES PARA TAB ANTES, SUBSTITUA AQUI:
 ITENS_MATRIZ = [
-    "Instrumentação Calibrada (Balômetro/Anemômetro)", "Mão de Obra Especializada",
-    "Relatórios Técnicos", "Balanceamento de Ar", "Balanceamento Hidrônico",
-    "Testes de Estanqueidade de Dutos", "Medição de Ruído/Vibração",
-    "Ajuste de Polias e Correias", "Start-up Assistido"
+    "Instrumentação de medição", "Mão de Obra Especializada",
+    "Geração dos Protocolos", "Plataforma elevatória", "Escada tipo 'A'", "Hospedagens", "Refeições", "Deslocamento até a obra"
+    
 ]
 
 PADRAO_TECNICO = [
     "Medição e Ajuste de Vazão de Ar em Difusores/Grelhas", "Medição e Ajuste de Vazão de Ar em Caixas VAV",
     "Medição de Pressão Estática em Ventiladores", "Medição de Corrente e Tensão de Motores",
-    "Ajuste de Rotação (Troca de Polias/Inversor)", "Balanceamento Hidrônico de Chillers e Fancoils",
-    "Regulagem de Válvulas de Balanceamento (PICV/Estática)", "Medição de Diferencial de Pressão (Água/Ar)",
-    "Teste de Fumaça em Dutos (Estanqueidade)", "Verificação de Setpoints de Temperatura/Umidade",
-    "Medição de Nível de Ruído (dB)"
+    "Ajuste de Rotação (Inversor)", "Balanceamento Hidrônico nos equipamentos",
+    "Medição de Diferencial de Pressão entre salas",
+    "Teste de Fumaça em Dutos", "Teste de integridade em filtros terminais", "Teste de integridade em fitros dos equipamentos"
+    "Contagem de partículas", "Medição de temperatura", "Medição de umidade", "Cálculo do número de trocas de ar" 
+
 ]
 
 PADRAO_QUALIDADE = [
