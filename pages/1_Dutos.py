@@ -15,19 +15,18 @@ TEXTO_RESUMO_PADRAO = "Este escopo contempla o fornecimento de rede de dutos, co
 
 # --- LISTAS DUTOS ---
 ITENS_MATRIZ = [
-    "Fabricação de Dutos (Chapa/MPU)", "Montagem de Dutos", "Isolamento Térmico",
-    "Suportação e Fixação", "Instalação de Grelhas/Difusores", "Instalação de Dampers",
-    "Dutos Flexíveis", "Conexão com Equipamentos", "Testes de Estanqueidade", 
-    "Posicionamento dos equipamentos (Ventiladores / Exaustores)",
-    "Posicionamento dos equipamentos (Fancoil / UTA)"
+    "Fornecimento de materiais de dutos (Chapas)",  "Fornecimento acessórios dutos (Canto, Grampo)",
+    "Fornecimento de isolamento térmico", "Fornecimento silicone PU", 
+    "Fornecimento de elementos difusão", "Fornecimento de caixas terminais", "Fornecimento de Plataformas elevatórias", 
+    "Fornecimento de escadas tipo 'A"", "Fornecimento de containers", "Fornecimento de maquinário para fab. dutos em obra"
 ]
 
 PADRAO_TECNICO = [
     "Fabricação e Montagem de Dutos em Chapa Galvanizada (TDC)", "Fabricação e Montagem de Dutos em MPU",
-    "Fabricação e Montagem de Dutos em chapa preta", "Aplicação de Isolamento Térmico (Lã de Vidro/Lã de Rocha)",
+    "Fabricação e Montagem de Dutos em chapa preta", "Fabricação de dutos em aço inox", "Aplicação de Isolamento Térmico (Lã de Vidro/Lã de Rocha)",
     "Aplicação de Isolamento Térmico (Borracha Elastomérica)", "Instalação de Suportes e Tirantes",
     "Montagem de Rede de Dutos TDC", "Montagem de Rede de Dutos MPU", "Montagem de Rede de Dutos chapa preta",
-    "Montagem de Rede de Dutos Circulares", "Montagem de Rede de Dutos Flexíveis", "Instalação de Dampers de Regulagem",
+    "Montagem de Rede de Dutos Circulares", "Instalação de dutos Flexíveis", "Instalação de Dampers de Regulagem",
     "Instalação de Dampers Corta-Fogo", "Instalação de Grelhas, Difusores e Venezianas",
     "Vedação de Flanges e Juntas (Silicone/Fita)", "Conexão de Dutos aos Equipamentos (Fancoils/UTA)",
     "Instalação de Portas de Inspeção", "Posicionamento dos equipamentos", "Fabricação de dutos TDC",
@@ -44,19 +43,19 @@ PADRAO_QUALIDADE = [
 
 SMS_PADRAO_DOC = [
     "Ficha de registro", "ASO (Atestado de Saúde Ocupacional)", "Ficha de EPI", "Ordem de Serviço",
-    "Certificados de Treinamento", "NR-06 (Equipamento de Proteção Individual)",
-    "NR-12 (Segurança em Máquinas e Equipamentos)",
+    "Certificados de Treinamento", "NR-01 (Disposições Gerais)", "NR-06 (Equipamento de Proteção Individual)",
+    "NR-12 (Segurança em Máquinas e Equipamentos)", "NR-18 (Construção Civil)", "NR-35 (Trabalho em Altura)"
     "Comprovações de recolhimento de INSS, FGTS e folha de pagamento"
 ]
 
 LISTA_NRS_SELECAO = [
-    "NR-01 (Disposições Gerais)", "NR-03 (Embargo e Interdição)", "NR-04 (SESMT)", "NR-05 (CIPA)", 
+    "NR-03 (Embargo e Interdição)", "NR-04 (SESMT)", "NR-05 (CIPA)", 
     "NR-07 (PCMSO)", "NR-08 (Edificações)", "NR-09 (Avaliação e Controle de Exposições)", 
     "NR-10 (Eletricidade)", "NR-11 (Transporte e Movimentação)", "NR-13 (Vasos de Pressão)", 
-    "NR-15 (Insalubridade)", "NR-16 (Periculosidade)", "NR-17 (Ergonomia)", "NR-18 (Construção Civil)", 
+    "NR-15 (Insalubridade)", "NR-16 (Periculosidade)", "NR-17 (Ergonomia)", 
     "NR-19 (Explosivos)", "NR-20 (Inflamáveis)", "NR-21 (Trabalho a Céu Aberto)", "NR-23 (Incêndios)", 
     "NR-24 (Condições Sanitárias)", "NR-25 (Resíduos)", "NR-26 (Sinalização)", "NR-28 (Fiscalização)", 
-    "NR-33 (Espaços Confinados)", "NR-35 (Trabalho em Altura)", "NR-38 (Limpeza Urbana)"
+    "NR-33 (Espaços Confinados)", "NR-38 (Limpeza Urbana)"
 ]
 
 st.set_page_config(page_title=f"Escopo {DISCIPLINA_ATUAL}", page_icon="🌪️", layout="wide")
