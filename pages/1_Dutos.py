@@ -18,7 +18,7 @@ ITENS_MATRIZ = [
     "Fornecimento de materiais de dutos (Chapas)",  "Fornecimento acessórios dutos (Canto, Grampo)",
     "Fornecimento de isolamento térmico", "Fornecimento silicone PU", 
     "Fornecimento de elementos difusão", "Fornecimento de caixas terminais", "Fornecimento de Plataformas elevatórias", 
-    "Fornecimento de escadas tipo 'A"", "Fornecimento de containers", "Fornecimento de maquinário para fab. dutos em obra",
+    "Fornecimento de escadas tipo "'A´", "Fornecimento de containers", "Fornecimento de maquinário para fab. dutos em obra",
     "Hospedagens", "Refeições", "Deslocamento até a obra"
 ]
 
@@ -45,7 +45,7 @@ PADRAO_QUALIDADE = [
 SMS_PADRAO_DOC = [
     "Ficha de registro", "ASO (Atestado de Saúde Ocupacional)", "Ficha de EPI", "Ordem de Serviço",
     "Certificados de Treinamento", "NR-01 (Disposições Gerais)", "NR-06 (Equipamento de Proteção Individual)",
-    "NR-12 (Segurança em Máquinas e Equipamentos)", "NR-18 (Construção Civil)", "NR-35 (Trabalho em Altura)"
+    "NR-12 (Segurança em Máquinas e Equipamentos)", "NR-18 (Construção Civil)", "NR-35 (Trabalho em Altura)",
     "Comprovações de recolhimento de INSS, FGTS e folha de pagamento"
 ]
 
