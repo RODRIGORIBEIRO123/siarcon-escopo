@@ -17,6 +17,7 @@ ITENS_MATRIZ = [
     "Tubos de cobre", "Isolamento Térmico",
     "Solda e Consumíveis (PPU/Foscoper)", "Fluído refrigerante",
     "Nitrogênio para Testes", "Suportação da Rede", "Refnets e Derivações", "Bomba de vácuo", "Escadas tipo 'A'", "Vacuômetro"  
+    "Plataforma elevatória", "Hospedagens", "Refeições", "Deslocamento até a obra"
 ]
 
 PADRAO_TECNICO = [
