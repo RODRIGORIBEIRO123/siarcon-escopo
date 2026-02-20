@@ -18,7 +18,7 @@ ITENS_MATRIZ = [
     "Fornecimento de materiais de dutos (Chapas)",  "Fornecimento acessórios dutos (Canto, Grampo)",
     "Fornecimento de isolamento térmico", "Fornecimento silicone PU", 
     "Fornecimento de elementos difusão", "Fornecimento de caixas terminais", "Fornecimento de Plataformas elevatórias", 
-    "Fornecimento de escadas tipo "'A´", "Fornecimento de containers", "Fornecimento de maquinário para fab. dutos em obra",
+    "Fornecimento de escadas tipo 'A'", "Fornecimento de containers", "Fornecimento de maquinário para fab. dutos em obra",
     "Hospedagens", "Refeições", "Deslocamento até a obra"
 ]
 
@@ -61,18 +61,13 @@ LISTA_NRS_SELECAO = [
 
 st.set_page_config(page_title=f"Escopo {DISCIPLINA_ATUAL}", page_icon="🌪️", layout="wide")
 
-# CSS para botão de download verde
 st.markdown("""
     <style>
     div[data-testid="stDownloadButton"] button {
-        background-color: #28a745 !important;
-        color: white !important;
-        border-color: #28a745 !important;
-        width: 100%;
+        background-color: #28a745 !important; color: white !important; border-color: #28a745 !important; width: 100%;
     }
     div[data-testid="stDownloadButton"] button:hover {
-        background-color: #218838 !important;
-        border-color: #1e7e34 !important;
+        background-color: #218838 !important; border-color: #1e7e34 !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -81,10 +76,7 @@ if 'opcoes_db' not in st.session_state: st.session_state['opcoes_db'] = utils_db
 
 cat_tecnica_db = f"tecnico_{DISCIPLINA_ATUAL.lower()}"
 id_projeto = st.session_state.get('id_projeto_editar')
-dados_edit = {}
-if id_projeto:
-    t = utils_db.buscar_projeto_por_id(id_projeto)
-    if t: dados_edit = t
+dados_edit = utils_db.buscar_projeto_por_id(id_projeto) if id_projeto else {}
 
 def formatar_moeda(valor):
     try:
@@ -100,12 +92,10 @@ def gerar_docx(dados):
     
     head = doc.add_heading(f'ESCOPO - {dados["disciplina"].upper()}', 0)
     head.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    
     sub = doc.add_paragraph('SIARCON ENGENHARIA')
     sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
     sub.runs[0].bold = True; sub.runs[0].font.size = Pt(20)
     
-    # 1. DADOS
     doc.add_heading('1. DADOS DA OBRA', 1)
     table = doc.add_table(rows=8, cols=2); table.style = 'Table Grid'
     data_hj = datetime.now().strftime("%d/%m/%Y")
@@ -120,7 +110,6 @@ def gerar_docx(dados):
         row.cells[0].text = label; row.cells[0].paragraphs[0].runs[0].bold = True
         row.cells[1].text = str(value)
 
-    # 2. TÉCNICO
     doc.add_heading('2. ESCOPO TÉCNICO', 1)
     doc.add_paragraph(dados.get('resumo_escopo', ''))
     if dados.get('tecnico_livre'):
@@ -133,7 +122,6 @@ def gerar_docx(dados):
         run = p.add_run(item); run.bold = True
         if comentarios.get(item): p.add_run(f": {comentarios[item]}")
 
-    # NUMERAÇÃO DINÂMICA (Depende da Qualidade)
     num_secao = 3
     tem_qualidade = bool(dados.get('itens_qualidade'))
     if tem_qualidade:
@@ -141,7 +129,6 @@ def gerar_docx(dados):
         for item in dados['itens_qualidade']: doc.add_paragraph(item, style='List Bullet')
         num_secao += 1
 
-    # MATRIZ
     doc.add_heading(f'{num_secao}. MATRIZ DE RESPONSABILIDADES', 1)
     tm = doc.add_table(rows=1, cols=4); tm.style = 'Table Grid'
     h = tm.rows[0].cells; h[0].text = "ITEM"; h[1].text = "SIARCON"; h[2].text = "FORNECEDOR"; h[3].text = "FORA DO ESCOPO"
@@ -151,14 +138,12 @@ def gerar_docx(dados):
         row[3].text = "X" if v == "FORA DO ESCOPO" else ""
     num_secao += 1
 
-    # SMS
     doc.add_heading(f'{num_secao}. SEGURANÇA (SMS)', 1)
     for i in SMS_PADRAO_DOC: doc.add_paragraph(i, style='List Bullet')
     for nr in dados.get('nrs_selecionadas', []): doc.add_paragraph(nr, style='List Bullet')
     if dados.get('sms_livre'): doc.add_paragraph(dados['sms_livre'])
     num_secao += 1
 
-    # COMERCIAL
     doc.add_heading(f'{num_secao}. COMERCIAL', 1)
     doc.add_paragraph(f"Valor Global: {formatar_moeda(dados.get('valor_total',''))} (valor fixo e irreajustável)")
     doc.add_paragraph(f"Condição de Pagamento: {dados.get('condicao_pgto','')}")
@@ -166,7 +151,6 @@ def gerar_docx(dados):
 
     b = io.BytesIO(); doc.save(b); b.seek(0); return b
 
-# --- INTERFACE ---
 st.title(f"🌪️ {DISCIPLINA_ATUAL}")
 if dados_edit: st.info(f"Editando: {dados_edit.get('obra')} | Cliente: {dados_edit.get('cliente')}")
 opcoes = st.session_state.get('opcoes_db', {})
@@ -181,9 +165,6 @@ with tab1:
     db_forn = utils_db.listar_fornecedores(); lista_nomes = [""] + [f['Fornecedor'] for f in db_forn]
     val_forn_db = dados_edit.get('fornecedor', ''); idx_f = lista_nomes.index(val_forn_db) if val_forn_db in lista_nomes else 0
     sel_forn = c1.selectbox("Fornecedor (DB):", lista_nomes, index=idx_f)
-    with c1.expander("Cadastrar Novo Fornecedor"):
-        n_forn = st.text_input("Razão Social"); n_cnpj = st.text_input("CNPJ")
-        if st.button("Salvar Fornecedor"): st.toast("Função DB necessária")
     forn = c1.text_input("Razão Social (Final):", value=sel_forn if sel_forn else val_forn_db)
     cnpj = c1.text_input("CNPJ:", value=dados_edit.get('cnpj_fornecedor', ''))
     
@@ -207,16 +188,13 @@ with tab2:
     resumo = st.text_area("Resumo:", value=val_resumo, height=80)
     st.divider()
     
-    # --- NOVO TÉCNICO (Sem recarregar) ---
     c_a1, c_a2 = st.columns([4,1])
     novo_item = c_a1.text_input("Novo Item DB (Técnico):", key="add_db_tec")
     lista_tec_final = sorted(list(set(opcoes.get(cat_tecnica_db, []) + PADRAO_TECNICO)))
-    
     if c_a2.button("💾 Criar Téc."): 
         if novo_item and utils_db.aprender_novo_item(cat_tecnica_db, novo_item): 
             st.session_state['opcoes_db'] = utils_db.carregar_opcoes()
-            lista_tec_final.append(novo_item)
-            lista_tec_final = sorted(list(set(lista_tec_final)))
+            lista_tec_final.append(novo_item); lista_tec_final = sorted(list(set(lista_tec_final)))
             st.toast("✅ Salvo no banco!")
 
     itens_salvos = dados_edit.get('itens_tecnicos', [])
@@ -243,17 +221,13 @@ with tab2:
     tec_livre = st.text_area("Observações Gerais:", value=dados_edit.get('tecnico_livre', ''))
     
     st.divider(); st.markdown("#### Qualidade")
-    
-    # --- NOVA QUALIDADE NO DB (Sem recarregar) ---
     c_q1, c_q2 = st.columns([4,1])
     novo_item_q = c_q1.text_input("Novo Item DB (Qualidade):", key="add_db_qual")
     lista_qual = sorted(list(set(opcoes.get(f"qualidade_{DISCIPLINA_ATUAL.lower()}", []) + PADRAO_QUALIDADE)))
-    
     if c_q2.button("💾 Criar Qual."): 
         if novo_item_q and utils_db.aprender_novo_item(f"qualidade_{DISCIPLINA_ATUAL.lower()}", novo_item_q): 
             st.session_state['opcoes_db'] = utils_db.carregar_opcoes()
-            lista_qual.append(novo_item_q)
-            lista_qual = sorted(list(set(lista_qual)))
+            lista_qual.append(novo_item_q); lista_qual = sorted(list(set(lista_qual)))
             st.toast("✅ Qualidade salva no banco!")
     
     itens_salvos_q = dados_edit.get('itens_qualidade', [])
@@ -272,7 +246,6 @@ with tab3:
         try: matriz_salva = eval(matriz_salva)
         except: matriz_salva = {}
     elif not isinstance(matriz_salva, dict): matriz_salva = {}
-    
     st.write("Responsabilidades:")
     for item in ITENS_MATRIZ:
         c_m1, c_m2 = st.columns([2, 3])
@@ -289,7 +262,6 @@ with tab4:
         try: nrs_salvas = eval(nrs_salvas)
         except: nrs_salvas = []
     elif not isinstance(nrs_salvas, list): nrs_salvas = []
-        
     opcoes_sms = sorted(list(set(LISTA_NRS_SELECAO + nrs_salvas)))
     nrs = st.multiselect("NRs Adicionais:", opcoes_sms, default=nrs_salvas)
     sms_livre = st.text_area("Outras exigências:", value=dados_edit.get('sms_livre', ''))
@@ -298,7 +270,6 @@ with tab5:
     val = st.text_input("Valor Global (R$):", value=dados_edit.get('valor_total', ''))
     pgto = st.text_area("Condição Pagamento:", value=dados_edit.get('condicao_pgto', ''))
     obs = st.text_area("Obs Comerciais:", value=dados_edit.get('obs_gerais', ''))
-    
     lista_st = ["Não Iniciado", "Engenharia", "Obras", "Suprimentos", "Finalizado"]
     st_at = dados_edit.get('status', 'Não Iniciado')
     mapa_fix = {"Em Elaboração": "Engenharia", "Em Cotação": "Suprimentos", "Em Análise Obras": "Obras", "Concluído": "Finalizado"}
@@ -318,9 +289,7 @@ dados = {
     'data_inicio': dados_edit.get('data_inicio', date.today().strftime("%Y-%m-%d"))
 }
 
-# --- BOTÕES (Corrigidos com Download Verde) ---
 col_b1, col_b2 = st.columns(2)
-
 with col_b1:
     if st.button("☁️ APENAS SALVAR NO DB"):
         if utils_db.registrar_projeto(dados): st.success("Salvo no banco de dados!")
@@ -333,7 +302,6 @@ with col_b2:
             st.session_state[f'btn_docx_{DISCIPLINA_ATUAL}'] = True
         else: st.error("Erro ao salvar.")
     
-    # Download aparece logo abaixo se o arquivo estiver pronto
     if st.session_state.get(f'btn_docx_{DISCIPLINA_ATUAL}', False):
         f_forn = forn.strip() or "Fornecedor"; f_obra = obra.strip() or "Obra"
         b = gerar_docx(dados)
