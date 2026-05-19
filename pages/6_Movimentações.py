@@ -10,25 +10,29 @@ import utils_db
 if 'logado' not in st.session_state or not st.session_state['logado']:
     st.warning("🔒 Acesso negado."); st.stop()
 
-DISCIPLINA_ATUAL = "Movimentações"
-TEXTO_RESUMO_PADRAO = "Este escopo contempla o fornecimento de serviços de movimentações, conforme detalhamento a seguir."
+DISCIPLINA_ATUAL = "TAB"
+TEXTO_RESUMO_PADRAO = "Este escopo contempla o fornecimento de serviços de TAB / Comissionamento de sistemas, conforme detalhamento a seguir."
 
 ITENS_MATRIZ = [
-    "Palteiras", "Acessórios para movimentações", "Hospedagens", "Refeições", "Deslocamento até a obra"
+    "Instrumentação Calibrada (Balômetro/Anemômetro)", "Mão de Obra Especializada",
+    "Relatórios Técnicos", "Balanceamento de Ar", "Balanceamento Hidrônico",
+    "Testes de Estanqueidade de Dutos", "Medição de Ruído/Vibração",
+    "Ajuste de Polias e Correias", "Start-up Assistido"
 ]
 
 PADRAO_TECNICO = [
-    "Içamento de equipamentos", "Movimentação interna de equipamentos (Paleteira/Tartaruga)",
-    "Remoção e descarte de equipamentos antigos", "Posicionamento final sobre bases de concreto",
-    "Montagem de andaimes para acesso", "Abertura de paredes/lajes para passagem (Civil)",
-    "Fechamento de acessos após movimentação", "Fornecimento de plano de rigging", "Fornecimento de 1 ajudante",
-    "Fornecimento de 2 ajudantes", "Fornceimento de equipe de remoção"
+    "Medição e Ajuste de Vazão de Ar em Difusores/Grelhas", "Medição e Ajuste de Vazão de Ar em Caixas VAV",
+    "Medição de Pressão Estática em Ventiladores", "Medição de Corrente e Tensão de Motores",
+    "Ajuste de Rotação (Troca de Polias/Inversor)", "Balanceamento Hidrônico de Chillers e Fancoils",
+    "Regulagem de Válvulas de Balanceamento (PICV/Estática)", "Medição de Diferencial de Pressão (Água/Ar)",
+    "Teste de Fumaça em Dutos (Estanqueidade)", "Verificação de Setpoints de Temperatura/Umidade",
+    "Medição de Nível de Ruído (dB)"
 ]
 
 PADRAO_QUALIDADE = [
-    "Vistoria prévia do local de içamento", "Verificação de cintas e manilhas",
-    "ART do Plano de Rigging", "Inspeção visual dos equipamentos após posicionamento",
-    "Check-list de segurança da operação"
+    "Certificados de Calibração dos Instrumentos (RBC)", "Relatório Fotográfico das Medições",
+    "Etiquetagem dos Pontos Balanceados", "Comparativo Projeto x Executado",
+    "Verificação de Fechamento de Forro", "Limpeza dos Filtros antes do TAB"
 ]
 
 SMS_PADRAO_DOC = [
@@ -48,7 +52,7 @@ LISTA_NRS_SELECAO = [
     "NR-33 (Espaços Confinados)", "NR-35 (Trabalho em Altura)", "NR-38 (Limpeza Urbana)"
 ]
 
-st.set_page_config(page_title=f"Escopo {DISCIPLINA_ATUAL}", page_icon="🏗️", layout="wide")
+st.set_page_config(page_title=f"Escopo {DISCIPLINA_ATUAL}", page_icon="⚖️", layout="wide")
 
 st.markdown("""
     <style>
@@ -85,10 +89,11 @@ def gerar_docx(dados):
     sub.runs[0].bold = True; sub.runs[0].font.size = Pt(20)
     
     doc.add_heading('1. DADOS DA OBRA', 1)
-    table = doc.add_table(rows=8, cols=2); table.style = 'Table Grid'
+    table = doc.add_table(rows=9, cols=2); table.style = 'Table Grid'
     data_hj = datetime.now().strftime("%d/%m/%Y")
     info_rows = [
         ("CLIENTE", dados['cliente']), ("OBRA", dados['obra']), ("FORNECEDOR", dados['fornecedor']),
+        ("CNPJ FORNECEDOR", dados.get('cnpj_fornecedor', '-')),
         ("ENGENHARIA", dados['responsavel']), ("OBRAS", dados.get('resp_obras', '')),
         ("SUPRIMENTOS", dados['resp_suprimentos']), ("PROJETOS REFERÊNCIA", dados.get('projetos_referencia', '-')),
         ("DATA / REVISÃO", f"{data_hj}  |  Rev: {dados.get('revisao','-')}")
@@ -138,7 +143,7 @@ def gerar_docx(dados):
     if dados.get('obs_gerais'): doc.add_paragraph(f"Obs: {dados['obs_gerais']}")
     b = io.BytesIO(); doc.save(b); b.seek(0); return b
 
-st.title(f"🏗️ {DISCIPLINA_ATUAL}")
+st.title(f"⚖️ {DISCIPLINA_ATUAL}")
 if dados_edit: st.info(f"Editando: {dados_edit.get('obra')} | Cliente: {dados_edit.get('cliente')}")
 opcoes = st.session_state.get('opcoes_db', {})
 
