@@ -14,40 +14,37 @@ DISCIPLINA_ATUAL = "Cobre"
 TEXTO_RESUMO_PADRAO = "Este escopo contempla o fornecimento de instalações frigorígenas, conforme detalhamento a seguir."
 
 ITENS_MATRIZ = [
-    "Tubos de cobre", "Isolamento Térmico",
-    "Solda e Consumíveis (PPU/Foscoper)", "Fluído refrigerante",
-    "Nitrogênio para Testes", "Suportação da Rede", "Refnets e Derivações", "Bomba de vácuo", "Escadas tipo 'A'", "Vacuômetro"  
-    "Plataforma elevatória", "Hospedagens", "Refeições", "Deslocamento até a obra"
+    "Tubulação de Cobre", "Isolamento Térmico (Elastomérico)",
+    "Solda e Consumíveis (PPU/Prata)", "Carga de Gás Refrigerante",
+    "Nitrogênio para Testes", "Suportação da Rede", "Refnets e Derivações"
 ]
 
 PADRAO_TECNICO = [
     "Instalação de tubulação de cobre rígido/flexível", "Brasagem com fluxo de nitrogênio passante",
-    "Instalação de Refinets (VRF)", "Aplicação de isolamento térmico",
-    "Fixação com braçadeiras e isoladores",
-    "Interligação das unidades evaporadoras/condensadoras", "Interligação de comando entre as unidades",
-    "Desidratação do sistema (Vácuo < 500 microns)", "Carga adicional de fluido refrigerante", "Acompanhamento do start-up", "Execução do start-up", 
-    "Endereçamento das evaporadoras", "Instalação da central de comando", "Instalação do termostato", "Instalação de sensor remoto do termostato",
-    "Posicionamento do evaporador", "Conexão dos drenos na rede" 
+    "Instalação de Refnets (VRF)", "Aplicação de isolamento térmico blindado UV (Externo)",
+    "Aplicação de isolamento térmico elastomérico (Interno)", "Fixação com braçadeiras e isoladores",
+    "Interligação das unidades evaporadoras/condensadoras", "Sifões e liras de dilatação (conforme fabricante)",
+    "Desidratação do sistema (Vácuo < 500 microns)", "Carga adicional de fluido refrigerante"
 ]
 
 PADRAO_QUALIDADE = [
     "Teste de Estanqueidade (Pressurização N2 - 24h)", "Relatório de Vácuo (Vacuômetro digital)",
-    "Emissão de relatório das instalações", "Inspeção visual das soldas",
-    "Verificação da integridade do isoalamento térmico"
+    "Cálculo de Carga Adicional (Software Fabricante)", "Inspeção visual das soldas",
+    "Verificação de espessura do isolamento"
 ]
 
 SMS_PADRAO_DOC = [
     "Ficha de registro", "ASO (Atestado de Saúde Ocupacional)", "Ficha de EPI", "Ordem de Serviço",
-    "Certificados de Treinamento",  "NR-01 (Disposições Gerais)",  "NR-06 (Equipamento de Proteção Individual)",
-    "NR-12 (Segurança em Máquinas e Equipamentos)", "NR-18 (Construção Civil)", 
+    "Certificados de Treinamento", "NR-06 (Equipamento de Proteção Individual)",
+    "NR-12 (Segurança em Máquinas e Equipamentos)",
     "Comprovações de recolhimento de INSS, FGTS e folha de pagamento"
 ]
 
 LISTA_NRS_SELECAO = [
-    "NR-03 (Embargo e Interdição)", "NR-04 (SESMT)", "NR-05 (CIPA)", 
+    "NR-01 (Disposições Gerais)", "NR-03 (Embargo e Interdição)", "NR-04 (SESMT)", "NR-05 (CIPA)", 
     "NR-07 (PCMSO)", "NR-08 (Edificações)", "NR-09 (Avaliação e Controle de Exposições)", 
     "NR-10 (Eletricidade)", "NR-11 (Transporte e Movimentação)", "NR-13 (Vasos de Pressão)", 
-    "NR-15 (Insalubridade)", "NR-16 (Periculosidade)", "NR-17 (Ergonomia)", 
+    "NR-15 (Insalubridade)", "NR-16 (Periculosidade)", "NR-17 (Ergonomia)", "NR-18 (Construção Civil)", 
     "NR-19 (Explosivos)", "NR-20 (Inflamáveis)", "NR-21 (Trabalho a Céu Aberto)", "NR-23 (Incêndios)", 
     "NR-24 (Condições Sanitárias)", "NR-25 (Resíduos)", "NR-26 (Sinalização)", "NR-28 (Fiscalização)", 
     "NR-33 (Espaços Confinados)", "NR-35 (Trabalho em Altura)", "NR-38 (Limpeza Urbana)"
@@ -90,10 +87,11 @@ def gerar_docx(dados):
     sub.runs[0].bold = True; sub.runs[0].font.size = Pt(20)
     
     doc.add_heading('1. DADOS DA OBRA', 1)
-    table = doc.add_table(rows=8, cols=2); table.style = 'Table Grid'
+    table = doc.add_table(rows=9, cols=2); table.style = 'Table Grid'
     data_hj = datetime.now().strftime("%d/%m/%Y")
     info_rows = [
         ("CLIENTE", dados['cliente']), ("OBRA", dados['obra']), ("FORNECEDOR", dados['fornecedor']),
+        ("CNPJ FORNECEDOR", dados.get('cnpj_fornecedor', '-')),
         ("ENGENHARIA", dados['responsavel']), ("OBRAS", dados.get('resp_obras', '')),
         ("SUPRIMENTOS", dados['resp_suprimentos']), ("PROJETOS REFERÊNCIA", dados.get('projetos_referencia', '-')),
         ("DATA / REVISÃO", f"{data_hj}  |  Rev: {dados.get('revisao','-')}")
