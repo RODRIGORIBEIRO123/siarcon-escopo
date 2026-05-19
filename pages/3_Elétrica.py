@@ -14,16 +14,18 @@ DISCIPLINA_ATUAL = "Elétrica"
 TEXTO_RESUMO_PADRAO = "Este escopo contempla o fornecimento de instalações elétricas, conforme detalhamento a seguir."
 
 ITENS_MATRIZ = [
-    "Materiais de infraestrutura (Calhas, Eletrodutos, etc)", "Cabos de Força", "Cabos de Comando",
-    "Quadros Elétricos (QGBT/Comando)", "Conectorização/Terminação", "Plataforma elevatória", "Escada tipo 'A'", "Hospedagens", "Refeições", "Deslocamento até a obra"
+    "Infraestrutura (Eletrocalhas/Perfilados)", "Cabos de Força", "Cabos de Comando",
+    "Quadros Elétricos (QGBT/Comando)", "Instrumentação de Campo", "Aterramento",
+    "Conectorização/Terminação"
 ]
 
 PADRAO_TECNICO = [
     "Instalação de Eletrocalhas e Perfilados", "Instalação de Eletrodutos Rígidos/Flexíveis",
-    "Lançamento de Cabos de Força", "Lançamento de Cabos de Comando/Sinal",
-    "Instalação de Chaves Seccionadoras NR-10", "Ligação de Motores e Equipamentos",
+    "Lançamento de Cabos de Força (Baixa Tensão)", "Lançamento de Cabos de Comando/Sinal",
+    "Instalação de Chaves Seccionadoras", "Ligação de Motores e Equipamentos",
     "Instalação dos sensores e instrumentos", "Identificação de Cabos e Componentes",
-    ]
+    "Serviços de Furacão e Fixação"
+]
 
 PADRAO_QUALIDADE = [
     "Alinhamento e organização dos cabos nas calhas e painel",
@@ -85,10 +87,11 @@ def gerar_docx(dados):
     sub.runs[0].bold = True; sub.runs[0].font.size = Pt(20)
     
     doc.add_heading('1. DADOS DA OBRA', 1)
-    table = doc.add_table(rows=8, cols=2); table.style = 'Table Grid'
+    table = doc.add_table(rows=9, cols=2); table.style = 'Table Grid'
     data_hj = datetime.now().strftime("%d/%m/%Y")
     info_rows = [
         ("CLIENTE", dados['cliente']), ("OBRA", dados['obra']), ("FORNECEDOR", dados['fornecedor']),
+        ("CNPJ FORNECEDOR", dados.get('cnpj_fornecedor', '-')),
         ("ENGENHARIA", dados['responsavel']), ("OBRAS", dados.get('resp_obras', '')),
         ("SUPRIMENTOS", dados['resp_suprimentos']), ("PROJETOS REFERÊNCIA", dados.get('projetos_referencia', '-')),
         ("DATA / REVISÃO", f"{data_hj}  |  Rev: {dados.get('revisao','-')}")
