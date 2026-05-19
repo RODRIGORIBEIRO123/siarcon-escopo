@@ -13,7 +13,6 @@ if 'logado' not in st.session_state or not st.session_state['logado']:
 DISCIPLINA_ATUAL = "Dutos"
 TEXTO_RESUMO_PADRAO = "Este escopo contempla o fornecimento de rede de dutos, conforme detalhamento a seguir."
 
-# --- LISTAS DUTOS ---
 ITENS_MATRIZ = [
     "Fornecimento de materiais de dutos (Chapas)",  "Fornecimento acessórios dutos (Canto, Grampo)",
     "Fornecimento de isolamento térmico", "Fornecimento silicone PU", 
@@ -63,27 +62,32 @@ st.set_page_config(page_title=f"Escopo {DISCIPLINA_ATUAL}", page_icon="🌪️",
 
 st.markdown("""
     <style>
-    div[data-testid="stDownloadButton"] button {
-        background-color: #28a745 !important; color: white !important; border-color: #28a745 !important; width: 100%;
-    }
-    div[data-testid="stDownloadButton"] button:hover {
-        background-color: #218838 !important; border-color: #1e7e34 !important;
-    }
+    div[data-testid="stDownloadButton"] button { background-color: #28a745 !important; color: white !important; border-color: #28a745 !important; width: 100%; }
+    div[data-testid="stDownloadButton"] button:hover { background-color: #218838 !important; border-color: #1e7e34 !important; }
     </style>
 """, unsafe_allow_html=True)
 
 if 'opcoes_db' not in st.session_state: st.session_state['opcoes_db'] = utils_db.carregar_opcoes()
-
 cat_tecnica_db = f"tecnico_{DISCIPLINA_ATUAL.lower()}"
 id_projeto = st.session_state.get('id_projeto_editar')
 dados_edit = utils_db.buscar_projeto_por_id(id_projeto) if id_projeto else {}
 
 def formatar_moeda(valor):
+    if not valor: return ""
+    v_str = str(valor).replace('R$', '').strip()
+    if not v_str: return ""
     try:
-        if not valor: return ""
-        v = float(str(valor).replace('R$', '').replace('.', '').replace(',', '.').strip())
-        return f"R$ {v:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
-    except: return valor
+        if ',' in v_str and '.' in v_str: v_clean = v_str.replace('.', '').replace(',', '.')
+        elif ',' in v_str: v_clean = v_str.replace(',', '.')
+        elif '.' in v_str:
+            parts = v_str.split('.')
+            if len(parts[-1]) == 2: v_clean = v_str
+            elif len(parts[-1]) == 3: v_clean = v_str.replace('.', '')
+            else: v_clean = v_str
+        else: v_clean = v_str
+        v_float = float(v_clean)
+        return f"R$ {v_float:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+    except: return f"R$ {valor}" if not str(valor).startswith("R$") else str(valor)
 
 def gerar_docx(dados):
     doc = Document()
@@ -98,13 +102,12 @@ def gerar_docx(dados):
     
     doc.add_heading('1. DADOS DA OBRA', 1)
     table = doc.add_table(rows=9, cols=2); table.style = 'Table Grid'
-    data_hj = datetime.now().strftime("%d/%m/%Y")
     info_rows = [
         ("CLIENTE", dados['cliente']), ("OBRA", dados['obra']), ("FORNECEDOR", dados['fornecedor']),
-        ("CNPJ FORNECEDOR", dados.get('cnpj_fornecedor', '-')),
-        ("ENGENHARIA", dados['responsavel']), ("OBRAS", dados.get('resp_obras', '')),
-        ("SUPRIMENTOS", dados['resp_suprimentos']), ("PROJETOS REFERÊNCIA", dados.get('projetos_referencia', '-')),
-        ("DATA / REVISÃO", f"{data_hj}  |  Rev: {dados.get('revisao','-')}")
+        ("CNPJ FORNECEDOR", dados.get('cnpj_fornecedor', '-')), ("ENGENHARIA", dados['responsavel']), 
+        ("OBRAS", dados.get('resp_obras', '')), ("SUPRIMENTOS", dados['resp_suprimentos']), 
+        ("PROJETOS REFERÊNCIA", dados.get('projetos_referencia', '-')), 
+        ("DATA / REVISÃO", f"{datetime.now().strftime('%d/%m/%Y')}  |  Rev: {dados.get('revisao','-')}")
     ]
     for idx, (label, value) in enumerate(info_rows):
         row = table.rows[idx]
@@ -124,8 +127,7 @@ def gerar_docx(dados):
         if comentarios.get(item): p.add_run(f": {comentarios[item]}")
 
     num_secao = 3
-    tem_qualidade = bool(dados.get('itens_qualidade'))
-    if tem_qualidade:
+    if dados.get('itens_qualidade'):
         doc.add_heading(f'{num_secao}. PADRÃO DE QUALIDADE', 1)
         for item in dados['itens_qualidade']: doc.add_paragraph(item, style='List Bullet')
         num_secao += 1
@@ -146,7 +148,9 @@ def gerar_docx(dados):
     num_secao += 1
 
     doc.add_heading(f'{num_secao}. COMERCIAL', 1)
-    doc.add_paragraph(f"Valor Global: {formatar_moeda(dados.get('valor_total',''))} (valor fixo e irreajustável)")
+    if dados.get('valor_total'): doc.add_paragraph(f"Valor Global: {dados['valor_total']} (valor fixo e irreajustável)")
+    if dados.get('valor_siarcon'): doc.add_paragraph(f"Faturamento SIARCON: {dados['valor_siarcon']}")
+    if dados.get('flag_fat_direto') and dados.get('valor_direto'): doc.add_paragraph(f"Faturamento Direto: {dados['valor_direto']}")
     doc.add_paragraph(f"Condição de Pagamento: {dados.get('condicao_pgto','')}")
     if dados.get('obs_gerais'): doc.add_paragraph(f"Obs: {dados['obs_gerais']}")
 
@@ -181,12 +185,10 @@ with tab1:
     uploads = c2.file_uploader("Arraste arquivos aqui", accept_multiple_files=True)
     if uploads:
         for f in uploads: set_arquivos.add(f.name)
-    val_proj_final = "\n".join(sorted(list(set_arquivos)))
-    projetos_ref = c2.text_area("Lista de Projetos:", value=val_proj_final, height=100)
+    projetos_ref = c2.text_area("Lista de Projetos:", value="\n".join(sorted(list(set_arquivos))), height=100)
 
 with tab2:
-    val_resumo = dados_edit.get('resumo_escopo', '') or TEXTO_RESUMO_PADRAO
-    resumo = st.text_area("Resumo:", value=val_resumo, height=80)
+    resumo = st.text_area("Resumo:", value=dados_edit.get('resumo_escopo', '') or TEXTO_RESUMO_PADRAO, height=80)
     st.divider()
     
     c_a1, c_a2 = st.columns([4,1])
@@ -204,8 +206,7 @@ with tab2:
         except: itens_salvos = []
     elif not isinstance(itens_salvos, list): itens_salvos = []
         
-    opcoes_finais = sorted(list(set(lista_tec_final + itens_salvos)))
-    itens_tec = st.multiselect("Itens do Escopo:", opcoes_finais, default=itens_salvos)
+    itens_tec = st.multiselect("Itens do Escopo:", sorted(list(set(lista_tec_final + itens_salvos))), default=itens_salvos)
     
     comentarios_salvos = dados_edit.get('comentarios_itens', {})
     if isinstance(comentarios_salvos, str) and comentarios_salvos.strip():
@@ -237,8 +238,7 @@ with tab2:
         except: itens_salvos_q = []
     elif not isinstance(itens_salvos_q, list): itens_salvos_q = []
         
-    opcoes_qual = sorted(list(set(lista_qual + itens_salvos_q)))
-    itens_qual = st.multiselect("Itens Qualidade:", opcoes_qual, default=itens_salvos_q)
+    itens_qual = st.multiselect("Itens Qualidade:", sorted(list(set(lista_qual + itens_salvos_q))), default=itens_salvos_q)
 
 with tab3:
     escolhas = {}
@@ -257,37 +257,44 @@ with tab3:
         st.divider()
 
 with tab4:
-    st.info("Itens padrão inclusos automaticamente.")
     nrs_salvas = dados_edit.get('nrs_selecionadas', [])
     if isinstance(nrs_salvas, str) and nrs_salvas.strip():
         try: nrs_salvas = eval(nrs_salvas)
         except: nrs_salvas = []
     elif not isinstance(nrs_salvas, list): nrs_salvas = []
-    opcoes_sms = sorted(list(set(LISTA_NRS_SELECAO + nrs_salvas)))
-    nrs = st.multiselect("NRs Adicionais:", opcoes_sms, default=nrs_salvas)
+    nrs = st.multiselect("NRs Adicionais:", sorted(list(set(LISTA_NRS_SELECAO + nrs_salvas))), default=nrs_salvas)
     sms_livre = st.text_area("Outras exigências:", value=dados_edit.get('sms_livre', ''))
 
 with tab5:
-    val = st.text_input("Valor Global (R$):", value=dados_edit.get('valor_total', ''))
+    v_total_db = str(dados_edit.get('valor_total', '')).replace('R$', '').strip()
+    val = st.text_input("Valor Global (R$):", value=v_total_db)
+    
+    v_siarcon_db = str(dados_edit.get('valor_siarcon', '')).replace('R$', '').strip()
+    val_siarcon = st.text_input("Valor Faturamento SIARCON (R$):", value=v_siarcon_db)
+    
+    flag_fat_direto = st.checkbox("Opção de faturamento direto", value=dados_edit.get('flag_fat_direto', False))
+    val_direto = ""
+    if flag_fat_direto:
+        v_direto_db = str(dados_edit.get('valor_direto', '')).replace('R$', '').strip()
+        val_direto = st.text_input("Valor Previsto Faturamento Direto (R$):", value=v_direto_db)
+        
     pgto = st.text_area("Condição Pagamento:", value=dados_edit.get('condicao_pgto', ''))
     obs = st.text_area("Obs Comerciais:", value=dados_edit.get('obs_gerais', ''))
+    
     lista_st = ["Não Iniciado", "Engenharia", "Obras", "Suprimentos", "Finalizado"]
-    st_at = dados_edit.get('status', 'Não Iniciado')
-    mapa_fix = {"Em Elaboração": "Engenharia", "Em Cotação": "Suprimentos", "Em Análise Obras": "Obras", "Concluído": "Finalizado"}
-    st_at = mapa_fix.get(st_at, st_at)
-    idx_st = lista_st.index(st_at) if st_at in lista_st else 0
-    status = st.selectbox("Status:", lista_st, index=idx_st)
+    st_at = mapa_fix.get(dados_edit.get('status', 'Não Iniciado'), dados_edit.get('status', 'Não Iniciado')) if 'mapa_fix' in locals() else dados_edit.get('status', 'Não Iniciado')
+    status = st.selectbox("Status:", lista_st, index=lista_st.index(st_at) if st_at in lista_st else 0)
 
 st.markdown("---")
 dados = {
     '_id': dados_edit.get('_id'), 'disciplina': DISCIPLINA_ATUAL, 'cliente': cliente, 'obra': obra, 
     'fornecedor': forn, 'cnpj_fornecedor': cnpj, 'responsavel': resp_eng, 
-    'resp_obras': resp_obras, 'resp_suprimentos': resp_sup, 
-    'revisao': revisao, 'projetos_referencia': projetos_ref, 'resumo_escopo': resumo, 
-    'itens_tecnicos': itens_tec, 'comentarios_itens': comentarios_novos, 'tecnico_livre': tec_livre, 
-    'itens_qualidade': itens_qual, 'matriz': escolhas, 'nrs_selecionadas': nrs, 'sms_livre': sms_livre, 
-    'valor_total': val, 'condicao_pgto': pgto, 'obs_gerais': obs, 'status': status, 
-    'data_inicio': dados_edit.get('data_inicio', date.today().strftime("%Y-%m-%d"))
+    'resp_obras': resp_obras, 'resp_suprimentos': resp_sup, 'revisao': revisao, 'projetos_referencia': projetos_ref, 
+    'resumo_escopo': resumo, 'itens_tecnicos': itens_tec, 'comentarios_itens': comentarios_novos, 
+    'tecnico_livre': tec_livre, 'itens_qualidade': itens_qual, 'matriz': escolhas, 'nrs_selecionadas': nrs, 
+    'sms_livre': sms_livre, 'valor_total': formatar_moeda(val), 'valor_siarcon': formatar_moeda(val_siarcon),
+    'flag_fat_direto': flag_fat_direto, 'valor_direto': formatar_moeda(val_direto) if flag_fat_direto else "",
+    'condicao_pgto': pgto, 'obs_gerais': obs, 'status': status, 'data_inicio': dados_edit.get('data_inicio', date.today().strftime("%Y-%m-%d"))
 }
 
 col_b1, col_b2 = st.columns(2)
@@ -295,15 +302,12 @@ with col_b1:
     if st.button("☁️ APENAS SALVAR NO DB"):
         if utils_db.registrar_projeto(dados): st.success("Salvo no banco de dados!")
         else: st.error("Erro ao salvar.")
-
 with col_b2:
     if st.button("💾 SALVAR E PREPARAR DOCX", type="primary"):
         if utils_db.registrar_projeto(dados):
             st.success("Salvo! Clique no botão verde abaixo para baixar.")
             st.session_state[f'btn_docx_{DISCIPLINA_ATUAL}'] = True
         else: st.error("Erro ao salvar.")
-    
     if st.session_state.get(f'btn_docx_{DISCIPLINA_ATUAL}', False):
-        f_forn = forn.strip() or "Fornecedor"; f_obra = obra.strip() or "Obra"
         b = gerar_docx(dados)
-        st.download_button("📥 BAIXAR DOCX GERADO", b, file_name=f"Escopo_{DISCIPLINA_ATUAL} - {f_forn} - {f_obra}.docx")
+        st.download_button("📥 BAIXAR DOCX GERADO", b, file_name=f"Escopo_{DISCIPLINA_ATUAL}_{forn.strip() or 'Fornecedor'}.docx")
