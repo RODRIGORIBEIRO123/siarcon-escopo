@@ -10,29 +10,26 @@ import utils_db
 if 'logado' not in st.session_state or not st.session_state['logado']:
     st.warning("🔒 Acesso negado."); st.stop()
 
-DISCIPLINA_ATUAL = "TAB"
-TEXTO_RESUMO_PADRAO = "Este escopo contempla o fornecimento de serviços de TAB / Comissionamento de sistemas, conforme detalhamento a seguir."
+DISCIPLINA_ATUAL = "Movimentações"
+TEXTO_RESUMO_PADRAO = "Este escopo contempla o fornecimento de serviços de movimentações, conforme detalhamento a seguir."
 
 ITENS_MATRIZ = [
-    "Instrumentação Calibrada (Balômetro/Anemômetro)", "Mão de Obra Especializada",
-    "Relatórios Técnicos", "Balanceamento de Ar", "Balanceamento Hidrônico",
-    "Testes de Estanqueidade de Dutos", "Medição de Ruído/Vibração",
-    "Ajuste de Polias e Correias", "Start-up Assistido"
+    "Contratação de Guindaste/Munck", "Licenças de Trânsito (CET)",
+    "Plano de Rigging", "Equipe de Rigging", "Transporte Horizontal",
+    "Transporte Vertical", "Seguro de Içamento", "Isolamento da Área"
 ]
 
 PADRAO_TECNICO = [
-    "Medição e Ajuste de Vazão de Ar em Difusores/Grelhas", "Medição e Ajuste de Vazão de Ar em Caixas VAV",
-    "Medição de Pressão Estática em Ventiladores", "Medição de Corrente e Tensão de Motores",
-    "Ajuste de Rotação (Troca de Polias/Inversor)", "Balanceamento Hidrônico de Chillers e Fancoils",
-    "Regulagem de Válvulas de Balanceamento (PICV/Estática)", "Medição de Diferencial de Pressão (Água/Ar)",
-    "Teste de Fumaça em Dutos (Estanqueidade)", "Verificação de Setpoints de Temperatura/Umidade",
-    "Medição de Nível de Ruído (dB)"
+    "Içamento de Chillers/Fancoils para cobertura", "Movimentação interna de equipamentos (Paleteira/Tartaruga)",
+    "Remoção e descarte de equipamentos antigos", "Posicionamento final sobre bases de concreto",
+    "Montagem de andaimes para acesso", "Abertura de paredes/lajes para passagem (Civil)",
+    "Fechamento de acessos após movimentação"
 ]
 
 PADRAO_QUALIDADE = [
-    "Certificados de Calibração dos Instrumentos (RBC)", "Relatório Fotográfico das Medições",
-    "Etiquetagem dos Pontos Balanceados", "Comparativo Projeto x Executado",
-    "Verificação de Fechamento de Forro", "Limpeza dos Filtros antes do TAB"
+    "Vistoria prévia do local de içamento", "Verificação de cintas e manilhas (Certificadas)",
+    "ART do Plano de Rigging", "Inspeção visual dos equipamentos após posicionamento",
+    "Check-list de segurança da operação"
 ]
 
 SMS_PADRAO_DOC = [
@@ -52,7 +49,7 @@ LISTA_NRS_SELECAO = [
     "NR-33 (Espaços Confinados)", "NR-35 (Trabalho em Altura)", "NR-38 (Limpeza Urbana)"
 ]
 
-st.set_page_config(page_title=f"Escopo {DISCIPLINA_ATUAL}", page_icon="⚖️", layout="wide")
+st.set_page_config(page_title=f"Escopo {DISCIPLINA_ATUAL}", page_icon="🏗️", layout="wide")
 
 st.markdown("""
     <style>
@@ -143,7 +140,7 @@ def gerar_docx(dados):
     if dados.get('obs_gerais'): doc.add_paragraph(f"Obs: {dados['obs_gerais']}")
     b = io.BytesIO(); doc.save(b); b.seek(0); return b
 
-st.title(f"⚖️ {DISCIPLINA_ATUAL}")
+st.title(f"🏗️ {DISCIPLINA_ATUAL}")
 if dados_edit: st.info(f"Editando: {dados_edit.get('obra')} | Cliente: {dados_edit.get('cliente')}")
 opcoes = st.session_state.get('opcoes_db', {})
 
