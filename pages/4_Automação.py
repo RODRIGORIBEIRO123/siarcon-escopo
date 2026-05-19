@@ -92,10 +92,11 @@ def gerar_docx(dados):
     sub.runs[0].bold = True; sub.runs[0].font.size = Pt(20)
     
     doc.add_heading('1. DADOS DA OBRA', 1)
-    table = doc.add_table(rows=8, cols=2); table.style = 'Table Grid'
+    table = doc.add_table(rows=9, cols=2); table.style = 'Table Grid'
     data_hj = datetime.now().strftime("%d/%m/%Y")
     info_rows = [
         ("CLIENTE", dados['cliente']), ("OBRA", dados['obra']), ("FORNECEDOR", dados['fornecedor']),
+        ("CNPJ FORNECEDOR", dados.get('cnpj_fornecedor', '-')),
         ("ENGENHARIA", dados['responsavel']), ("OBRAS", dados.get('resp_obras', '')),
         ("SUPRIMENTOS", dados['resp_suprimentos']), ("PROJETOS REFERÊNCIA", dados.get('projetos_referencia', '-')),
         ("DATA / REVISÃO", f"{data_hj}  |  Rev: {dados.get('revisao','-')}")
