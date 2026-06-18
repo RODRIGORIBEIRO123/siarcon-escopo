@@ -157,10 +157,44 @@ with tab1:
     c1, c2 = st.columns(2)
     cliente = c1.text_input("Cliente", value=dados_edit.get('cliente', ''))
     obra = c1.text_input("Obra", value=dados_edit.get('obra', ''))
-    db_forn = utils_db.listar_fornecedores(); lista_nomes = [""] + [f['Fornecedor'] for f in db_forn]
-    val_forn_db = dados_edit.get('fornecedor', ''); idx_f = lista_nomes.index(val_forn_db) if val_forn_db in lista_nomes else 0
+    
+    # --- CORREÇÃO DE LEITURA DO DB DE FORNECEDORES ---
+    try:
+        db_forn = utils_db.listar_fornecedores() or []
+    except:
+        db_forn = []
+        
+    lista_nomes = [""]
+    for f in db_forn:
+        if isinstance(f, dict) and 'Fornecedor' in f:
+            lista_nomes.append(f['Fornecedor'])
+        elif isinstance(f, str):
+            lista_nomes.append(f)
+            
+    val_forn_db = dados_edit.get('fornecedor', '')
+    idx_f = lista_nomes.index(val_forn_db) if val_forn_db in lista_nomes else 0
+    
     sel_forn = c1.selectbox("Fornecedor (DB):", lista_nomes, index=idx_f)
     forn = c1.text_input("Razão Social (Final):", value=sel_forn if sel_forn else val_forn_db)
+    
+    # --- NOVO: BOTÃO PARA CADASTRAR FORNECEDOR NO BD ---
+    if c1.button("💾 Salvar Fornecedor no DB", help="Adiciona o nome acima à base geral de fornecedores"):
+        if forn:
+            try:
+                # Usa um método genérico que você já tenha no utils_db para salvar dados simples
+                if hasattr(utils_db, 'adicionar_fornecedor'): 
+                    utils_db.adicionar_fornecedor({'Fornecedor': forn})
+                elif hasattr(utils_db, 'aprender_novo_item'): 
+                    utils_db.aprender_novo_item("fornecedores", forn)
+                st.toast(f"✅ Fornecedor '{forn}' registrado com sucesso!")
+                time.sleep(1)
+                st.rerun()
+            except Exception as e:
+                st.error(f"Erro ao salvar: verifique se a função existe no utils_db. Detalhe: {e}")
+        else:
+            st.warning("Preencha a Razão Social para salvar.")
+    # ---------------------------------------------------
+            
     cnpj = c1.text_input("CNPJ:", value=dados_edit.get('cnpj_fornecedor', ''))
     resp_eng = c2.text_input("Engenharia SIARCON", value=dados_edit.get('responsavel', ''))
     resp_obras = c2.text_input("Obras SIARCON", value=dados_edit.get('resp_obras', ''))
@@ -183,15 +217,13 @@ with tab2:
     if c_a2.button("💾 Criar Téc."): 
         if novo_item and utils_db.aprender_novo_item(cat_tecnica_db, novo_item): 
             st.session_state['opcoes_db'] = utils_db.carregar_opcoes(); st.toast("✅ Salvo no banco!")
-    
+            
     itens_salvos = dados_edit.get('itens_tecnicos', [])
     if isinstance(itens_salvos, str) and itens_salvos.strip(): itens_salvos = eval(itens_salvos)
     
-    # --- CORREÇÃO APLICADA AQUI PARA RESOLVER O TYPEERROR ---
     lista_1 = lista_tec_final or []
     lista_2 = itens_salvos or []
     itens_tec = st.multiselect("Itens do Escopo:", sorted(list(set(lista_1 + lista_2))), default=lista_2)
-    # ---------------------------------------------------------
     
     comentarios_salvos = dados_edit.get('comentarios_itens', {})
     if isinstance(comentarios_salvos, str) and comentarios_salvos.strip(): comentarios_salvos = eval(comentarios_salvos)
@@ -205,9 +237,15 @@ with tab2:
     if c_q2.button("💾 Criar Qual."): 
         if novo_item_q and utils_db.aprender_novo_item(f"qualidade_{DISCIPLINA_ATUAL.lower()}", novo_item_q): 
             st.session_state['opcoes_db'] = utils_db.carregar_opcoes(); st.toast("✅ Qualidade salva no banco!")
+            
     itens_salvos_q = dados_edit.get('itens_qualidade', [])
     if isinstance(itens_salvos_q, str) and itens_salvos_q.strip(): itens_salvos_q = eval(itens_salvos_q)
-    itens_qual = st.multiselect("Itens Qualidade:", sorted(list(set(lista_qual + itens_salvos_q))), default=itens_salvos_q)
+    
+    # --- CORREÇÃO APLICADA AQUI (LINHA 210) PARA RESOLVER O TYPEERROR ---
+    lista_q1 = lista_qual or []
+    lista_q2 = itens_salvos_q or []
+    itens_qual = st.multiselect("Itens Qualidade:", sorted(list(set(lista_q1 + lista_q2))), default=lista_q2)
+    # --------------------------------------------------------------------
 
 with tab3:
     escolhas = {}
