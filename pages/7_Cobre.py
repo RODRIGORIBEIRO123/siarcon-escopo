@@ -183,9 +183,16 @@ with tab2:
     if c_a2.button("💾 Criar Téc."): 
         if novo_item and utils_db.aprender_novo_item(cat_tecnica_db, novo_item): 
             st.session_state['opcoes_db'] = utils_db.carregar_opcoes(); st.toast("✅ Salvo no banco!")
+    
     itens_salvos = dados_edit.get('itens_tecnicos', [])
     if isinstance(itens_salvos, str) and itens_salvos.strip(): itens_salvos = eval(itens_salvos)
-    itens_tec = st.multiselect("Itens do Escopo:", sorted(list(set(lista_tec_final + itens_salvos))), default=itens_salvos)
+    
+    # --- CORREÇÃO APLICADA AQUI PARA RESOLVER O TYPEERROR ---
+    lista_1 = lista_tec_final or []
+    lista_2 = itens_salvos or []
+    itens_tec = st.multiselect("Itens do Escopo:", sorted(list(set(lista_1 + lista_2))), default=lista_2)
+    # ---------------------------------------------------------
+    
     comentarios_salvos = dados_edit.get('comentarios_itens', {})
     if isinstance(comentarios_salvos, str) and comentarios_salvos.strip(): comentarios_salvos = eval(comentarios_salvos)
     comentarios_novos = {i: st.text_input(f"Detalhe '{i}':", value=comentarios_salvos.get(i, "")) for i in itens_tec}
