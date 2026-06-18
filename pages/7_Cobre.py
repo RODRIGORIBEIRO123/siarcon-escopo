@@ -158,7 +158,6 @@ with tab1:
     cliente = c1.text_input("Cliente", value=dados_edit.get('cliente', ''))
     obra = c1.text_input("Obra", value=dados_edit.get('obra', ''))
     
-    # --- CORREÇÃO DE LEITURA DO DB DE FORNECEDORES ---
     try:
         db_forn = utils_db.listar_fornecedores() or []
     except:
@@ -177,11 +176,9 @@ with tab1:
     sel_forn = c1.selectbox("Fornecedor (DB):", lista_nomes, index=idx_f)
     forn = c1.text_input("Razão Social (Final):", value=sel_forn if sel_forn else val_forn_db)
     
-    # --- NOVO: BOTÃO PARA CADASTRAR FORNECEDOR NO BD ---
     if c1.button("💾 Salvar Fornecedor no DB", help="Adiciona o nome acima à base geral de fornecedores"):
         if forn:
             try:
-                # Usa um método genérico que você já tenha no utils_db para salvar dados simples
                 if hasattr(utils_db, 'adicionar_fornecedor'): 
                     utils_db.adicionar_fornecedor({'Fornecedor': forn})
                 elif hasattr(utils_db, 'aprender_novo_item'): 
@@ -193,7 +190,6 @@ with tab1:
                 st.error(f"Erro ao salvar: verifique se a função existe no utils_db. Detalhe: {e}")
         else:
             st.warning("Preencha a Razão Social para salvar.")
-    # ---------------------------------------------------
             
     cnpj = c1.text_input("CNPJ:", value=dados_edit.get('cnpj_fornecedor', ''))
     resp_eng = c2.text_input("Engenharia SIARCON", value=dados_edit.get('responsavel', ''))
@@ -226,7 +222,11 @@ with tab2:
     itens_tec = st.multiselect("Itens do Escopo:", sorted(list(set(lista_1 + lista_2))), default=lista_2)
     
     comentarios_salvos = dados_edit.get('comentarios_itens', {})
-    if isinstance(comentarios_salvos, str) and comentarios_salvos.strip(): comentarios_salvos = eval(comentarios_salvos)
+    if isinstance(comentarios_salvos, str) and comentarios_salvos.strip(): 
+        try: comentarios_salvos = eval(comentarios_salvos)
+        except: comentarios_salvos = {}
+    if not isinstance(comentarios_salvos, dict): comentarios_salvos = {}
+    
     comentarios_novos = {i: st.text_input(f"Detalhe '{i}':", value=comentarios_salvos.get(i, "")) for i in itens_tec}
     st.divider()
     tec_livre = st.text_area("Observações Gerais:", value=dados_edit.get('tecnico_livre', ''))
@@ -241,16 +241,21 @@ with tab2:
     itens_salvos_q = dados_edit.get('itens_qualidade', [])
     if isinstance(itens_salvos_q, str) and itens_salvos_q.strip(): itens_salvos_q = eval(itens_salvos_q)
     
-    # --- CORREÇÃO APLICADA AQUI (LINHA 210) PARA RESOLVER O TYPEERROR ---
     lista_q1 = lista_qual or []
     lista_q2 = itens_salvos_q or []
     itens_qual = st.multiselect("Itens Qualidade:", sorted(list(set(lista_q1 + lista_q2))), default=lista_q2)
-    # --------------------------------------------------------------------
 
 with tab3:
     escolhas = {}
     matriz_salva = dados_edit.get('matriz', {})
-    if isinstance(matriz_salva, str) and matriz_salva.strip(): matriz_salva = eval(matriz_salva)
+    
+    # --- CORREÇÃO APLICADA AQUI: Tratamento absoluto de tipos ---
+    if isinstance(matriz_salva, str) and matriz_salva.strip(): 
+        try: matriz_salva = eval(matriz_salva)
+        except: matriz_salva = {}
+    if not isinstance(matriz_salva, dict): matriz_salva = {}
+    # ------------------------------------------------------------
+    
     st.write("Responsabilidades:")
     for item in ITENS_MATRIZ:
         c_m1, c_m2 = st.columns([2, 3])
@@ -262,7 +267,11 @@ with tab3:
 
 with tab4:
     nrs_salvas = dados_edit.get('nrs_selecionadas', [])
-    if isinstance(nrs_salvas, str) and nrs_salvas.strip(): nrs_salvas = eval(nrs_salvas)
+    if isinstance(nrs_salvas, str) and nrs_salvas.strip(): 
+        try: nrs_salvas = eval(nrs_salvas)
+        except: nrs_salvas = []
+    if not isinstance(nrs_salvas, list): nrs_salvas = []
+    
     nrs = st.multiselect("NRs Adicionais:", sorted(list(set(LISTA_NRS_SELECAO + nrs_salvas))), default=nrs_salvas)
     sms_livre = st.text_area("Outras exigências:", value=dados_edit.get('sms_livre', ''))
 
