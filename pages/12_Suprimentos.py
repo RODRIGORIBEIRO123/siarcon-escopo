@@ -101,7 +101,7 @@ if not df_obra.empty:
         "obra": None,     # Oculta a obra já que está filtrada no topo
         "item": st.column_config.TextColumn("Item / Material", width="medium", required=True),
         "data_solicitada": st.column_config.TextColumn("Data Solicitada", width="small"),
-        "status": st.column_config.SelectColumn("Status Atual", options=lista_status, width="medium", required=True),
+        "status": st.column_config.SelectboxColumn("Status Atual", options=lista_status, width="medium", required=True),
         "fornecedor": st.column_config.TextColumn("Fornecedor Parceiro", width="medium"),
         "outros": st.column_config.TextColumn("Observações / Detalhes", width="large"),
         "ultima_alteracao": st.column_config.TextColumn("Última Modificação", width="medium", disabled=True) # Travado para edição manual
