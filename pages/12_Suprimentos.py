@@ -44,6 +44,11 @@ st.title("📦 Controle de Aquisições - Suprimentos")
 # 1. CARREGAMENTO DOS DADOS
 df_suprimentos = utils_db.listar_todos_suprimentos()
 
+# Rede de segurança: Garante a existência das novas colunas se não existirem no Sheets
+for col_nova in ['previsao_finalizacao', 'previsao_entrega']:
+    if col_nova not in df_suprimentos.columns:
+        df_suprimentos[col_nova] = ""
+
 # Obter lista de obras únicas cadastradas no sistema
 df_projetos = utils_db.listar_todos_projetos()
 lista_obras = sorted(df_projetos['obra'].unique().tolist()) if not df_projetos.empty else []
@@ -77,7 +82,7 @@ else:
 st.divider()
 
 # ============================================================================
-# 4. MATRIZ INTERATIVA (SUBIU)
+# 4. MATRIZ INTERATIVA WITH NEW COLUMNS
 # ============================================================================
 st.markdown("### 📝 Planilha de Acompanhamento (Clique duas vezes para editar)")
 
@@ -89,23 +94,32 @@ lista_status = [
 
 if not df_obra.empty:
     df_obra = df_obra.reset_index(drop=True)
-    
     df_obra['id_item'] = df_obra['id_item'].astype(str)
     
+    # Configuração das colunas incluindo as duas novas colunas solicitadas
     config_colunas = {
         "id_item": None,  
         "obra": None,     
         "item": st.column_config.TextColumn("Item / Material", width="medium", required=True),
         "data_solicitada": st.column_config.TextColumn("Data Solicitada", width="small"),
         "status": st.column_config.SelectboxColumn("Status Atual", options=lista_status, width="medium", required=True),
+        "previsao_finalizacao": st.column_config.TextColumn("Previsão Finalização", width="small", help="Data prevista de término da fabricação ou faturamento"),
+        "previsao_entrega": st.column_config.TextColumn("Previsão Entrega", width="small", help="Data prevista de chegada na obra"),
         "fornecedor": st.column_config.TextColumn("Fornecedor Parceiro", width="medium"),
         "outros": st.column_config.TextColumn("Observações / Detalhes", width="large"),
         "ultima_alteracao": st.column_config.TextColumn("Última Modificação", width="medium", disabled=True) 
     }
     
+    # Define a ordem visual exata das colunas para melhor leitura
+    ordem_colunas = [
+        "item", "data_solicitada", "status", "previsao_finalizacao", 
+        "previsao_entrega", "fornecedor", "outros", "ultima_alteracao"
+    ]
+    
     dados_editados = st.data_editor(
         df_obra,
         column_config=config_colunas,
+        column_order=ordem_colunas,
         use_container_width=True,
         num_rows="programmatic", 
         key="editor_suprimentos"
@@ -147,7 +161,7 @@ else:
 st.divider()
 
 # ============================================================================
-# 5. FORMULÁRIO RÁPIDO PARA ADICIONAR NOVO ITEM (DESCEU)
+# 5. FORMULÁRIO RÁPIDO PARA ADICIONAR NOVO ITEM
 # ============================================================================
 with st.expander("➕ Solicitar Novo Item para esta Obra", expanded=False):
     with st.form("novo_item_form", clear_on_submit=True):
@@ -167,6 +181,8 @@ with st.expander("➕ Solicitar Novo Item para esta Obra", expanded=False):
                     "item": nome_item,
                     "data_solicitada": data_sol.strftime("%d/%m/%Y"),
                     "status": "Aguardando",
+                    "previsao_finalizacao": "", # Inicia vazio para preenchimento posterior na tabela
+                    "previsao_entrega": "",       # Inicia vazio para preenchimento posterior na tabela
                     "fornecedor": fornecedor_sug,
                     "outros": obs_suprimentos,
                     "ultima_alteracao": datetime.now().strftime("%d/%m/%Y %H:%M")
