@@ -427,3 +427,41 @@ def atualizar_coordenadas_rota(id_rota, lat, lon):
             return True
     except: pass
     return False
+
+# --- ADICIONE AO FINAL DE utils_db.py ---
+
+def listar_todos_suprimentos():
+    df = _ler_aba_como_df("Suprimentos")
+    cols_minimas = ['id_item', 'obra', 'item', 'data_solicitada', 'status', 'fornecedor', 'outros', 'ultima_alteracao']
+    if df.empty: 
+        return pd.DataFrame(columns=cols_minimas)
+    for c in cols_minimas:
+        if c not in df.columns: 
+            df[c] = ""
+    return df
+
+def salvar_lote_suprimentos(df_completo):
+    """Sobrescreve a aba de Suprimentos com o DataFrame atualizado da tela"""
+    sh = _conectar_gsheets()
+    if not sh: 
+        return False
+    try:
+        try: 
+            ws = sh.worksheet("Suprimentos")
+        except: 
+            ws = sh.add_worksheet("Suprimentos", 500, 10)
+            
+        # Limpa o conteúdo anterior e atualiza com os novos dados incluindo o cabeçalho
+        ws.clear()
+        
+        # Converte tudo para string para evitar problemas de sincronização com o Sheets
+        df_string = df_completo.astype(str).replace("nan", "")
+        
+        # Prepara a lista com cabeçalho + dados
+        dados_finais = [df_string.columns.tolist()] + df_string.values.tolist()
+        
+        ws.update(range_name="A1", values=dados_finais)
+        return True
+    except Exception as e:
+        print(f"Erro ao salvar lote de suprimentos: {e}")
+        return False
