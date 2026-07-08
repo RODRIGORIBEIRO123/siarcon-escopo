@@ -24,7 +24,7 @@ with st.sidebar:
                 projeto_base = {
                     "cliente": novo_cliente,
                     "obra": nova_obra,
-                    "disciplina": "Suprimentos", # Disciplina padrão para não sujar o Kanban de eng.
+                    "disciplina": "Suprimentos", 
                     "status": "Não Iniciado",
                     "prazo": datetime.now().strftime("%Y-%m-%d"),
                     "criado_por": st.session_state.get('usuario_atual', 'Sistema')
@@ -76,41 +76,9 @@ else:
 
 st.divider()
 
-# 4. FORMULÁRIO RÁPIDO PARA ADICIONAR NOVO ITEM
-with st.expander("➕ Solicitar Novo Item para esta Obra", expanded=False):
-    with st.form("novo_item_form", clear_on_submit=True):
-        c1, c2 = st.columns([3, 1])
-        nome_item = c1.text_input("Descrição do Item / Material / Equipamento")
-        data_sol = c2.date_input("Data da Solicitação", value=datetime.today())
-        
-        c3, c4 = st.columns(2)
-        fornecedor_sug = c3.text_input("Fornecedor Sugerido / Alvo (Opcional)")
-        obs_suprimentos = c4.text_input("Observações / Outros")
-        
-        if st.form_submit_button("Adicionar Item à Lista"):
-            if nome_item:
-                novo_reg = {
-                    # Correção do Bug de Overflow: Prefixo "SUP-" força o sistema a tratar como Texto e não como Inteiro gigante
-                    "id_item": f"SUP-{datetime.now().strftime('%Y%m%d%H%M%S')}", 
-                    "obra": obra_selecionada,
-                    "item": nome_item,
-                    "data_solicitada": data_sol.strftime("%d/%m/%Y"),
-                    "status": "Aguardando",
-                    "fornecedor": fornecedor_sug,
-                    "outros": obs_suprimentos,
-                    "ultima_alteracao": datetime.now().strftime("%d/%m/%Y %H:%M")
-                }
-                df_suprimentos = pd.concat([df_suprimentos, pd.DataFrame([novo_reg])], ignore_index=True)
-                if utils_db.salvar_lote_suprimentos(df_suprimentos):
-                    st.success("Item adicionado com sucesso!")
-                    time.sleep(0.5)
-                    st.rerun()
-                else:
-                    st.error("Erro ao salvar no banco de dados.")
-            else:
-                st.error("A descrição do item é obrigatória.")
-
-# 5. MATRIZ INTERATIVA
+# ============================================================================
+# 4. MATRIZ INTERATIVA (SUBIU)
+# ============================================================================
 st.markdown("### 📝 Planilha de Acompanhamento (Clique duas vezes para editar)")
 
 lista_status = [
@@ -122,7 +90,6 @@ lista_status = [
 if not df_obra.empty:
     df_obra = df_obra.reset_index(drop=True)
     
-    # Tratamento de segurança extra: Garante que tudo é texto antes de renderizar para evitar o erro do PyArrow
     df_obra['id_item'] = df_obra['id_item'].astype(str)
     
     config_colunas = {
@@ -130,7 +97,6 @@ if not df_obra.empty:
         "obra": None,     
         "item": st.column_config.TextColumn("Item / Material", width="medium", required=True),
         "data_solicitada": st.column_config.TextColumn("Data Solicitada", width="small"),
-        # Correção aplicada: SelectboxColumn
         "status": st.column_config.SelectboxColumn("Status Atual", options=lista_status, width="medium", required=True),
         "fornecedor": st.column_config.TextColumn("Fornecedor Parceiro", width="medium"),
         "outros": st.column_config.TextColumn("Observações / Detalhes", width="large"),
@@ -145,7 +111,7 @@ if not df_obra.empty:
         key="editor_suprimentos"
     )
     
-    # 6. LÓGICA DE CAPTURA DE ALTERAÇÕES
+    # LÓGICA DE CAPTURA DE ALTERAÇÕES
     state_editor = st.session_state.get("editor_suprimentos", {})
     
     if state_editor.get("edited_rows") or state_editor.get("deleted_rows"):
@@ -176,4 +142,41 @@ if not df_obra.empty:
             else:
                 st.error("Erro crítico ao salvar as alterações no Google Sheets.")
 else:
-    st.info("Utilize a seção acima para adicionar a primeira solicitação desta obra.")
+    st.info("Utilize a seção abaixo para adicionar a primeira solicitação desta obra.")
+
+st.divider()
+
+# ============================================================================
+# 5. FORMULÁRIO RÁPIDO PARA ADICIONAR NOVO ITEM (DESCEU)
+# ============================================================================
+with st.expander("➕ Solicitar Novo Item para esta Obra", expanded=False):
+    with st.form("novo_item_form", clear_on_submit=True):
+        c1, c2 = st.columns([3, 1])
+        nome_item = c1.text_input("Descrição do Item / Material / Equipamento")
+        data_sol = c2.date_input("Data da Solicitação", value=datetime.today())
+        
+        c3, c4 = st.columns(2)
+        fornecedor_sug = c3.text_input("Fornecedor Sugerido / Alvo (Opcional)")
+        obs_suprimentos = c4.text_input("Observações / Outros")
+        
+        if st.form_submit_button("Adicionar Item à Lista"):
+            if nome_item:
+                novo_reg = {
+                    "id_item": f"SUP-{datetime.now().strftime('%Y%m%d%H%M%S')}", 
+                    "obra": obra_selecionada,
+                    "item": nome_item,
+                    "data_solicitada": data_sol.strftime("%d/%m/%Y"),
+                    "status": "Aguardando",
+                    "fornecedor": fornecedor_sug,
+                    "outros": obs_suprimentos,
+                    "ultima_alteracao": datetime.now().strftime("%d/%m/%Y %H:%M")
+                }
+                df_suprimentos = pd.concat([df_suprimentos, pd.DataFrame([novo_reg])], ignore_index=True)
+                if utils_db.salvar_lote_suprimentos(df_suprimentos):
+                    st.success("Item adicionado com sucesso!")
+                    time.sleep(0.5)
+                    st.rerun()
+                else:
+                    st.error("Erro ao salvar no banco de dados.")
+            else:
+                st.error("A descrição do item é obrigatória.")
