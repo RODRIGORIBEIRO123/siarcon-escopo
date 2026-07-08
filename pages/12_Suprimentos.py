@@ -10,17 +10,46 @@ if not st.session_state.get('logado', False):
     st.error("Por favor, faça login na página inicial.")
     st.stop()
 
+# ============================================================================
+# MENU LATERAL - CADASTRO RÁPIDO DE OBRA
+# ============================================================================
+with st.sidebar:
+    st.markdown("### 🏗️ Cadastrar Nova Obra")
+    st.caption("Adicione uma obra rapidamente para iniciar as cotações.")
+    with st.form("cad_obra_rapido", clear_on_submit=True):
+        novo_cliente = st.text_input("Cliente")
+        nova_obra = st.text_input("Nome da Obra")
+        if st.form_submit_button("Cadastrar Obra"):
+            if novo_cliente and nova_obra:
+                projeto_base = {
+                    "cliente": novo_cliente,
+                    "obra": nova_obra,
+                    "disciplina": "Suprimentos", # Disciplina padrão para não sujar o Kanban de eng.
+                    "status": "Não Iniciado",
+                    "prazo": datetime.now().strftime("%Y-%m-%d"),
+                    "criado_por": st.session_state.get('usuario_atual', 'Sistema')
+                }
+                utils_db.salvar_projeto(projeto_base)
+                st.success("Obra cadastrada com sucesso!")
+                time.sleep(1)
+                st.rerun()
+            else:
+                st.error("Preencha Cliente e Obra.")
+
+# ============================================================================
+# CORPO PRINCIPAL DA PÁGINA
+# ============================================================================
 st.title("📦 Controle de Aquisições - Suprimentos")
 
 # 1. CARREGAMENTO DOS DADOS
 df_suprimentos = utils_db.listar_todos_suprimentos()
 
-# Obter lista de obras únicas cadastradas no sistema para os filtros/inserções
+# Obter lista de obras únicas cadastradas no sistema
 df_projetos = utils_db.listar_todos_projetos()
 lista_obras = sorted(df_projetos['obra'].unique().tolist()) if not df_projetos.empty else []
 
 if not lista_obras:
-    st.warning("Nenhuma obra cadastrada no painel principal. Cadastre uma obra primeiro para gerenciar suprimentos.")
+    st.warning("Nenhuma obra cadastrada. Utilize o menu lateral esquerdo para cadastrar a primeira obra.")
     st.stop()
 
 # 2. FILTRO POR OBRA
@@ -29,7 +58,7 @@ obra_selecionada = st.selectbox("Selecione a Obra para Visualização", lista_ob
 # Filtra os dados da obra escolhida
 df_obra = df_suprimentos[df_suprimentos['obra'] == obra_selecionada].copy()
 
-# 3. PAINEL DE METRICAS (KPIs Modernos)
+# 3. PAINEL DE METRICAS
 st.markdown("### 📊 Status Geral da Obra")
 if not df_obra.empty:
     total_itens = len(df_obra)
@@ -61,7 +90,8 @@ with st.expander("➕ Solicitar Novo Item para esta Obra", expanded=False):
         if st.form_submit_button("Adicionar Item à Lista"):
             if nome_item:
                 novo_reg = {
-                    "id_item": datetime.now().strftime("%Y%m%d%H%M%S%f"),
+                    # Correção do Bug de Overflow: Prefixo "SUP-" força o sistema a tratar como Texto e não como Inteiro gigante
+                    "id_item": f"SUP-{datetime.now().strftime('%Y%m%d%H%M%S')}", 
                     "obra": obra_selecionada,
                     "item": nome_item,
                     "data_solicitada": data_sol.strftime("%d/%m/%Y"),
@@ -70,7 +100,6 @@ with st.expander("➕ Solicitar Novo Item para esta Obra", expanded=False):
                     "outros": obs_suprimentos,
                     "ultima_alteracao": datetime.now().strftime("%d/%m/%Y %H:%M")
                 }
-                # Adiciona ao dataframe geral e salva
                 df_suprimentos = pd.concat([df_suprimentos, pd.DataFrame([novo_reg])], ignore_index=True)
                 if utils_db.salvar_lote_suprimentos(df_suprimentos):
                     st.success("Item adicionado com sucesso!")
@@ -81,10 +110,9 @@ with st.expander("➕ Solicitar Novo Item para esta Obra", expanded=False):
             else:
                 st.error("A descrição do item é obrigatória.")
 
-# 5. MATRIZ INTERATIVA (MÁGICA DO st.data_editor)
+# 5. MATRIZ INTERATIVA
 st.markdown("### 📝 Planilha de Acompanhamento (Clique duas vezes para editar)")
 
-# Lista oficial de status solicitada
 lista_status = [
     "Aguardando", "Iniciou a compra", "Orçando", 
     "Negociando", "Comprado", "Emitindo pedido", 
@@ -92,60 +120,55 @@ lista_status = [
 ]
 
 if not df_obra.empty:
-    # Reset do index para o data_editor rastrear corretamente as linhas editadas
     df_obra = df_obra.reset_index(drop=True)
     
-    # Configuração customizada das colunas da planilha
+    # Tratamento de segurança extra: Garante que tudo é texto antes de renderizar para evitar o erro do PyArrow
+    df_obra['id_item'] = df_obra['id_item'].astype(str)
+    
     config_colunas = {
-        "id_item": None,  # Oculta o ID para o usuário final
-        "obra": None,     # Oculta a obra já que está filtrada no topo
+        "id_item": None,  
+        "obra": None,     
         "item": st.column_config.TextColumn("Item / Material", width="medium", required=True),
         "data_solicitada": st.column_config.TextColumn("Data Solicitada", width="small"),
+        # Correção aplicada: SelectboxColumn
         "status": st.column_config.SelectboxColumn("Status Atual", options=lista_status, width="medium", required=True),
         "fornecedor": st.column_config.TextColumn("Fornecedor Parceiro", width="medium"),
         "outros": st.column_config.TextColumn("Observações / Detalhes", width="large"),
-        "ultima_alteracao": st.column_config.TextColumn("Última Modificação", width="medium", disabled=True) # Travado para edição manual
+        "ultima_alteracao": st.column_config.TextColumn("Última Modificação", width="medium", disabled=True) 
     }
     
-    # Renderiza a planilha editável
     dados_editados = st.data_editor(
         df_obra,
         column_config=config_colunas,
         use_container_width=True,
-        num_rows="programmatic", # Permite deletar linhas se necessário selecionando a caixinha lateral
+        num_rows="programmatic", 
         key="editor_suprimentos"
     )
     
-    # 6. LÓGICA DE CAPTURA DE ALTERAÇÕES E DATA AUTOMÁTICA
-    # Verifica se houve modificação no state do componente
+    # 6. LÓGICA DE CAPTURA DE ALTERAÇÕES
     state_editor = st.session_state.get("editor_suprimentos", {})
     
     if state_editor.get("edited_rows") or state_editor.get("deleted_rows"):
         col_salvar, col_reset = st.columns([1, 8])
         
         if col_salvar.button("💾 Salvar Alterações", type="primary", use_container_width=True):
-            # Processa linhas editadas e injeta o carimbo de data/hora
             for idx_linha, alteracoes in state_editor["edited_rows"].items():
                 id_modificado = df_obra.loc[int(idx_linha), 'id_item']
                 
-                # Atualiza as colunas modificadas na estrutura da tela
                 for col, novo_valor in alteracoes.items():
                     df_obra.loc[int(idx_linha), col] = novo_valor
                 
-                # Injeta a data/hora atualizada automaticamente nesta linha
                 df_obra.loc[int(idx_linha), 'ultima_alteracao'] = datetime.now().strftime("%d/%m/%Y %H:%M")
                 
-                # Sincroniza de volta no DataFrame master global
-                idx_master = df_suprimentos[df_suprimentos['id_item'] == id_modificado].index
-                df_suprimentos.loc[idx_master, df_obra.columns] = df_obra.loc[int(idx_linha)].values
+                idx_master = df_suprimentos[df_suprimentos['id_item'] == str(id_modificado)].index
+                if not idx_master.empty:
+                    df_suprimentos.loc[idx_master[0], df_obra.columns] = df_obra.loc[int(idx_linha)].values
 
-            # Processa linhas deletadas (caso o usuário exclua algum item)
             if state_editor["deleted_rows"]:
                 for idx_linha in state_editor["deleted_rows"]:
                     id_deletado = df_obra.loc[int(idx_linha), 'id_item']
-                    df_suprimentos = df_suprimentos[df_suprimentos['id_item'] != id_deletado]
+                    df_suprimentos = df_suprimentos[df_suprimentos['id_item'] != str(id_deletado)]
 
-            # Grava o bloco final atualizado no Google Sheets de uma só vez
             if utils_db.salvar_lote_suprimentos(df_suprimentos):
                 st.success("Planilha de suprimentos atualizada com sucesso!")
                 time.sleep(1)
