@@ -63,35 +63,44 @@ obra_selecionada = st.selectbox("Selecione a Obra para Visualização", lista_ob
 df_obra = df_suprimentos[df_suprimentos['obra'] == obra_selecionada].copy()
 
 # ============================================================================
-# 3. PAINEL DE MÉTRICAS EVOLUÍDO (CONFORME PRINT 1)
+# 3. PAINEL DE MÉTRICAS EVOLUÍDO
 # ============================================================================
 st.markdown("### 📊 Status Geral da Obra")
 if not df_obra.empty:
     total_itens = len(df_obra)
     
     # Agrupamentos exatos solicitados para alimentar os indicadores
-    status_aguardando = ["Aguardando liberação - Financeiro", "Aguardando liberação - Cliente", "Aguardando liberação - Engenharia", "Não iniciado"]
+    status_aguardando = [
+        "Aguardando liberação - Financeiro", 
+        "Aguardando liberação - Cliente", 
+        "Aguardando liberação - Engenharia", 
+        "Não iniciado",
+        "Outros - Ver Observações"  # Inserido no Aguardando conforme pedido!
+    ]
     status_aquisicao = ["Orçando", "Negociando", "Emitindo pedido SIARCON", "Emitindo pedido CLIENTE"]
     status_fabricacao = ["Em fabricação"]
     status_transito = ["Em transporte"]
     status_entregue = ["Entregue à obra", "Recebido na SIARCON"]
     
-    aguardando = len(df_obra[df_obra['status'].isin(status_aguardando)])
-    aquisicao = len(df_obra[df_obra['status'].isin(status_aquisicao)])
-    fabricacao = len(df_obra[df_obra['status'].isin(status_fabricacao)])
-    transito = len(df_obra[df_obra['status'].isin(status_transito)])
-    entregues = len(df_obra[df_obra['status'].isin(status_entregue)])
+    # Tratamento robusto: remove espaços e ignora maiúsculas/minúsculas para a soma nunca falhar
+    df_obra['status_limpo'] = df_obra['status'].astype(str).str.strip().str.lower()
+    
+    aguardando = len(df_obra[df_obra['status_limpo'].isin([s.lower() for s in status_aguardando])])
+    aquisicao = len(df_obra[df_obra['status_limpo'].isin([s.lower() for s in status_aquisicao])])
+    fabricacao = len(df_obra[df_obra['status_limpo'].isin([s.lower() for s in status_fabricacao])])
+    transito = len(df_obra[df_obra['status_limpo'].isin([s.lower() for s in status_transito])])
+    entregues = len(df_obra[df_obra['status_limpo'].isin([s.lower() for s in status_entregue])])
     
     pct_entregues = f"{round((entregues/total_itens)*100)}%" if total_itens > 0 else "0%"
     
-    # Exibição em 6 colunas perfeitamente distribuídas
+    # Exibição em 6 colunas com os textos e "verdinhos" (deltas) ativados novamente
     m1, m2, m3, m4, m5, m6 = st.columns(6)
     m1.metric("Total Solicitado", total_itens)
-    m2.metric("Aguardando", aguardando)
-    m3.metric("Em Aquisição", aquisicao)
-    m4.metric("Fabricação/Prep.", fabricacao)
-    m5.metric("Em Trânsito", transito)
-    m6.metric("Entregue (% Obra)", f"{entregues} ({pct_entregues})")
+    m2.metric("Aguardando", aguardando, delta="Pendentes / Outros", delta_color="off")
+    m3.metric("Em Aquisição", aquisicao, delta="Orçamento / Negociação", delta_color="normal")
+    m4.metric("Fabricação/Prep.", fabricacao, delta="Produção", delta_color="normal")
+    m5.metric("Em Trânsito", transito, delta="A caminho", delta_color="normal")
+    m6.metric("Entregue (% Obra)", f"{entregues} ({pct_entregues})", delta="Concluídos", delta_color="normal")
 else:
     st.info("Nenhum item solicitado para esta obra ainda.")
 
@@ -120,6 +129,7 @@ lista_prioridades = ["🔴 Urgente", "🟠 Alta", "🟡 Média", "🟢 Baixa"]
 config_colunas = {
     "id_item": None,  
     "obra": None,
+    "status_limpo": None, # Oculta a coluna auxiliar de contagem
     "arquivado": st.column_config.CheckboxColumn("Arquivar", width="small", help="Marque para mover este item concluído para a tabela de histórico abaixo"),
     "prioridade": st.column_config.SelectboxColumn("Prioridade", options=lista_prioridades, width="small", required=True),
     "item": st.column_config.TextColumn("Item / Material", width="large", required=True),
@@ -143,14 +153,13 @@ df_ativa = df_obra[df_obra['arquivado'] != "True"].reset_index(drop=True)
 df_arquivada = df_obra[df_obra['arquivado'] == "True"].reset_index(drop=True)
 
 # ============================================================================
-# 4. PLANILHA DE ACOMPANHAMENTO (ATIVOS) - 10 LINHAS MÍNIMAS
+# 4. PLANILHA DE ACOMPANHAMENTO (ATIVOS)
 # ============================================================================
 st.markdown("### 📝 Planilha de Acompanhamento Ativo")
 
 if not df_ativa.empty:
     df_ativa['id_item'] = df_ativa['id_item'].astype(str)
     
-    # height=420 garante espaço nativo para o header + 10 linhas visíveis antes do scroll
     dados_ativos_editados = st.data_editor(
         df_ativa,
         column_config=config_colunas,
@@ -164,19 +173,17 @@ else:
     st.info("Não há itens ativos pendentes para esta obra.")
 
 # ============================================================================
-# BOTÃO DE SALVAMENTO (SEMPRE VISÍVEL LOGO ABAIXO DA TABELA PRINCIPAL)
+# BOTÃO DE SALVAMENTO
 # ============================================================================
 state_ativos = st.session_state.get("editor_suprimentos_ativos", {})
 state_arquivados = st.session_state.get("editor_suprimentos_arquivados", {})
 
-# O botão avalia edições em ambas as tabelas para liberar o clique
 tem_alteracao = bool(
-    state_ativos.get("edited_rows") or state_ativos.get("deleted_rows") or
-    state_arquivados.get("edited_rows") or state_arquivados.get("deleted_rows")
+    state_ativos.get("edited_rows") or state_ativos.get("deleted_rows") or state_ativos.get("added_rows") or
+    state_arquivados.get("edited_rows") or state_arquivados.get("deleted_rows") or state_arquivados.get("added_rows")
 )
 
 col_salvar, _ = st.columns([3, 7])
-# SEMPRE VISÍVEL: Fica desativado (cinza) se não houver edição, prevenindo cliques nulos
 if col_salvar.button("💾 Salvar Todas as Alterações na Planilha", type="primary", use_container_width=True, disabled=not tem_alteracao):
     
     # Processa alterações da tabela Ativa
@@ -189,7 +196,9 @@ if col_salvar.button("💾 Salvar Todas as Alterações na Planilha", type="prim
             
             idx_master = df_suprimentos[df_suprimentos['id_item'] == str(id_modificado)].index
             if not idx_master.empty:
-                df_suprimentos.loc[idx_master[0], df_ativa.columns] = df_ativa.loc[int(idx_linha)].values
+                # Retira a coluna auxiliar da atualização para o Excel ficar limpo
+                colunas_reais = [c for c in df_ativa.columns if c != 'status_limpo']
+                df_suprimentos.loc[idx_master[0], colunas_reais] = df_ativa.loc[int(idx_linha), colunas_reais].values
 
     # Processa alterações da tabela do Histórico
     if state_arquivados.get("edited_rows"):
@@ -201,7 +210,8 @@ if col_salvar.button("💾 Salvar Todas as Alterações na Planilha", type="prim
             
             idx_master = df_suprimentos[df_suprimentos['id_item'] == str(id_modificado)].index
             if not idx_master.empty:
-                df_suprimentos.loc[idx_master[0], df_arquivada.columns] = df_arquivada.loc[int(idx_linha)].values
+                colunas_reais = [c for c in df_arquivada.columns if c != 'status_limpo']
+                df_suprimentos.loc[idx_master[0], colunas_reais] = df_arquivada.loc[int(idx_linha), colunas_reais].values
 
     # Processa exclusões
     for state, df_ref in [(state_ativos, df_ativa), (state_arquivados, df_arquivada)]:
@@ -209,6 +219,10 @@ if col_salvar.button("💾 Salvar Todas as Alterações na Planilha", type="prim
             for idx_linha in state["deleted_rows"]:
                 id_deletado = df_ref.loc[int(idx_linha), 'id_item']
                 df_suprimentos = df_suprimentos[df_suprimentos['id_item'] != str(id_deletado)]
+
+    # Salva limpando a coluna temporária
+    if 'status_limpo' in df_suprimentos.columns:
+        df_suprimentos = df_suprimentos.drop(columns=['status_limpo'])
 
     if utils_db.salvar_lote_suprimentos(df_suprimentos):
         st.success("Banco de dados sincronizado com sucesso!")
@@ -220,14 +234,13 @@ if col_salvar.button("💾 Salvar Todas as Alterações na Planilha", type="prim
 st.divider()
 
 # ============================================================================
-# 5. FORMULÁRIO RÁPIDO PARA ADICIONAR NOVO ITEM (COM PADRÕES ATUALIZADOS)
+# 5. FORMULÁRIO RÁPIDO PARA ADICIONAR NOVO ITEM
 # ============================================================================
 with st.expander("➕ Solicitar Novo Item para esta Obra", expanded=False):
     with st.form("novo_item_form", clear_on_submit=True):
         c1, c2 = st.columns([3, 1])
         nome_item = c1.text_area("Descrição do Item / Material / Equipamento (2 linhas de exibição)", height=70)
         
-        # Padrões aplicados: Prioridade Baixa (índice 3) e Status inicial "Não iniciado"
         nova_prioridade = c2.selectbox("Nível de Prioridade", lista_prioridades, index=3) 
         data_sol = c2.date_input("Data da Solicitação", value=datetime.today())
         
@@ -243,7 +256,7 @@ with st.expander("➕ Solicitar Novo Item para esta Obra", expanded=False):
                     "prioridade": nova_prioridade,
                     "item": nome_item,
                     "data_solicitada": data_sol.strftime("%d/%m/%Y"),
-                    "status": "Não iniciado", # Definição padrão solicitada
+                    "status": "Não iniciado", 
                     "previsao_finalizacao": "", 
                     "previsao_entrega": "",       
                     "fornecedor": fornecedor_sug,
@@ -252,6 +265,10 @@ with st.expander("➕ Solicitar Novo Item para esta Obra", expanded=False):
                     "ultima_alteracao": datetime.now().strftime("%d/%m/%Y %H:%M")
                 }
                 df_suprimentos = pd.concat([df_suprimentos, pd.DataFrame([novo_reg])], ignore_index=True)
+                
+                if 'status_limpo' in df_suprimentos.columns:
+                    df_suprimentos = df_suprimentos.drop(columns=['status_limpo'])
+                
                 if utils_db.salvar_lote_suprimentos(df_suprimentos):
                     st.success("Item adicionado com sucesso!")
                     time.sleep(0.5)
@@ -264,7 +281,7 @@ with st.expander("➕ Solicitar Novo Item para esta Obra", expanded=False):
 st.divider()
 
 # ============================================================================
-# 6. HISTÓRICO DE ITENS CONCLUÍDOS / ARQUIVADOS (TABELA DE BAIXO)
+# 6. HISTÓRICO DE ITENS CONCLUÍDOS / ARQUIVADOS
 # ============================================================================
 st.markdown("### 🗃️ Histórico de Itens Concluídos / Arquivados")
 st.caption("Esta tabela exibe os itens que foram finalizados e movidos usando a flag 'Arquivar'.")
@@ -278,7 +295,7 @@ if not df_arquivada.empty:
         column_order=ordem_colunas,
         use_container_width=True,
         num_rows="programmatic",
-        height=250, # Altura menor por ser um histórico secundário
+        height=250, 
         key="editor_suprimentos_arquivados"
     )
 else:
