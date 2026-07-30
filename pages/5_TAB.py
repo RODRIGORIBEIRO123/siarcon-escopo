@@ -4,6 +4,7 @@ from docx.shared import Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 import io
 import time
+import ast
 from datetime import date, datetime
 import utils_db
 
@@ -65,6 +66,19 @@ if 'opcoes_db' not in st.session_state: st.session_state['opcoes_db'] = utils_db
 cat_tecnica_db = f"tecnico_{DISCIPLINA_ATUAL.lower()}"
 id_projeto = st.session_state.get('id_projeto_editar')
 dados_edit = utils_db.buscar_projeto_por_id(id_projeto) if id_projeto else {}
+
+def converter_para_estrutura(valor, tipo_esperado=list):
+    """Função blindada para converter strings do DB com segurança e evitar TypeErrors"""
+    if isinstance(valor, tipo_esperado):
+        return valor
+    if isinstance(valor, str) and valor.strip():
+        try:
+            res = ast.literal_eval(valor)
+            if isinstance(res, tipo_esperado):
+                return res
+        except:
+            pass
+    return [] if tipo_esperado == list else {}
 
 def formatar_moeda(valor):
     if not valor: return ""
@@ -182,33 +196,41 @@ with tab2:
     st.divider()
     c_a1, c_a2 = st.columns([4,1])
     novo_item = c_a1.text_input("Novo Item DB (Técnico):", key="add_db_tec")
-    lista_tec_final = sorted(list(set(opcoes.get(cat_tecnica_db, []) + PADRAO_TECNICO)))
+    lista_tec_final = [str(x) for x in sorted(list(set(opcoes.get(cat_tecnica_db, []) + PADRAO_TECNICO))) if x]
+    
     if c_a2.button("💾 Criar Téc."): 
         if novo_item and utils_db.aprender_novo_item(cat_tecnica_db, novo_item): 
             st.session_state['opcoes_db'] = utils_db.carregar_opcoes(); st.toast("✅ Salvo no banco!")
-    itens_salvos = dados_edit.get('itens_tecnicos', [])
-    if isinstance(itens_salvos, str) and itens_salvos.strip(): itens_salvos = eval(itens_salvos)
-    itens_tec = st.multiselect("Itens do Escopo:", sorted(list(set(lista_tec_final + itens_salvos))), default=itens_salvos)
-    comentarios_salvos = dados_edit.get('comentarios_itens', {})
-    if isinstance(comentarios_salvos, str) and comentarios_salvos.strip(): comentarios_salvos = eval(comentarios_salvos)
+            
+    itens_salvos = converter_para_estrutura(dados_edit.get('itens_tecnicos', []), list)
+    itens_salvos_limpos = [str(x) for x in itens_salvos if x]
+    
+    opcoes_multiselect = sorted(list(set(lista_tec_final + itens_salvos_limpos)))
+    itens_tec = st.multiselect("Itens do Escopo:", opcoes=opcoes_multiselect, default=itens_salvos_limpos)
+    
+    comentarios_salvos = converter_para_estrutura(dados_edit.get('comentarios_itens', {}), dict)
     comentarios_novos = {i: st.text_input(f"Detalhe '{i}':", value=comentarios_salvos.get(i, "")) for i in itens_tec}
+    
     st.divider()
     tec_livre = st.text_area("Observações Gerais:", value=dados_edit.get('tecnico_livre', ''))
     st.divider(); st.markdown("#### Qualidade")
     c_q1, c_q2 = st.columns([4,1])
     novo_item_q = c_q1.text_input("Novo Item DB (Qualidade):", key="add_db_qual")
-    lista_qual = sorted(list(set(opcoes.get(f"qualidade_{DISCIPLINA_ATUAL.lower()}", []) + PADRAO_QUALIDADE)))
+    lista_qual = [str(x) for x in sorted(list(set(opcoes.get(f"qualidade_{DISCIPLINA_ATUAL.lower()}", []) + PADRAO_QUALIDADE))) if x]
+    
     if c_q2.button("💾 Criar Qual."): 
         if novo_item_q and utils_db.aprender_novo_item(f"qualidade_{DISCIPLINA_ATUAL.lower()}", novo_item_q): 
             st.session_state['opcoes_db'] = utils_db.carregar_opcoes(); st.toast("✅ Qualidade salva no banco!")
-    itens_salvos_q = dados_edit.get('itens_qualidade', [])
-    if isinstance(itens_salvos_q, str) and itens_salvos_q.strip(): itens_salvos_q = eval(itens_salvos_q)
-    itens_qual = st.multiselect("Itens Qualidade:", sorted(list(set(lista_qual + itens_salvos_q))), default=itens_salvos_q)
+            
+    itens_salvos_q = converter_para_estrutura(dados_edit.get('itens_qualidade', []), list)
+    itens_salvos_q_limpos = [str(x) for x in itens_salvos_q if x]
+    
+    opcoes_qual_multiselect = sorted(list(set(lista_qual + itens_salvos_q_limpos)))
+    itens_qual = st.multiselect("Itens Qualidade:", sorted(list(set(opcoes_qual_multiselect))), default=itens_salvos_q_limpos)
 
 with tab3:
     escolhas = {}
-    matriz_salva = dados_edit.get('matriz', {})
-    if isinstance(matriz_salva, str) and matriz_salva.strip(): matriz_salva = eval(matriz_salva)
+    matriz_salva = converter_para_estrutura(dados_edit.get('matriz', {}), dict)
     st.write("Responsabilidades:")
     for item in ITENS_MATRIZ:
         c_m1, c_m2 = st.columns([2, 3])
@@ -219,9 +241,11 @@ with tab3:
         st.divider()
 
 with tab4:
-    nrs_salvas = dados_edit.get('nrs_selecionadas', [])
-    if isinstance(nrs_salvas, str) and nrs_salvas.strip(): nrs_salvas = eval(nrs_salvas)
-    nrs = st.multiselect("NRs Adicionais:", sorted(list(set(LISTA_NRS_SELECAO + nrs_salvas))), default=nrs_salvas)
+    nrs_salvas = converter_para_estrutura(dados_edit.get('nrs_selecionadas', []), list)
+    nrs_salvas_limpas = [str(x) for x in nrs_salvas if x]
+    
+    opcoes_nrs_select = sorted(list(set(LISTA_NRS_SELECAO + nrs_salvas_limpas)))
+    nrs = st.multiselect("NRs Adicionais:", opcoes=opcoes_nrs_select, default=nrs_salvas_limpas)
     sms_livre = st.text_area("Outras exigências:", value=dados_edit.get('sms_livre', ''))
 
 with tab5:
@@ -237,7 +261,9 @@ with tab5:
     pgto = st.text_area("Condição Pagamento:", value=dados_edit.get('condicao_pgto', ''))
     obs = st.text_area("Obs Comerciais:", value=dados_edit.get('obs_gerais', ''))
     lista_st = ["Não Iniciado", "Engenharia", "Obras", "Suprimentos", "Finalizado"]
-    status = st.selectbox("Status:", lista_st, index=lista_st.index(dados_edit.get('status')) if dados_edit.get('status') in lista_st else 0)
+    status_atual = dados_edit.get('status')
+    idx_status = lista_st.index(status_atual) if status_atual in lista_st else 0
+    status = st.selectbox("Status:", lista_st, index=idx_status)
 
 st.markdown("---")
 dados = {
