@@ -206,7 +206,7 @@ with tab2:
     itens_salvos_limpos = [str(x) for x in itens_salvos if x]
     
     opcoes_multiselect = sorted(list(set(lista_tec_final + itens_salvos_limpos)))
-    itens_tec = st.multiselect("Itens do Escopo:", opcoes=opcoes_multiselect, default=itens_salvos_limpos)
+    itens_tec = st.multiselect("Itens do Escopo:", options=opcoes_multiselect, default=itens_salvos_limpos)
     
     comentarios_salvos = converter_para_estrutura(dados_edit.get('comentarios_itens', {}), dict)
     comentarios_novos = {i: st.text_input(f"Detalhe '{i}':", value=comentarios_salvos.get(i, "")) for i in itens_tec}
@@ -226,7 +226,7 @@ with tab2:
     itens_salvos_q_limpos = [str(x) for x in itens_salvos_q if x]
     
     opcoes_qual_multiselect = sorted(list(set(lista_qual + itens_salvos_q_limpos)))
-    itens_qual = st.multiselect("Itens Qualidade:", sorted(list(set(opcoes_qual_multiselect))), default=itens_salvos_q_limpos)
+    itens_qual = st.multiselect("Itens Qualidade:", options=opcoes_qual_multiselect, default=itens_salvos_q_limpos)
 
 with tab3:
     escolhas = {}
@@ -245,7 +245,7 @@ with tab4:
     nrs_salvas_limpas = [str(x) for x in nrs_salvas if x]
     
     opcoes_nrs_select = sorted(list(set(LISTA_NRS_SELECAO + nrs_salvas_limpas)))
-    nrs = st.multiselect("NRs Adicionais:", opcoes=opcoes_nrs_select, default=nrs_salvas_limpas)
+    nrs = st.multiselect("NRs Adicionais:", options=opcoes_nrs_select, default=nrs_salvas_limpas)
     sms_livre = st.text_area("Outras exigências:", value=dados_edit.get('sms_livre', ''))
 
 with tab5:
