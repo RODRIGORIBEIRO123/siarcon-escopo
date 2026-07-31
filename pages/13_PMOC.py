@@ -20,7 +20,7 @@ if 'logado' not in st.session_state or not st.session_state['logado']:
 DISCIPLINA_ATUAL = "PMOC"
 
 # ==============================================================================
-# ESTRUTURA INTEGRAL DO PMOC SIARCON (TODAS AS 15 SEÇÕES E SUBTÓPICOS)[cite: 1]
+# ESTRUTURA INTEGRAL - GUIA ORIENTATIVO DE MANUTENÇÃO SIARCON (15 SEÇÕES)
 # ==============================================================================
 ESTRUTURA_PMOC_SIARCON = {
     "Ventiladores": {
@@ -549,12 +549,10 @@ ESTRUTURA_PMOC_SIARCON = {
 # FUNÇÕES DE ESTILIZAÇÃO AVANÇADA (PYTHON-DOCX)
 # ==============================================================================
 def aplicar_fundo_celula(celula, cor_hex):
-    """Preenche a célula com cor de fundo (Hex ex: 'F2F2F2')"""
     shading_elm = parse_xml(f'<w:shd {nsdecls("w")} w:fill="{cor_hex}"/>')
     celula._tc.get_or_add_tcPr().append(shading_elm)
 
 def aplicar_bordas_celula(celula, top="single", bottom="single", left="single", right="single", color="CCCCCC", sz="4"):
-    """Configura bordas específicas em uma célula do Word"""
     tcPr = celula._tc.get_or_add_tcPr()
     tcBorders = parse_xml(
         f'<w:tcBorders {nsdecls("w")}>'
@@ -567,7 +565,6 @@ def aplicar_bordas_celula(celula, top="single", bottom="single", left="single", 
     tcPr.append(tcBorders)
 
 def configurar_cabecalho_siarcon(doc, cod_pmoc="PMOC-2023-00-00"):
-    """Implementa o cabeçalho idêntico ao Print 2 (Logo, Título Cinza e Código Azul) em todas as seções"""
     for section in doc.sections:
         section.top_margin = Inches(0.8)
         header = section.header
@@ -577,35 +574,24 @@ def configurar_cabecalho_siarcon(doc, cod_pmoc="PMOC-2023-00-00"):
         t_head.alignment = WD_TABLE_ALIGNMENT.CENTER
         
         c0, c1, c2 = t_head.rows[0].cells
-        c0.width = Inches(1.5)
-        c1.width = Inches(3.5)
-        c2.width = Inches(1.5)
+        c0.width = Inches(1.5); c1.width = Inches(3.5); c2.width = Inches(1.5)
         
-        p0 = c0.paragraphs[0]
-        p0.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p0 = c0.paragraphs[0]; p0.alignment = WD_ALIGN_PARAGRAPH.CENTER
         if os.path.exists("logo_siarcon.png"):
             run0 = p0.add_run()
             run0.add_picture("logo_siarcon.png", width=Inches(1.3))
         else:
             r0 = p0.add_run("SIARCON\nEngenharia")
-            r0.bold = True
-            r0.font.size = Pt(11)
-            r0.font.color.rgb = RGBColor(0, 102, 204)
+            r0.bold = True; r0.font.size = Pt(11); r0.font.color.rgb = RGBColor(0, 102, 204)
             
-        p1 = c1.paragraphs[0]
-        p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        r1 = p1.add_run("PMOC – PLANO DE MANUTENÇÃO\nOPERAÇÃO E CONTROLE")
-        r1.bold = True
-        r1.font.name = "Calibri"
-        r1.font.size = Pt(13)
+        p1 = c1.paragraphs[0]; p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        r1 = p1.add_run("GUIA ORIENTATIVO DE\nMANUTENÇÃO")
+        r1.bold = True; r1.font.name = "Calibri"; r1.font.size = Pt(13)
         r1.font.color.rgb = RGBColor(102, 102, 102)
         
-        p2 = c2.paragraphs[0]
-        p2.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p2 = c2.paragraphs[0]; p2.alignment = WD_ALIGN_PARAGRAPH.CENTER
         r2 = p2.add_run(cod_pmoc)
-        r2.bold = True
-        r2.font.name = "Calibri"
-        r2.font.size = Pt(11)
+        r2.bold = True; r2.font.name = "Calibri"; r2.font.size = Pt(11)
         r2.font.color.rgb = RGBColor(85, 85, 255)
         
         for c in (c0, c1, c2):
@@ -613,7 +599,6 @@ def configurar_cabecalho_siarcon(doc, cod_pmoc="PMOC-2023-00-00"):
             aplicar_bordas_celula(c, color="888888", sz="6")
 
 def configurar_rodape_siarcon(doc):
-    """Implementa o rodapé institucional idêntico ao Print 3[cite: 1]"""
     for section in doc.sections:
         section.bottom_margin = Inches(0.8)
         footer = section.footer
@@ -623,9 +608,7 @@ def configurar_rodape_siarcon(doc):
         p_foot.alignment = WD_ALIGN_PARAGRAPH.LEFT
         
         r_emp = p_foot.add_run("SIARCON ENGENHARIA\n")
-        r_emp.bold = True
-        r_emp.font.name = "Calibri"
-        r_emp.font.size = Pt(9)
+        r_emp.bold = True; r_emp.font.name = "Calibri"; r_emp.font.size = Pt(9)
         r_emp.font.color.rgb = RGBColor(120, 120, 120)
         
         r_end = p_foot.add_run(
@@ -633,14 +616,11 @@ def configurar_rodape_siarcon(doc):
             "CEP: 13482-280- Limeira- SP. – Fone:(19) 3701-7300\n"
             "siarcon@siarcon.com.br – "
         )
-        r_end.font.name = "Calibri"
-        r_end.font.size = Pt(8.5)
+        r_end.font.name = "Calibri"; r_end.font.size = Pt(8.5)
         r_end.font.color.rgb = RGBColor(120, 120, 120)
         
         r_site = p_foot.add_run("www.siarcon.com.br")
-        r_site.underline = True
-        r_site.font.name = "Calibri"
-        r_site.font.size = Pt(8.5)
+        r_site.underline = True; r_site.font.name = "Calibri"; r_site.font.size = Pt(8.5)
         r_site.font.color.rgb = RGBColor(0, 102, 204)
 
 # ==============================================================================
@@ -659,7 +639,7 @@ def converter_para_estrutura(valor, tipo_esperado=list):
     return [] if tipo_esperado == list else {}
 
 # ==============================================================================
-# GERADOR DE DOCX — PMOC SIARCON COMPLETO (PRINTS 1, 2 E 3)
+# GERADOR DE DOCX — GUIA ORIENTATIVO DE MANUTENÇÃO SIARCON
 # ==============================================================================
 def gerar_docx_pmoc(dados):
     doc = Document()
@@ -672,10 +652,10 @@ def gerar_docx_pmoc(dados):
     configurar_rodape_siarcon(doc)
 
     # --------------------------------------------------------------------------
-    # CAPA DO DOCUMENTO[cite: 1]
+    # CAPA DO DOCUMENTO
     # --------------------------------------------------------------------------
     doc.add_paragraph()
-    h_capa = doc.add_heading('PLANO DE MANUTENÇÃO, OPERAÇÃO E CONTROLE\n(PMOC)', 0)
+    h_capa = doc.add_heading('GUIA ORIENTATIVO DE MANUTENÇÃO', 0)
     h_capa.alignment = WD_ALIGN_PARAGRAPH.CENTER
     doc.add_paragraph()
     
@@ -689,7 +669,7 @@ def gerar_docx_pmoc(dados):
     doc.add_page_break()
 
     # --------------------------------------------------------------------------
-    # GERAÇÃO DINÂMICA DO SUMÁRIO[cite: 1]
+    # GERAÇÃO DINÂMICA DO SUMÁRIO
     # --------------------------------------------------------------------------
     selecao_itens = dados.get('selecao_subitens', {})
     secoes_sumario = [
@@ -723,7 +703,7 @@ def gerar_docx_pmoc(dados):
     doc.add_page_break()
 
     # --------------------------------------------------------------------------
-    # RESUMO[cite: 1]
+    # RESUMO
     # --------------------------------------------------------------------------
     doc.add_heading('RESUMO', level=1)
     doc.add_paragraph(
@@ -738,7 +718,7 @@ def gerar_docx_pmoc(dados):
     )
 
     # --------------------------------------------------------------------------
-    # 1. DADOS GERAIS[cite: 1]
+    # 1. DADOS GERAIS
     # --------------------------------------------------------------------------
     doc.add_heading('1. DADOS GERAIS', level=1)
     doc.add_heading('1.1 Identificação do Ambiente ou Conjunto de Ambientes:', level=2)
@@ -768,7 +748,7 @@ def gerar_docx_pmoc(dados):
     t1_3.rows[3].cells[1].text = "Email: contato@siarcon.com.br"
 
     # --------------------------------------------------------------------------
-    # 2. MAPEAMENTO DO SISTEMA HVAC[cite: 1]
+    # 2. MAPEAMENTO DO SISTEMA HVAC
     # --------------------------------------------------------------------------
     doc.add_heading('2. MAPEAMENTO DO SISTEMA HVAC', level=1)
     doc.add_heading('2.1 Relação de ambientes climatizados:', level=2)
@@ -792,16 +772,17 @@ def gerar_docx_pmoc(dados):
         r_eq[2].text = str(eq.get('kw', '')); r_eq[3].text = str(eq.get('tag', ''))
 
     # --------------------------------------------------------------------------
-    # 3. PLANO DE MANUTENÇÃO (NUMERAÇÃO CONTÍNUA E SUBTÓPICOS)[cite: 1]
+    # 3. PLANO DE MANUTENÇÃO (COM ITENS NORMATIVOS E ITENS CUSTOMIZADOS)
     # --------------------------------------------------------------------------
     doc.add_heading('3. PLANO DE MANUTENÇÃO, OPERAÇÃO E CONTROLE', level=1)
     doc.add_paragraph(
         "Nesta seção encontram-se os itens que devem ser verificados periodicamente de cada equipamento, a nível de componente, "
-        "conforme indicados em ABNT NBR 13.971.\n"
+        "conforme indicados em ABNT NBR 13.971 e determinações do Guia Orientativo de Manutenção.\n"
         "Legenda: M = Mensal | T = Trimestral | S = Semestral | A = Anual\n"
         "P = Atividades periódicas | NP = Atividades a serem executadas se necessário"
     )
 
+    rotinas_customizadas = dados.get('rotinas_customizadas', {})
     idx_cat = 1
     for cat_nome, subitens_selecionados in selecao_itens.items():
         if subitens_selecionados:
@@ -815,20 +796,25 @@ def gerar_docx_pmoc(dados):
                     t_sys = doc.add_table(rows=1, cols=3); t_sys.style = 'Table Grid'
                     h_sys = t_sys.rows[0].cells
                     h_sys[0].text = "Descrição da atividade"; h_sys[1].text = "Periodicidade"; h_sys[2].text = "Prevista"
-                    for rt in ESTRUTURA_PMOC_SIARCON.get(cat_nome, {}).get("subitens", {}).get(sub_nome, []):
+                    
+                    rotinas_base = ESTRUTURA_PMOC_SIARCON.get(cat_nome, {}).get("subitens", {}).get(sub_nome, [])
+                    rotinas_extras = rotinas_customizadas.get(f"{cat_nome} > {sub_nome}", [])
+                    for rt in (rotinas_base + rotinas_extras):
                         r_sys = t_sys.add_row().cells
                         r_sys[0].text = rt['item']; r_sys[1].text = rt['frequencia']; r_sys[2].text = rt['tipo']
             else:
                 t_sys = doc.add_table(rows=1, cols=3); t_sys.style = 'Table Grid'
                 h_sys = t_sys.rows[0].cells
                 h_sys[0].text = "Descrição da atividade"; h_sys[1].text = "Periodicidade"; h_sys[2].text = "Prevista"
-                for rt in ESTRUTURA_PMOC_SIARCON.get(cat_nome, {}).get("subitens", {}).get("Geral", []):
+                rotinas_base = ESTRUTURA_PMOC_SIARCON.get(cat_nome, {}).get("subitens", {}).get("Geral", [])
+                rotinas_extras = rotinas_customizadas.get(f"{cat_nome} > Geral", [])
+                for rt in (rotinas_base + rotinas_extras):
                     r_sys = t_sys.add_row().cells
                     r_sys[0].text = rt['item']; r_sys[1].text = rt['frequencia']; r_sys[2].text = rt['tipo']
             idx_cat += 1
 
     # --------------------------------------------------------------------------
-    # 4. OBSERVAÇÕES COMPLEMENTARES[cite: 1]
+    # 4. OBSERVAÇÕES COMPLEMENTARES
     # --------------------------------------------------------------------------
     doc.add_page_break()
     doc.add_heading('4. OBSERVAÇÕES COMPLEMENTARES', level=1)
@@ -845,7 +831,7 @@ def gerar_docx_pmoc(dados):
     )
 
     # --------------------------------------------------------------------------
-    # ANEXO A – PLANILHA DE ACOMPANHAMENTO – PMOC (EXATAMENTE COMO PRINT 1)[cite: 1]
+    # ANEXO A – PLANILHA DE ACOMPANHAMENTO – PMOC
     # --------------------------------------------------------------------------
     doc.add_page_break()
     h_anexo = doc.add_heading('ANEXO A - PLANILHA DE ACOMPANHAMENTO – PMOC', 1)
@@ -883,24 +869,21 @@ def gerar_docx_pmoc(dados):
             aplicar_fundo_celula(row_c[0], "F9F9F9")
 
         r_hdr = t_anx.add_row().cells
-        r_hdr[0].text = "Periodicidade"
-        r_hdr[1].text = "Descrição das atividades"
+        r_hdr[0].text = "Periodicidade"; r_hdr[1].text = "Descrição das atividades"
         meses = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
         for idx_m, nome_m in enumerate(meses):
             r_hdr[idx_m + 2].text = nome_m
             r_hdr[idx_m + 2].paragraphs[0].runs[0].font.size = Pt(8)
             r_hdr[idx_m + 2].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-        r_hdr[0].paragraphs[0].runs[0].bold = True
-        r_hdr[1].paragraphs[0].runs[0].bold = True
+        r_hdr[0].paragraphs[0].runs[0].bold = True; r_hdr[1].paragraphs[0].runs[0].bold = True
         r_hdr[1].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
         for cell in r_hdr:
             aplicar_fundo_celula(cell, "EAEAEA")
 
         for _ in range(15):
             r_vazia = t_anx.add_row().cells
-            r_vazia[0].text = ""
-            r_vazia[1].text = ""
+            r_vazia[0].text = ""; r_vazia[1].text = ""
             for m in range(2, 14):
                 r_vazia[m].text = ""
 
@@ -909,14 +892,12 @@ def gerar_docx_pmoc(dados):
         for i in range(1, 14):
             r_leg[0].merge(r_leg[i])
         r_leg[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
-        r_leg[0].paragraphs[0].runs[0].font.size = Pt(8)
-        r_leg[0].paragraphs[0].runs[0].bold = True
+        r_leg[0].paragraphs[0].runs[0].font.size = Pt(8); r_leg[0].paragraphs[0].runs[0].bold = True
         aplicar_fundo_celula(r_leg[0], "F2F2F2")
 
         r_ano = t_anx.add_row().cells
         r_ano[0].text = "Ano:"
-        r_ano[0].merge(r_ano[1])
-        r_ano[0].paragraphs[0].runs[0].bold = True
+        r_ano[0].merge(r_ano[1]); r_ano[0].paragraphs[0].runs[0].bold = True
         meses_abrev = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
         for idx_ab, m_ab in enumerate(meses_abrev):
             r_ano[idx_ab + 2].text = m_ab
@@ -945,11 +926,11 @@ def gerar_docx_pmoc(dados):
     return b
 
 # ==============================================================================
-# INTERFACE STREAMLIT - SIARCON PMOC
+# INTERFACE STREAMLIT - GUIA ORIENTATIVO DE MANUTENÇÃO
 # ==============================================================================
 st.set_page_config(page_title=f"SIARCON | {DISCIPLINA_ATUAL}", page_icon="📑", layout="wide")
-st.title("📑 PMOC — Plano de Manutenção, Operação e Controle")
-st.caption("Conformidade Institucional Absoluta — Prints 1, 2 e 3 (Cabeçalho, Rodapé e Anexo A)")
+st.title("📑 Guia Orientativo de Manutenção (SIARCON)")
+st.caption("Gerador Normativo de Plano de Manutenção — SIARCON ENGENHARIA")
 
 id_projeto = st.session_state.get('id_projeto_editar')
 dados_edit = utils_db.buscar_projeto_por_id(id_projeto) if id_projeto else {}
@@ -957,20 +938,20 @@ dados_edit = utils_db.buscar_projeto_por_id(id_projeto) if id_projeto else {}
 tab1, tab2, tab3, tab4 = st.tabs([
     "1. Dados Gerais (1.1 a 1.3)",
     "2. Mapeamento HVAC (2.1 e 2.2)",
-    "3. Seleção da Matriz (Subitens)",
-    "4. Emissão DOCX Oficial (Anexo A)"
+    "3. Seleção da Matriz e Rotinas",
+    "4. Emissão Oficial DOCX"
 ])
 
 with tab1:
-    st.subheader("1.1 Identificação do Ambiente e Código[cite: 1]")
+    st.subheader("1.1 Identificação do Ambiente e Código")
     col_a1, col_a2 = st.columns(2)
     nome_ambiente = col_a1.text_input("Nome do Empreendimento / Ambiente:", value=dados_edit.get('nome_ambiente', 'Administrativo Belenus'))
     end_ambiente = col_a1.text_input("Endereço COMPLETO:", value=dados_edit.get('end_ambiente', 'Rua Exemplo, 1000'))
     num_ambiente = col_a2.text_input("Número:", value=dados_edit.get('num_ambiente', '100'))
-    codigo_doc = col_a2.text_input("Código Institucional do Cabeçalho (Print 2):", value=dados_edit.get('codigo_doc', 'PMOC-2023-00-00'))
+    codigo_doc = col_a2.text_input("Código Institucional do Cabeçalho:", value=dados_edit.get('codigo_doc', 'PMOC-2023-00-00'))
 
     st.divider()
-    st.subheader("1.2 Identificação do Proprietário[cite: 1]")
+    st.subheader("1.2 Identificação do Proprietário")
     col_p1, col_p2 = st.columns(2)
     nome_prop = col_p1.text_input("Nome / Razão Social do Cliente:", value=dados_edit.get('nome_proprietario', 'Belenus S/A'))
     cnpj_prop = col_p1.text_input("CNPJ Nº:", value=dados_edit.get('cnpj_proprietario', '00.000.000/0001-00'))
@@ -978,12 +959,13 @@ with tab1:
     email_prop = col_p2.text_input("E-mail de Contato:", value=dados_edit.get('email_proprietario', 'contato@cliente.com.br'))
 
 with tab2:
-    st.subheader("2.1 Relação de Ambientes Climatizados[cite: 1]")
-    lista_ambientes = converter_para_estrutura(dados_edit.get('lista_ambientes', []), list)
-    if not lista_ambientes:
-        lista_ambientes = [{"atividade": "Escritório / Administrativo", "fixos": 20, "flutuantes": 5, "identificacao": "Escritório Belenus", "area": 120, "carga": "60.000 BTU/h"}]
+    st.subheader("2.1 Relação de Ambientes Climatizados")
+    if 'lista_ambientes' not in st.session_state:
+        st.session_state['lista_ambientes'] = converter_para_estrutura(dados_edit.get('lista_ambientes', []), list) or [
+            {"atividade": "Escritório / Administrativo", "fixos": 20, "flutuantes": 5, "identificacao": "Escritório Belenus", "area": 120, "carga": "60.000 BTU/h"}
+        ]
         
-    for i, amb in enumerate(lista_ambientes):
+    for i, amb in enumerate(st.session_state['lista_ambientes']):
         c1, c2, c3, c4, c5 = st.columns([3, 1, 1, 3, 2])
         amb['atividade'] = c1.text_input("Atividade", value=amb.get('atividade', ''), key=f"at_{i}")
         amb['fixos'] = c2.number_input("Fixos", value=int(amb.get('fixos', 0)), key=f"fix_{i}")
@@ -991,21 +973,30 @@ with tab2:
         amb['identificacao'] = c4.text_input("Identificação do Ambiente", value=amb.get('identificacao', ''), key=f"id_{i}")
         amb['carga'] = c5.text_input("Carga Térmica", value=amb.get('carga', ''), key=f"cg_{i}")
 
+    if st.button("➕ Adicionar Novo Ambiente", key="add_amb_btn"):
+        st.session_state['lista_ambientes'].append({"atividade": "", "fixos": 0, "flutuantes": 0, "identificacao": "", "area": 0, "carga": ""})
+        st.rerun()
+
     st.divider()
-    st.subheader("2.2 Relação de Equipamentos Presentes no Sistema[cite: 1]")
-    lista_eq = converter_para_estrutura(dados_edit.get('lista_equipamentos', []), list)
-    if not lista_eq:
-        lista_eq = [{"equipamento": "Chiller Parafuso / Fancoil", "localizacao": "Escritório Belenus", "kw": 45, "tag": "CH-01"}]
+    st.subheader("2.2 Relação de Equipamentos Presentes no Sistema")
+    if 'lista_equipamentos' not in st.session_state:
+        st.session_state['lista_equipamentos'] = converter_para_estrutura(dados_edit.get('lista_equipamentos', []), list) or [
+            {"equipamento": "Chiller Parafuso / Fancoil", "localizacao": "Escritório Belenus", "kw": 45, "tag": "CH-01"}
+        ]
         
-    for j, eq in enumerate(lista_eq):
+    for j, eq in enumerate(st.session_state['lista_equipamentos']):
         c_eq1, c_eq2, c_eq3, c_eq4 = st.columns([3, 3, 1, 2])
         eq['equipamento'] = c_eq1.text_input("Equipamento", value=eq.get('equipamento', ''), key=f"eq_{j}")
         eq['localizacao'] = c_eq2.text_input("Localização", value=eq.get('localizacao', ''), key=f"loc_{j}")
         eq['kw'] = c_eq3.number_input("KW", value=int(eq.get('kw', 0)), key=f"kw_{j}")
         eq['tag'] = c_eq4.text_input("TAG", value=eq.get('tag', ''), key=f"tag_{j}")
 
+    if st.button("➕ Adicionar Novo Equipamento", key="add_eq_btn"):
+        st.session_state['lista_equipamentos'].append({"equipamento": "", "localizacao": "", "kw": 0, "tag": ""})
+        st.rerun()
+
 with tab3:
-    st.subheader("3. Seleção de Categorias e Subtópicos Mapeados[cite: 1]")
+    st.subheader("3. Seleção de Categorias e Subtópicos Mapeados")
     opcoes_categoria = list(ESTRUTURA_PMOC_SIARCON.keys())
     categorias_selecionadas = st.multiselect(
         "Selecione as categorias de equipamentos presentes na obra:",
@@ -1030,9 +1021,45 @@ with tab3:
                 )
                 selecao_subitens[cat] = selecionados
 
+        st.divider()
+        st.subheader("3.1 Criação de Rotinas e Atividades Personalizadas")
+        st.write("Adicione atividades ou comandos específicos que serão incorporados à tabela do relatório:")
+        
+        if 'rotinas_customizadas' not in st.session_state:
+            st.session_state['rotinas_customizadas'] = {}
+
+        col_c1, col_c2 = st.columns(2)
+        cat_destino = col_c1.selectbox("Categoria de Destino:", categorias_selecionadas)
+        sub_destino = col_c2.selectbox("Subtópico de Destino:", selecao_subitens.get(cat_destino, ["Geral"]))
+        
+        c_atv1, c_atv2, c_atv3 = st.columns([4, 1, 1])
+        desc_atividade = c_atv1.text_input("Descrição da Atividade:")
+        periodicidade_sel = c_atv2.selectbox("Periodicidade:", ["M", "T", "S", "A", "Quando necessário"])
+        prevista_sel = c_atv3.selectbox("Prevista:", ["P", "NP"])
+
+        if st.button("➕ Adicionar Atividade à Tabela"):
+            chave_destino = f"{cat_destino} > {sub_destino}"
+            if chave_destino not in st.session_state['rotinas_customizadas']:
+                st.session_state['rotinas_customizadas'][chave_destino] = []
+            st.session_state['rotinas_customizadas'][chave_destino].append({
+                "item": desc_atividade,
+                "frequencia": periodicidade_sel,
+                "tipo": prevista_sel
+            })
+            st.success(f"Rotina adicionada a '{chave_destino}' com sucesso!")
+
+        st.markdown("#### 📋 Visualização de Atividades Personalizadas Adicionadas:")
+        for chave, itens_cust in st.session_state['rotinas_customizadas'].items():
+            if itens_cust:
+                st.write(f"**Destino:** `{chave}`")
+                st.table([
+                    {"Descrição da Atividade": i['item'], "Periodicidade": i['frequencia'], "Prevista": i['tipo']}
+                    for i in itens_cust
+                ])
+
 with tab4:
-    st.subheader("4. Emissão do PMOC Oficial SIARCON")
-    st.write("✔️ O documento exporta com o cabeçalho de 3 colunas (Print 2), rodapé institucional (Print 3), sumário e a grade final do Anexo A (Print 1).")
+    st.subheader("4. Emissão do Guia Orientativo de Manutenção SIARCON")
+    st.write("O arquivo .docx gerado contará com a nomenclatura 'Guia Orientativo de Manutenção' no cabeçalho em todas as páginas, sumário automático e as rotinas personalizadas.")
     
     dados_pmoc = {
         '_id': dados_edit.get('_id'),
@@ -1047,9 +1074,10 @@ with tab4:
         'cnpj_proprietario': cnpj_prop,
         'tel_proprietario': tel_prop,
         'email_proprietario': email_prop,
-        'lista_ambientes': lista_ambientes,
-        'lista_equipamentos': lista_eq,
+        'lista_ambientes': st.session_state.get('lista_ambientes', []),
+        'lista_equipamentos': st.session_state.get('lista_equipamentos', []),
         'selecao_subitens': selecao_subitens,
+        'rotinas_customizadas': st.session_state.get('rotinas_customizadas', {}),
         'data_inicio': dados_edit.get('data_inicio', date.today().strftime("%Y-%m-%d"))
     }
     
@@ -1057,18 +1085,18 @@ with tab4:
     with col_b1:
         if st.button("☁️ SALVAR REGISTRO NO DB SIARCON"):
             if utils_db.registrar_projeto(dados_pmoc):
-                st.success("✅ PMOC salvo com sucesso no banco de dados!")
+                st.success("✅ Guia Orientativo salvo com sucesso no banco de dados!")
     with col_b2:
-        if st.button("💾 SALVAR E GERAR DOCX PMOC OFICIAL", type="primary"):
+        if st.button("💾 SALVAR E GERAR DOCX OFICIAL", type="primary"):
             if utils_db.registrar_projeto(dados_pmoc):
-                st.success("✅ Documento exportado em 100% de conformidade com o padrão oficial! Baixe abaixo:")
+                st.success("✅ Documento exportado em 100% de conformidade! Baixe abaixo:")
                 st.session_state['btn_docx_pmoc_oficial'] = True
                 
         if st.session_state.get('btn_docx_pmoc_oficial', False):
             b_docx = gerar_docx_pmoc(dados_pmoc)
             st.download_button(
-                label="📥 BAIXAR PMOC (FORMATO OFICIAL SIARCON .DOCX)",
+                label="📥 BAIXAR GUIA ORIENTATIVO DE MANUTENÇÃO (.DOCX)",
                 data=b_docx,
-                file_name=f"PMOC_SIARCON_{nome_ambiente.replace(' ', '_') or 'Obra'}.docx",
+                file_name=f"Guia_Orientativo_SIARCON_{nome_ambiente.replace(' ', '_') or 'Obra'}.docx",
                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             )
