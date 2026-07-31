@@ -859,7 +859,9 @@ def gerar_docx_pmoc(dados):
     doc.add_paragraph()
 
     lista_equip = dados.get('lista_equipamentos', [])
-    equipamentos_anexo = lista_equip if lista_equip else [{"equipamento": "Climatização Geral HVAC", "localizacao": "-", "tag": "CH-01", "kw": 30}]
+    equipamentos_anexo = [e for e in lista_equip if str(e.get('equipamento', '')).strip()]
+    if not equipamentos_anexo:
+        equipamentos_anexo = [{"equipamento": "Climatização Geral HVAC", "localizacao": "-", "tag": "CH-01", "kw": 30}]
 
     for eq in equipamentos_anexo[:2]:
         t_anx = doc.add_table(rows=0, cols=14)
@@ -875,7 +877,7 @@ def gerar_docx_pmoc(dados):
         r_eq2[0].paragraphs[0].runs[0].bold = True
         
         r_eq3 = t_anx.add_row().cells
-        r_eq3[0].text = f"Capacidade em BTU/h: {eq.get('kw', 0)*3412:.0f}   |   Fabricante: SIARCON   |   Nº de série: -"
+        r_eq3[0].text = f"Capacidade em BTU/h: {float(eq.get('kw', 0))*3412:.0f}   |   Fabricante: SIARCON   |   Nº de série: -"
         r_eq3[0].paragraphs[0].runs[0].bold = True
         
         r_eq4 = t_anx.add_row().cells
@@ -996,8 +998,12 @@ with tab2:
         amb['identificacao'] = c4.text_input("Identificação do Ambiente", value=amb.get('identificacao', ''), key=f"id_{i}")
         amb['carga'] = c5.text_input("Carga Térmica", value=amb.get('carga', ''), key=f"cg_{i}")
 
-    if st.button("➕ Adicionar Novo Ambiente", key="add_amb_btn"):
+    col_btn_a1, col_btn_a2 = st.columns([2, 2])
+    if col_btn_a1.button("➕ Adicionar Novo Ambiente", key="add_amb_btn"):
         st.session_state['lista_ambientes'].append({"atividade": "", "fixos": 0, "flutuantes": 0, "identificacao": "", "area": 0, "carga": ""})
+        st.rerun()
+    if len(st.session_state['lista_ambientes']) > 1 and col_btn_a2.button("🗑️ Remover Último Ambiente", key="del_amb_btn"):
+        st.session_state['lista_ambientes'].pop()
         st.rerun()
 
     st.divider()
@@ -1014,91 +1020,129 @@ with tab2:
         eq['kw'] = c_eq3.number_input("KW", value=int(eq.get('kw', 0)), key=f"kw_{j}")
         eq['tag'] = c_eq4.text_input("TAG", value=eq.get('tag', ''), key=f"tag_{j}")
 
-    if st.button("➕ Adicionar Novo Equipamento", key="add_eq_btn"):
+    col_btn_e1, col_btn_e2 = st.columns([2, 2])
+    if col_btn_e1.button("➕ Adicionar Novo Equipamento", key="add_eq_btn"):
         st.session_state['lista_equipamentos'].append({"equipamento": "", "localizacao": "", "kw": 0, "tag": ""})
+        st.rerun()
+    if len(st.session_state['lista_equipamentos']) > 1 and col_btn_e2.button("🗑️ Remover Último Equipamento", key="del_eq_btn"):
+        st.session_state['lista_equipamentos'].pop()
         st.rerun()
 
 with tab3:
-    st.subheader("3. Seleção de Categorias e Subtópicos Mapeados")
-    
-    with st.expander("➕ Criar Nova Categoria ou Subtópico no Banco", expanded=False):
-        c_nv1, c_nv2, c_nv3 = st.columns([3, 3, 1])
-        nova_cat = c_nv1.text_input("Nova Categoria (ou existente):", placeholder="Ex: Automação Predial (DDC)")
-        novo_sub = c_nv2.text_input("Novo Subtópico:", placeholder="Ex: Painéis e Controladores")
-        if c_nv3.button("💾 Cadastrar"):
-            if nova_cat.strip() and novo_sub.strip():
-                cat_k = nova_cat.strip()
-                sub_k = novo_sub.strip()
-                if cat_k not in st.session_state['estrutura_pmoc_ativa']:
-                    st.session_state['estrutura_pmoc_ativa'][cat_k] = {"subitens": {}}
-                if sub_k not in st.session_state['estrutura_pmoc_ativa'][cat_k]["subitens"]:
-                    st.session_state['estrutura_pmoc_ativa'][cat_k]["subitens"][sub_k] = []
-                st.success(f"Categoria '{cat_k}' > '{sub_k}' habilitada!")
-                st.rerun()
+    sub_tab_1, sub_tab_2, sub_tab_3 = st.tabs([
+        "3.1 Selecionar Categorias da Obra",
+        "3.2 Cadastrar Categorias e Subtópicos",
+        "3.3 Gerenciar Atividades e Rotinas"
+    ])
 
-    opcoes_categoria = list(st.session_state['estrutura_pmoc_ativa'].keys())
-    categorias_selecionadas = st.multiselect(
-        "Selecione as categorias de equipamentos presentes na obra:",
-        options=opcoes_categoria,
-        default=opcoes_categoria[:3] if len(opcoes_categoria) >= 3 else opcoes_categoria
-    )
+    with sub_tab_1:
+        st.markdown("#### Seleção dos Equipamentos Aplicáveis ao Relatório")
+        opcoes_categoria = list(st.session_state['estrutura_pmoc_ativa'].keys())
+        categorias_selecionadas = st.multiselect(
+            "Selecione as categorias presentes na obra atual:",
+            options=opcoes_categoria,
+            default=opcoes_categoria[:3] if len(opcoes_categoria) >= 3 else opcoes_categoria
+        )
 
-    selecao_subitens = {}
-    if categorias_selecionadas:
-        st.divider()
-        for cat in categorias_selecionadas:
-            subitens_disp = list(st.session_state['estrutura_pmoc_ativa'][cat]["subitens"].keys())
-            if len(subitens_disp) == 1 and subitens_disp[0] == "Geral":
-                selecao_subitens[cat] = ["Geral"]
-            else:
-                st.markdown(f"**🔹 Subitens de '{cat}':**")
-                selecionados = st.multiselect(
-                    f"Escolha os subtópicos para {cat}:",
-                    options=subitens_disp,
-                    default=subitens_disp,
-                    key=f"sub_{cat}"
-                )
-                selecao_subitens[cat] = selecionados
+        selecao_subitens = {}
+        if categorias_selecionadas:
+            st.divider()
+            for cat in categorias_selecionadas:
+                subitens_disp = list(st.session_state['estrutura_pmoc_ativa'][cat]["subitens"].keys())
+                if len(subitens_disp) == 1 and subitens_disp[0] == "Geral":
+                    selecao_subitens[cat] = ["Geral"]
+                else:
+                    st.markdown(f"**🔹 Subitens de '{cat}':**")
+                    selecionados = st.multiselect(
+                        f"Escolha os subtópicos para {cat}:",
+                        options=subitens_disp,
+                        default=subitens_disp,
+                        key=f"sub_{cat}"
+                    )
+                    selecao_subitens[cat] = selecionados
 
-        st.divider()
-        st.subheader("3.1 Criação de Rotinas e Atividades Personalizadas")
-        st.write("Adicione atividades ou comandos específicos que serão incorporados à tabela do relatório:")
-        
+    with sub_tab_2:
+        st.markdown("#### Criar ou Remover Categorias e Subtópicos do Banco")
+        with st.container(border=True):
+            c_nv1, c_nv2, c_nv3 = st.columns([3, 3, 1])
+            nova_cat = c_nv1.text_input("Nome da Categoria (ou selecione/digite):", placeholder="Ex: Automação Predial (DDC)")
+            novo_sub = c_nv2.text_input("Nome do Subtópico:", placeholder="Ex: Painéis e Controladores")
+            if c_nv3.button("💾 Cadastrar", use_container_width=True):
+                if nova_cat.strip() and novo_sub.strip():
+                    cat_k = nova_cat.strip()
+                    sub_k = novo_sub.strip()
+                    if cat_k not in st.session_state['estrutura_pmoc_ativa']:
+                        st.session_state['estrutura_pmoc_ativa'][cat_k] = {"subitens": {}}
+                    if sub_k not in st.session_state['estrutura_pmoc_ativa'][cat_k]["subitens"]:
+                        st.session_state['estrutura_pmoc_ativa'][cat_k]["subitens"][sub_k] = []
+                    st.success(f"Subtópico '{sub_k}' habilitado com sucesso na categoria '{cat_k}'!")
+                    st.rerun()
+
+        st.markdown("##### 🗑️ Opções de Exclusão de Categorias e Subtópicos")
+        col_del1, col_del2, col_del3 = st.columns([3, 3, 1])
+        cat_del = col_del1.selectbox("Selecione a Categoria para remover:", options=list(st.session_state['estrutura_pmoc_ativa'].keys()), key="cat_del_sel")
+        if cat_del:
+            subs_del = list(st.session_state['estrutura_pmoc_ativa'][cat_del]["subitens"].keys())
+            sub_del = col_del2.selectbox("Subtópico para remover:", options=subs_del, key="sub_del_sel")
+            if col_del3.button("🗑️ Excluir Subtópico", use_container_width=True):
+                if len(subs_del) <= 1:
+                    st.error("Não é possível excluir o único subtópico da categoria.")
+                else:
+                    st.session_state['estrutura_pmoc_ativa'][cat_del]["subitens"].pop(sub_del, None)
+                    st.success(f"Subtópico '{sub_del}' removido!")
+                    st.rerun()
+
+    with sub_tab_3:
+        st.markdown("#### Inserir ou Remover Atividades nas Tabelas de Inspeção")
         if 'rotinas_customizadas' not in st.session_state:
             st.session_state['rotinas_customizadas'] = {}
 
-        col_c1, col_c2 = st.columns(2)
-        cat_destino = col_c1.selectbox("Categoria de Destino:", categorias_selecionadas)
-        sub_destino = col_c2.selectbox("Subtópico de Destino:", selecao_subitens.get(cat_destino, ["Geral"]))
-        
-        c_atv1, c_atv2, c_atv3 = st.columns([4, 1, 1])
-        desc_atividade = c_atv1.text_input("Descrição da Atividade:")
-        periodicidade_sel = c_atv2.selectbox("Periodicidade:", ["M", "T", "S", "A", "Quando necessário"])
-        prevista_sel = c_atv3.selectbox("Prevista:", ["P", "NP"])
+        if not categorias_selecionadas:
+            st.info("Selecione pelo menos uma categoria na sub-aba 3.1 para habilitar o cadastro de atividades.")
+        else:
+            with st.container(border=True):
+                col_c1, col_c2 = st.columns(2)
+                cat_destino = col_c1.selectbox("Categoria de Destino:", categorias_selecionadas, key="cat_atv_dest")
+                sub_destino = col_c2.selectbox("Subtópico de Destino:", selecao_subitens.get(cat_destino, ["Geral"]), key="sub_atv_dest")
+                
+                c_atv1, c_atv2, c_atv3, c_atv4 = st.columns([4, 1.5, 1.5, 1])
+                desc_atividade = c_atv1.text_input("Descrição da Atividade:")
+                periodicidade_sel = c_atv2.selectbox("Periodicidade:", ["M", "T", "S", "A", "Quando necessário"])
+                prevista_sel = c_atv3.selectbox("Prevista:", ["P", "NP"])
 
-        if st.button("➕ Adicionar Atividade à Tabela"):
-            chave_destino = f"{cat_destino} > {sub_destino}"
-            if chave_destino not in st.session_state['rotinas_customizadas']:
-                st.session_state['rotinas_customizadas'][chave_destino] = []
-            st.session_state['rotinas_customizadas'][chave_destino].append({
-                "item": desc_atividade,
-                "frequencia": periodicidade_sel,
-                "tipo": prevista_sel
-            })
-            st.success(f"Rotina adicionada a '{chave_destino}' com sucesso!")
+                if c_atv4.button("➕ Adicionar", use_container_width=True):
+                    chave_destino = f"{cat_destino} > {sub_destino}"
+                    if chave_destino not in st.session_state['rotinas_customizadas']:
+                        st.session_state['rotinas_customizadas'][chave_destino] = []
+                    if desc_atividade.strip():
+                        st.session_state['rotinas_customizadas'][chave_destino].append({
+                            "item": desc_atividade.strip(),
+                            "frequencia": periodicidade_sel,
+                            "tipo": prevista_sel
+                        })
+                        st.success(f"Atividade adicionada a '{chave_destino}'!")
+                        st.rerun()
 
-        st.markdown("#### 📋 Visualização de Atividades Personalizadas Adicionadas:")
-        for chave, itens_cust in st.session_state['rotinas_customizadas'].items():
-            if itens_cust:
-                st.write(f"**Destino:** `{chave}`")
-                st.table([
-                    {"Descrição da Atividade": i['item'], "Periodicidade": i['frequencia'], "Prevista": i['tipo']}
-                    for i in itens_cust
-                ])
+            st.markdown("##### 📋 Rotinas Personalizadas Adicionadas (com opção de exclusão)")
+            encontrou_rotinas = False
+            for chave, itens_cust in list(st.session_state['rotinas_customizadas'].items()):
+                if itens_cust:
+                    encontrou_rotinas = True
+                    st.markdown(f"**Destino:** `{chave}`")
+                    for idx_rot, item_r in enumerate(itens_cust):
+                        c_r1, c_r2, c_r3, c_r4 = st.columns([5, 1.5, 1.5, 1])
+                        c_r1.write(f"• {item_r['item']}")
+                        c_r2.write(f"**Freq:** {item_r['frequencia']}")
+                        c_r3.write(f"**Tipo:** {item_r['tipo']}")
+                        if c_r4.button("🗑️", key=f"del_rt_{chave}_{idx_rot}"):
+                            st.session_state['rotinas_customizadas'][chave].pop(idx_rot)
+                            st.rerun()
+            if not encontrou_rotinas:
+                st.caption("Nenhuma atividade extra cadastrada para esta sessão.")
 
 with tab4:
     st.subheader("4. Emissão do Guia Orientativo de Manutenção SIARCON")
-    st.write("O arquivo .docx gerado contará com a nomenclatura 'Guia Orientativo de Manutenção' no cabeçalho em todas as páginas, sumário automático e as rotinas personalizadas.")
+    st.write("✔️ O documento gerado conta com o título oficial e código editável no cabeçalho em todas as páginas, sumário, seções sequenciais e o Anexo A.")
     
     dados_pmoc = {
         '_id': dados_edit.get('_id'),
