@@ -772,16 +772,36 @@ def gerar_docx_pmoc(dados):
         r_eq[2].text = str(eq.get('kw', '')); r_eq[3].text = str(eq.get('tag', ''))
 
     # --------------------------------------------------------------------------
-    # 3. PLANO DE MANUTENÇÃO (COM ITENS NORMATIVOS E ITENS CUSTOMIZADOS)
+    # 3. PLANO DE MANUTENÇÃO (TEXTO COMPLETO E SEÇÕES DINÂMICAS)
     # --------------------------------------------------------------------------
     doc.add_heading('3. PLANO DE MANUTENÇÃO, OPERAÇÃO E CONTROLE', level=1)
     doc.add_paragraph(
-        "Nesta seção encontram-se os itens que devem ser verificados periodicamente de cada equipamento, a nível de componente, "
-        "conforme indicados em ABNT NBR 13.971 e determinações do Guia Orientativo de Manutenção.\n"
-        "Legenda: M = Mensal | T = Trimestral | S = Semestral | A = Anual\n"
-        "P = Atividades periódicas | NP = Atividades a serem executadas se necessário"
+        "Nesta seção encontram-se os itens que devem ser verificados periodicamente de cada equipamento, "
+        "a nível de componente, conforme indicados em ABNT NBR 13.971. Os períodos e itens adicionais estão em "
+        "acordo com os fabricantes do equipamento.\n\n"
+        "Para a execução das atividades previstas neste Guia Orientativo de Manutenção, é necessário o emprego "
+        "de mão de obra qualificada e capacitada, sob a orientação de responsável técnico devidamente habilitado. "
+        "Como auxílio na execução deste Plano de Manutenção e Controle do sistema de HVAC, no Anexo A está inclusa "
+        "uma planilha geral que deve ser preenchida pelo responsável técnico no momento da execução dos testes e "
+        "verificações abaixo recomendados como padrão desde a partida do sistema.\n\n"
+        "Manutenções corretivas não estão previstas neste Guia, e são caracterizadas como ações de correção que "
+        "implicam em reparo ou substituição de componentes. Os procedimentos descritos neste plano podem ser "
+        "alterados por um técnico qualificado, desde que avaliando os seguintes critérios:\n"
+        "• Tipo de equipamento;\n"
+        "• Tempo efetivo de operação;\n"
+        "• Regime de operação;\n"
+        "• Tipo de aplicação;\n"
+        "• Grau de agressividade do ambiente;\n"
+        "• Disponibilidade da instalação para manutenção;\n"
+        "• Fatores específicos de instalação.\n\n"
+        "As atividades indicadas estão classificadas em dois tipos:\n"
+        "P = Atividades periódicas a serem executadas em intervalos de tempo regular, conforme indicado;\n"
+        "NP = Atividades a serem executadas, se necessário, em função da avaliação técnica durante os serviços de inspeção.\n\n"
+        "Legenda de Periodicidade:\n"
+        "M = Mensal   |   T = Trimestral   |   S = Semestral   |   A = Anual"
     )
 
+    estrutura_base = dados.get('estrutura_pmoc_ativa', ESTRUTURA_PMOC_SIARCON)
     rotinas_customizadas = dados.get('rotinas_customizadas', {})
     idx_cat = 1
     for cat_nome, subitens_selecionados in selecao_itens.items():
@@ -797,7 +817,7 @@ def gerar_docx_pmoc(dados):
                     h_sys = t_sys.rows[0].cells
                     h_sys[0].text = "Descrição da atividade"; h_sys[1].text = "Periodicidade"; h_sys[2].text = "Prevista"
                     
-                    rotinas_base = ESTRUTURA_PMOC_SIARCON.get(cat_nome, {}).get("subitens", {}).get(sub_nome, [])
+                    rotinas_base = estrutura_base.get(cat_nome, {}).get("subitens", {}).get(sub_nome, [])
                     rotinas_extras = rotinas_customizadas.get(f"{cat_nome} > {sub_nome}", [])
                     for rt in (rotinas_base + rotinas_extras):
                         r_sys = t_sys.add_row().cells
@@ -806,7 +826,7 @@ def gerar_docx_pmoc(dados):
                 t_sys = doc.add_table(rows=1, cols=3); t_sys.style = 'Table Grid'
                 h_sys = t_sys.rows[0].cells
                 h_sys[0].text = "Descrição da atividade"; h_sys[1].text = "Periodicidade"; h_sys[2].text = "Prevista"
-                rotinas_base = ESTRUTURA_PMOC_SIARCON.get(cat_nome, {}).get("subitens", {}).get("Geral", [])
+                rotinas_base = estrutura_base.get(cat_nome, {}).get("subitens", {}).get("Geral", [])
                 rotinas_extras = rotinas_customizadas.get(f"{cat_nome} > Geral", [])
                 for rt in (rotinas_base + rotinas_extras):
                     r_sys = t_sys.add_row().cells
@@ -831,7 +851,7 @@ def gerar_docx_pmoc(dados):
     )
 
     # --------------------------------------------------------------------------
-    # ANEXO A – PLANILHA DE ACOMPANHAMENTO – PMOC
+    # ANEXO A – PLANILHA DE ACOMPANHAMENTO
     # --------------------------------------------------------------------------
     doc.add_page_break()
     h_anexo = doc.add_heading('ANEXO A - PLANILHA DE ACOMPANHAMENTO', 1)
@@ -935,6 +955,9 @@ st.caption("Gerador Normativo de Plano de Manutenção — SIARCON ENGENHARIA")
 id_projeto = st.session_state.get('id_projeto_editar')
 dados_edit = utils_db.buscar_projeto_por_id(id_projeto) if id_projeto else {}
 
+if 'estrutura_pmoc_ativa' not in st.session_state:
+    st.session_state['estrutura_pmoc_ativa'] = ast.literal_eval(str(ESTRUTURA_PMOC_SIARCON))
+
 tab1, tab2, tab3, tab4 = st.tabs([
     "1. Dados Gerais (1.1 a 1.3)",
     "2. Mapeamento HVAC (2.1 e 2.2)",
@@ -997,18 +1020,34 @@ with tab2:
 
 with tab3:
     st.subheader("3. Seleção de Categorias e Subtópicos Mapeados")
-    opcoes_categoria = list(ESTRUTURA_PMOC_SIARCON.keys())
+    
+    with st.expander("➕ Criar Nova Categoria ou Subtópico no Banco", expanded=False):
+        c_nv1, c_nv2, c_nv3 = st.columns([3, 3, 1])
+        nova_cat = c_nv1.text_input("Nova Categoria (ou existente):", placeholder="Ex: Automação Predial (DDC)")
+        novo_sub = c_nv2.text_input("Novo Subtópico:", placeholder="Ex: Painéis e Controladores")
+        if c_nv3.button("💾 Cadastrar"):
+            if nova_cat.strip() and novo_sub.strip():
+                cat_k = nova_cat.strip()
+                sub_k = novo_sub.strip()
+                if cat_k not in st.session_state['estrutura_pmoc_ativa']:
+                    st.session_state['estrutura_pmoc_ativa'][cat_k] = {"subitens": {}}
+                if sub_k not in st.session_state['estrutura_pmoc_ativa'][cat_k]["subitens"]:
+                    st.session_state['estrutura_pmoc_ativa'][cat_k]["subitens"][sub_k] = []
+                st.success(f"Categoria '{cat_k}' > '{sub_k}' habilitada!")
+                st.rerun()
+
+    opcoes_categoria = list(st.session_state['estrutura_pmoc_ativa'].keys())
     categorias_selecionadas = st.multiselect(
         "Selecione as categorias de equipamentos presentes na obra:",
         options=opcoes_categoria,
-        default=opcoes_categoria[:3]
+        default=opcoes_categoria[:3] if len(opcoes_categoria) >= 3 else opcoes_categoria
     )
 
     selecao_subitens = {}
     if categorias_selecionadas:
         st.divider()
         for cat in categorias_selecionadas:
-            subitens_disp = list(ESTRUTURA_PMOC_SIARCON[cat]["subitens"].keys())
+            subitens_disp = list(st.session_state['estrutura_pmoc_ativa'][cat]["subitens"].keys())
             if len(subitens_disp) == 1 and subitens_disp[0] == "Geral":
                 selecao_subitens[cat] = ["Geral"]
             else:
@@ -1078,6 +1117,7 @@ with tab4:
         'lista_equipamentos': st.session_state.get('lista_equipamentos', []),
         'selecao_subitens': selecao_subitens,
         'rotinas_customizadas': st.session_state.get('rotinas_customizadas', {}),
+        'estrutura_pmoc_ativa': st.session_state.get('estrutura_pmoc_ativa', ESTRUTURA_PMOC_SIARCON),
         'data_inicio': dados_edit.get('data_inicio', date.today().strftime("%Y-%m-%d"))
     }
     
