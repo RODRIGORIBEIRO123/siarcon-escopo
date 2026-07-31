@@ -17,7 +17,7 @@ import utils_db
 if 'logado' not in st.session_state or not st.session_state['logado']:
     st.warning("🔒 Acesso negado."); st.stop()
 
-DISCIPLINA_ATUAL = "PMOC"
+DISCIPLINA_ATUAL = "GOM"
 
 # ==============================================================================
 # ESTRUTURA INTEGRAL - GUIA ORIENTATIVO DE MANUTENÇÃO SIARCON (15 SEÇÕES)
@@ -564,7 +564,7 @@ def aplicar_bordas_celula(celula, top="single", bottom="single", left="single", 
     )
     tcPr.append(tcBorders)
 
-def configurar_cabecalho_siarcon(doc, cod_pmoc="PMOC-2023-00-00"):
+def configurar_cabecalho_siarcon(doc, cod_doc="GOM-2026-00-00"):
     for section in doc.sections:
         section.top_margin = Inches(0.8)
         header = section.header
@@ -590,7 +590,7 @@ def configurar_cabecalho_siarcon(doc, cod_pmoc="PMOC-2023-00-00"):
         r1.font.color.rgb = RGBColor(102, 102, 102)
         
         p2 = c2.paragraphs[0]; p2.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        r2 = p2.add_run(cod_pmoc)
+        r2 = p2.add_run(cod_doc)
         r2.bold = True; r2.font.name = "Calibri"; r2.font.size = Pt(11)
         r2.font.color.rgb = RGBColor(85, 85, 255)
         
@@ -647,8 +647,8 @@ def gerar_docx_pmoc(dados):
     style.font.name = 'Calibri'
     style.font.size = Pt(10.5)
 
-    cod_pmoc = dados.get('codigo_doc', 'PMOC-2023-00-00')
-    configurar_cabecalho_siarcon(doc, cod_pmoc)
+    cod_doc = dados.get('codigo_doc', f'GOM-{datetime.now().year}-00-00')
+    configurar_cabecalho_siarcon(doc, cod_doc)
     configurar_rodape_siarcon(doc)
 
     # --------------------------------------------------------------------------
@@ -695,7 +695,7 @@ def gerar_docx_pmoc(dados):
             idx_cat += 1
 
     secoes_sumario.append("4. OBSERVAÇÕES COMPLEMENTARES")
-    secoes_sumario.append("ANEXO A – PLANILHA DE CONTROLE – PMOC")
+    secoes_sumario.append("ANEXO A – PLANILHA DE CONTROLE")
 
     doc.add_heading('SUMÁRIO', level=1)
     for linha_sum in secoes_sumario:
@@ -834,12 +834,12 @@ def gerar_docx_pmoc(dados):
     # ANEXO A – PLANILHA DE ACOMPANHAMENTO – PMOC
     # --------------------------------------------------------------------------
     doc.add_page_break()
-    h_anexo = doc.add_heading('ANEXO A - PLANILHA DE ACOMPANHAMENTO – PMOC', 1)
+    h_anexo = doc.add_heading('ANEXO A - PLANILHA DE ACOMPANHAMENTO', 1)
     h_anexo.alignment = WD_ALIGN_PARAGRAPH.CENTER
     doc.add_paragraph()
 
     lista_equip = dados.get('lista_equipamentos', [])
-    equipamentos_anexo = lista_equip if lista_equip else [{"equipamento": "Climatização Geral HVAC", "localizacao": "Escritório Belenus", "tag": "CH-01", "kw": 30}]
+    equipamentos_anexo = lista_equip if lista_equip else [{"equipamento": "Climatização Geral HVAC", "localizacao": "-", "tag": "CH-01", "kw": 30}]
 
     for eq in equipamentos_anexo[:2]:
         t_anx = doc.add_table(rows=0, cols=14)
@@ -851,7 +851,7 @@ def gerar_docx_pmoc(dados):
         r_eq1[0].paragraphs[0].runs[0].bold = True
         
         r_eq2 = t_anx.add_row().cells
-        r_eq2[0].text = f"Setor: {dados.get('nome_ambiente', 'Administrativo')}   |   Local: {eq.get('localizacao', 'Escritório')}"
+        r_eq2[0].text = f"Setor: {dados.get('nome_ambiente', '-')}   |   Local: {eq.get('localizacao', '-')}"
         r_eq2[0].paragraphs[0].runs[0].bold = True
         
         r_eq3 = t_anx.add_row().cells
@@ -945,24 +945,24 @@ tab1, tab2, tab3, tab4 = st.tabs([
 with tab1:
     st.subheader("1.1 Identificação do Ambiente e Código")
     col_a1, col_a2 = st.columns(2)
-    nome_ambiente = col_a1.text_input("Nome do Empreendimento / Ambiente:", value=dados_edit.get('nome_ambiente', 'Administrativo Belenus'))
-    end_ambiente = col_a1.text_input("Endereço COMPLETO:", value=dados_edit.get('end_ambiente', 'Rua Exemplo, 1000'))
-    num_ambiente = col_a2.text_input("Número:", value=dados_edit.get('num_ambiente', '100'))
-    codigo_doc = col_a2.text_input("Código Institucional do Cabeçalho:", value=dados_edit.get('codigo_doc', 'PMOC-2023-00-00'))
+    nome_ambiente = col_a1.text_input("Nome do Empreendimento / Ambiente:", value=dados_edit.get('nome_ambiente', ''))
+    end_ambiente = col_a1.text_input("Endereço COMPLETO:", value=dados_edit.get('end_ambiente', ''))
+    num_ambiente = col_a2.text_input("Número:", value=dados_edit.get('num_ambiente', ''))
+    codigo_doc = col_a2.text_input("Código Institucional (GOM):", value=dados_edit.get('codigo_doc', f'GOM-{datetime.now().year}-00-00'))
 
     st.divider()
     st.subheader("1.2 Identificação do Proprietário")
     col_p1, col_p2 = st.columns(2)
-    nome_prop = col_p1.text_input("Nome / Razão Social do Cliente:", value=dados_edit.get('nome_proprietario', 'Belenus S/A'))
-    cnpj_prop = col_p1.text_input("CNPJ Nº:", value=dados_edit.get('cnpj_proprietario', '00.000.000/0001-00'))
-    tel_prop = col_p2.text_input("Telefone do Contato:", value=dados_edit.get('tel_proprietario', '(19) 3000-0000'))
-    email_prop = col_p2.text_input("E-mail de Contato:", value=dados_edit.get('email_proprietario', 'contato@cliente.com.br'))
+    nome_prop = col_p1.text_input("Nome / Razão Social do Cliente:", value=dados_edit.get('nome_proprietario', ''))
+    cnpj_prop = col_p1.text_input("CNPJ Nº:", value=dados_edit.get('cnpj_proprietario', ''))
+    tel_prop = col_p2.text_input("Telefone do Contato:", value=dados_edit.get('tel_proprietario', ''))
+    email_prop = col_p2.text_input("E-mail de Contato:", value=dados_edit.get('email_proprietario', ''))
 
 with tab2:
     st.subheader("2.1 Relação de Ambientes Climatizados")
     if 'lista_ambientes' not in st.session_state:
         st.session_state['lista_ambientes'] = converter_para_estrutura(dados_edit.get('lista_ambientes', []), list) or [
-            {"atividade": "Escritório / Administrativo", "fixos": 20, "flutuantes": 5, "identificacao": "Escritório Belenus", "area": 120, "carga": "60.000 BTU/h"}
+            {"atividade": "Escritório / Administrativo", "fixos": 0, "flutuantes": 0, "identificacao": "", "area": 0, "carga": ""}
         ]
         
     for i, amb in enumerate(st.session_state['lista_ambientes']):
@@ -981,7 +981,7 @@ with tab2:
     st.subheader("2.2 Relação de Equipamentos Presentes no Sistema")
     if 'lista_equipamentos' not in st.session_state:
         st.session_state['lista_equipamentos'] = converter_para_estrutura(dados_edit.get('lista_equipamentos', []), list) or [
-            {"equipamento": "Chiller Parafuso / Fancoil", "localizacao": "Escritório Belenus", "kw": 45, "tag": "CH-01"}
+            {"equipamento": "", "localizacao": "", "kw": 0, "tag": ""}
         ]
         
     for j, eq in enumerate(st.session_state['lista_equipamentos']):
