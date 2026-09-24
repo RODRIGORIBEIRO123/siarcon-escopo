@@ -178,7 +178,7 @@ else:
 
                     # Mover Direita
                     if i < len(status_cols)-1:
-                        if b4.button("➡️", key=f"R_{uid}"):
+                        if b4.button("➡️", key=f"R_{uid}_{idx}"):
                             row_dict = row.to_dict()
                             row_dict['status'] = status_cols[i+1]
                             utils_db.salvar_projeto(row_dict)
