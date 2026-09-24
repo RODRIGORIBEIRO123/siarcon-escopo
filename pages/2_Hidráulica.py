@@ -68,8 +68,14 @@ st.markdown("""
 
 if 'opcoes_db' not in st.session_state: st.session_state['opcoes_db'] = utils_db.carregar_opcoes()
 cat_tecnica_db = f"tecnico_{DISCIPLINA_ATUAL.lower()}"
+
+# =========================================================================
+# 🛡️ BLINDAGEM DO DADOS_EDIT (CORREÇÃO DO ERRO NONE TYPE)
+# =========================================================================
 id_projeto = st.session_state.get('id_projeto_editar')
-dados_edit = utils_db.buscar_projeto_por_id(id_projeto) if id_projeto else {}
+dados_edit_bruto = utils_db.buscar_projeto_por_id(id_projeto) if id_projeto else {}
+dados_edit = dados_edit_bruto if isinstance(dados_edit_bruto, dict) else {}
+# =========================================================================
 
 def formatar_moeda(valor):
     if not valor: return ""
@@ -309,4 +315,8 @@ with col_b2:
         else: st.error("Erro ao salvar.")
     if st.session_state.get(f'btn_docx_{DISCIPLINA_ATUAL}', False):
         b = gerar_docx(dados)
-        st.download_button("📥 BAIXAR DOCX GERADO", b, file_name=f"Escopo_{DISCIPLINA_ATUAL}_{forn.strip() or 'Fornecedor'}.docx")
+        st.download_button(
+            "📥 BAIXAR DOCX GERADO", 
+            b, 
+            file_name=f"Escopo_{DISCIPLINA_ATUAL}_{forn.strip() or 'Fornecedor'}.docx"
+        )
