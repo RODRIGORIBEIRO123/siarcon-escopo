@@ -154,7 +154,8 @@ else:
                             st.rerun()
                     
                     # Abrir
-                    if b2.button("✏️", key=f"E_{uid}", use_container_width=True):
+                    # 🔴 AQUI: Adicionado _{idx} no final do key
+                    if b2.button("✏️", key=f"E_{uid}_{idx}", use_container_width=True):
                         st.session_state['projeto_ativo'] = tit
                         st.session_state['cliente_ativo'] = cli_txt
                         st.session_state['id_projeto_editar'] = uid
@@ -169,7 +170,8 @@ else:
                         st.switch_page(rotas.get(disc_txt, "pages/1_Dutos.py"))
                     
                     # Excluir
-                    if b3.button("🗑️", key=f"D_{uid}"):
+                    # 🔴 AQUI: Adicionado _{idx} no final do key
+                    if b3.button("🗑️", key=f"D_{uid}_{idx}"):
                         if hasattr(utils_db, 'excluir_projeto'):
                             utils_db.excluir_projeto(uid)
                             st.rerun()
